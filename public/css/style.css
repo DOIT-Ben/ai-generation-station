@@ -1082,16 +1082,6 @@ input[type="range"]::-webkit-slider-thumb:active {
   display: none;
 }
 
-#voice-source-url {
-  height: 44px;
-  box-sizing: border-box;
-}
-
-#voice-source-url input[type="url"] {
-  height: 44px;
-  box-sizing: border-box;
-}
-
 /* ---- Drop zone ---- */
 .drop-zone {
   display: flex;
