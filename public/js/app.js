@@ -285,19 +285,81 @@
   }
 
   function generateCover() {
-    generateContent({
-      apiEndpoint: '/api/generate/cover',
-      domIds: { prompt: 'cover-prompt', ratio: 'cover-ratio', style: 'cover-style' },
-      resultTab: 'cover',
-      loadingText: '正在生成封面...',
-      successMessage: '封面生成成功！',
-      onSuccess: data => {
-        const img = $('cover-image');
-        img.src = data.image_url || data.url || '';
-        img.onclick = () => openImageModal(img.src);
-        $('cover-meta').textContent = data.model ? `模型: ${data.model}` : '';
-      },
-    });
+    const prompt = $('cover-prompt')?.value?.trim();
+    const ratio = $('cover-ratio')?.value || '';
+    const style = $('cover-style')?.value || '';
+    if (!prompt) { showToast('请填写封面描述', 'error'); return; }
+
+    const btn = $('btn-generate-cover');
+    const resultEl = $('cover-result');
+    if (btn) btn.disabled = true;
+    if (resultEl) resultEl.setAttribute('hidden', '');
+
+    showLoading('正在生成封面...', 0);
+    startInlineProgress('cover', 'cover-progress-fill', 'cover-progress-text');
+
+    fetch('/api/generate/cover', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, ratio, style }),
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.error) throw new Error(data.error);
+        pollImageStatus(data.taskId, 60);
+      })
+      .catch(err => {
+        stopInlineProgress();
+        showToast(err.message || '生成失败', 'error');
+        if (btn) btn.disabled = false;
+        hideLoading();
+      });
+  }
+
+  function pollImageStatus(taskId, maxRetries) {
+    const btn = $('btn-generate-cover');
+
+    const tryPoll = (retry) => {
+      fetch('/api/image/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId }),
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.error) throw new Error(data.error);
+
+          if (data.status === 'completed') {
+            stopInlineProgress();
+            const img = $('cover-image');
+            img.src = data.url || '';
+            img.onclick = () => openImageModal(img.src);
+            $('cover-meta').textContent = data.model ? `模型: ${data.model}` : '';
+            $('cover-result')?.removeAttribute('hidden');
+            $('cover-result')?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+            loadQuota();
+            showToast('封面生成成功！', 'success');
+            if (btn) btn.disabled = false;
+            hideLoading();
+          } else if (data.status === 'error') {
+            throw new Error(data.error || '生成失败');
+          } else {
+            // pending / processing
+            if (retry >= maxRetries) {
+              throw new Error('生成超时，请重试');
+            }
+            setTimeout(() => tryPoll(retry + 1), 2000);
+          }
+        })
+        .catch(err => {
+          stopInlineProgress();
+          showToast(err.message || '生成失败', 'error');
+          if (btn) btn.disabled = false;
+          hideLoading();
+        });
+    };
+
+    tryPoll(0);
   }
 
   function generateVoice() {
@@ -799,6 +861,7 @@
   }
 
 })();
+logout
 logout
 logout
 logout
