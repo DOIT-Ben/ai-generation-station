@@ -420,33 +420,27 @@ const routes = {
         };
     },
     
-    // 生成音乐 (music-2.6)
-    '/api/music': async (req, res, body) => {
-        const { prompt, lyrics = '无歌词', model = 'music-2.6' } = body;
+    // 生成音乐 (music-2.6) — 前端 /api/generate/music
+    '/api/generate/music': async (req, res, body) => {
+        const { prompt, style, bpm, key, duration } = body;
         if (!prompt) return { error: 'Prompt is required' };
-        
+
         const taskId = `music_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         const outputFile = path.join(OUTPUT_DIR, `${taskId}.mp3`);
-        
-        // 存储任务状态
-        musicTasks.set(taskId, {
-            status: 'pending',
-            progress: 0,
-            outputFile,
-            prompt,
-            startedAt: Date.now()
-        });
-        
-        // 立即返回任务ID，让前端可以查询进度
-        // 后台开始处理
-        processMusicTask(taskId, { model, prompt, lyrics }).catch(err => {
+
+        musicTasks.set(taskId, { status: 'pending', progress: 0, outputFile, prompt, startedAt: Date.now() });
+
+        processMusicTask(taskId, { model: 'music-2.6', prompt, lyrics: '[intro][outro]' }).catch(err => {
             console.error('Background music error:', err.message);
-            musicTasks.get(taskId).status = 'error';
-            musicTasks.get(taskId).error = err.message;
+            const t = musicTasks.get(taskId);
+            if (t) { t.status = 'error'; t.error = err.message; }
         });
-        
-        return { taskId, status: 'pending', message: '音乐生成已启动，请查询进度' };
+
+        return { taskId, status: 'pending', message: '音乐生成已启动' };
     },
+
+    // 兼容旧路由
+    '/api/music': async (req, res, body) => routes['/api/generate/music'](req, res, body),
     
     // 查询音乐任务进度
     '/api/music/status': async (req, res, body) => {
@@ -466,41 +460,35 @@ const routes = {
         };
     },
     
-    // 生成歌词
-    '/api/lyrics': async (req, res, body) => {
-        const { prompt, genre = 'pop', mood = 'happy' } = body;
+    // 生成歌词 — 前端 /api/generate/lyrics
+    '/api/generate/lyrics': async (req, res, body) => {
+        const { prompt, style, structure } = body;
         if (!prompt) return { error: 'Prompt is required' };
-        
-        // 先调用API获取歌词
-        const result = await callLyricsAPI(prompt, genre, mood);
+        const result = await callLyricsAPI(prompt, style || 'pop', 'happy');
         return result;
     },
+
+    // 兼容旧路由
+    '/api/lyrics': async (req, res, body) => routes['/api/generate/lyrics'](req, res, body),
     
-    // AI歌声翻唱
-    '/api/music-cover': async (req, res, body) => {
-        const { audio_url, prompt } = body;
+    // AI歌声翻唱 — 前端 /api/generate/voice
+    '/api/generate/voice': async (req, res, body) => {
+        const { audio_url, prompt, timbre, pitch } = body;
         if (!audio_url) return { error: 'Audio URL is required' };
-        
+
         const taskId = `cover_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         const outputFile = path.join(OUTPUT_DIR, `${taskId}.mp3`);
-        
-        const task = {
-            taskId,
-            status: 'processing',
-            progress: 0,
-            outputFile,
-            startedAt: Date.now()
-        };
+
+        const task = { taskId, status: 'processing', progress: 0, outputFile, startedAt: Date.now() };
         coverTasks.set(taskId, task);
-        
-        // 启动后台处理
-        processCoverTask(task).catch(err => {
-            task.status = 'error';
-            task.error = err.message;
-        });
-        
-        return { taskId, status: 'pending', message: '翻唱生成已启动，请查询进度' };
+
+        processCoverTask(task).catch(err => { task.status = 'error'; task.error = err.message; });
+
+        return { taskId, status: 'pending', message: '翻唱生成已启动' };
     },
+
+    // 兼容旧路由
+    '/api/music-cover': async (req, res, body) => routes['/api/generate/voice'](req, res, body),
     
     // 歌声翻唱状态查询
     '/api/music-cover/status': async (req, res, body) => {
@@ -520,34 +508,27 @@ const routes = {
         };
     },
     
-    // 生成图片 (image-01) - 改为后台任务
-    '/api/image': async (req, res, body) => {
-        const { prompt, aspect_ratio = '1:1' } = body;
+    // 生成图片/封面 (image-01) — 前端 /api/generate/cover
+    '/api/generate/cover': async (req, res, body) => {
+        const { prompt, ratio, style } = body;
         if (!prompt) return { error: 'Prompt is required' };
-        
+
         const taskId = `image_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        const ext = aspect_ratio === '9:16' ? 'png' : 'png';
-        const outputFile = path.join(OUTPUT_DIR, `${taskId}.${ext}`);
-        
-        // 存储任务状态
-        imageTasks.set(taskId, {
-            status: 'pending',
-            progress: 0,
-            outputFile,
-            prompt,
-            startedAt: Date.now()
-        });
-        
-        // 立即返回任务ID，让前端可以查询进度
-        // 后台开始处理
-        processImageTask(taskId, { prompt, aspect_ratio }).catch(err => {
+        const outputFile = path.join(OUTPUT_DIR, `${taskId}.png`);
+
+        imageTasks.set(taskId, { status: 'pending', progress: 0, outputFile, prompt, startedAt: Date.now() });
+
+        processImageTask(taskId, { prompt, aspect_ratio: ratio || '1:1' }).catch(err => {
             console.error('Background image error:', err.message);
-            imageTasks.get(taskId).status = 'error';
-            imageTasks.get(taskId).error = err.message;
+            const t = imageTasks.get(taskId);
+            if (t) { t.status = 'error'; t.error = err.message; }
         });
-        
-        return { taskId, status: 'pending', message: '封面生成已启动，请查询进度' };
+
+        return { taskId, status: 'pending', message: '封面生成已启动' };
     },
+
+    // 兼容旧路由
+    '/api/image': async (req, res, body) => routes['/api/generate/cover'](req, res, body),
     
     // 查询图片任务进度
     '/api/image/status': async (req, res, body) => {
@@ -581,21 +562,44 @@ const routes = {
                     'Content-Type': 'application/json'
                 }
             };
-            
+
+            console.log('[Quota API] 请求配额信息...');
+            console.log('[Quota API] 请求路径:', options.path);
+
             const req = https.request(options, (res) => {
                 let data = '';
                 res.on('data', chunk => data += chunk);
                 res.on('end', () => {
                     try {
                         const response = JSON.parse(data);
+                        console.log('[Quota API] 原始响应状态码:', res.statusCode);
+                        console.log('[Quota API] 原始响应数据:', JSON.stringify(response).substring(0, 2000));
+
+                        // 尝试解析不同的数据格式
+                        if (response.model_remains) {
+                            console.log('[Quota API] model_remains 数量:', response.model_remains.length);
+                            if (response.model_remains.length > 0) {
+                                console.log('[Quota API] 第一个配额项:', JSON.stringify(response.model_remains[0]));
+                            }
+                        } else if (response.data) {
+                            console.log('[Quota API] data 字段存在:', typeof response.data);
+                        } else {
+                            console.log('[Quota API] 响应keys:', Object.keys(response));
+                        }
+
                         resolve(response);
                     } catch (e) {
+                        console.error('[Quota API] 解析响应失败:', e.message);
+                        console.error('[Quota API] 原始数据:', data.substring(0, 500));
                         reject(e);
                     }
                 });
             });
-            
-            req.on('error', reject);
+
+            req.on('error', (e) => {
+                console.error('[Quota API] 请求错误:', e.message);
+                reject(e);
+            });
             req.end();
         });
     },
