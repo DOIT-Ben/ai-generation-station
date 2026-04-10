@@ -1032,7 +1032,6 @@ input[type="range"]::-webkit-slider-thumb:active {
   min-height: unset;
   height: 44px;
   padding: 0 14px;
-  box-sizing: border-box;
 }
 
 .upload-hint {
@@ -1094,10 +1093,11 @@ input[type="range"]::-webkit-slider-thumb:active {
   color: var(--fg-secondary);
   cursor: pointer;
   transition: all 0.2s;
-  height: 44px;
+  height: 176px;
   box-sizing: border-box;
   overflow: hidden;
-  line-height: 1;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .drop-zone:hover,
