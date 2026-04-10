@@ -303,22 +303,33 @@
   function generateVoice() {
     const fileInput = $('voice-audio-file');
     const urlInput = $('voice-audio-url');
-    const audioUrl = urlInput?.value?.trim();
     const prompt = $('voice-prompt')?.value?.trim();
 
-    // 优先使用文件上传
-    if (fileInput?.files?.[0]) {
-      const file = fileInput.files[0];
+    // 根据当前 Tab 判断来源
+    const activeTab = document.querySelector('.voice-source-tabs .source-tab.active')?.dataset.source;
+
+    if (activeTab === 'file' && fileInput?.files?.[0]) {
       if (!prompt) { showToast('请填写翻唱描述', 'error'); return; }
-      generateVoiceWithFile(file, prompt);
-      return;
+      generateVoiceWithFile(fileInput.files[0], prompt);
+    } else if (activeTab === 'url') {
+      const audioUrl = urlInput?.value?.trim();
+      if (!audioUrl) { showToast('请填写歌曲链接', 'error'); return; }
+      if (!prompt) { showToast('请填写翻唱描述', 'error'); return; }
+      generateVoiceWithUrl(audioUrl, prompt);
+    } else {
+      // 默认行为：优先文件其次 URL
+      const file = fileInput?.files?.[0];
+      const audioUrl = urlInput?.value?.trim();
+      if (file) {
+        if (!prompt) { showToast('请填写翻唱描述', 'error'); return; }
+        generateVoiceWithFile(file, prompt);
+      } else if (audioUrl) {
+        if (!prompt) { showToast('请填写翻唱描述', 'error'); return; }
+        generateVoiceWithUrl(audioUrl, prompt);
+      } else {
+        showToast('请上传音频文件或填写歌曲链接', 'error');
+      }
     }
-
-    // 其次用 URL
-    if (!audioUrl) { showToast('请上传音频文件或填写歌曲链接', 'error'); return; }
-    if (!prompt) { showToast('请填写翻唱描述', 'error'); return; }
-
-    generateVoiceWithUrl(audioUrl, prompt);
   }
 
   async function generateVoiceWithFile(file, prompt) {
@@ -683,6 +694,42 @@
       const file = e.target.files?.[0];
       $('voice-file-name').textContent = file ? file.name : '';
     });
+
+    // 歌声翻唱来源 Tab 切换
+    document.querySelectorAll('.voice-source-tabs .source-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.voice-source-tabs .source-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        const source = tab.dataset.source;
+        $('voice-source-file')?.toggleAttribute('hidden', source !== 'file');
+        $('voice-source-url')?.toggleAttribute('hidden', source !== 'url');
+      });
+    });
+
+    // 拖拽上传
+    const dropZone = $('voice-drop-zone');
+    if (dropZone) {
+      dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+      dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+      dropZone.addEventListener('drop', e => {
+        e.preventDefault();
+        dropZone.classList.remove('drag-over');
+        const file = e.dataTransfer?.files?.[0];
+        if (file && file.type.startsWith('audio/')) {
+          const dt = new DataTransfer();
+          dt.items.add(file);
+          $('voice-audio-file').files = dt.files;
+          $('voice-file-name').textContent = file.name;
+          // 自动切换到文件模式
+          document.querySelectorAll('.voice-source-tabs .source-tab').forEach(t => t.classList.remove('active'));
+          document.querySelector('.voice-source-tabs .source-tab[data-source="file"]')?.classList.add('active');
+          $('voice-source-file')?.removeAttribute('hidden');
+          $('voice-source-url')?.setAttribute('hidden', '');
+        } else {
+          showToast('请拖拽音频文件', 'error');
+        }
+      });
+    }
 
     // Generate buttons
     $('btn-generate-music')?.addEventListener('click', generateMusic);

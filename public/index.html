@@ -372,14 +372,24 @@
         <div class="input-group">
           <label>
             歌曲来源
-            <span class="hint">支持上传音频文件或填写 URL</span>
+            <span class="hint">上传本地音频或粘贴链接</span>
           </label>
-          <div class="upload-area" style="flex-direction:column;gap:8px;">
-            <div class="file-upload-row">
-              <input type="file" id="voice-audio-file" accept="audio/*" />
-              <span id="voice-file-name" class="file-name-display"></span>
+          <div class="voice-source-tabs">
+            <button class="source-tab active" data-source="file" type="button">上传文件</button>
+            <button class="source-tab" data-source="url" type="button">粘贴链接</button>
+          </div>
+          <div id="voice-source-file" class="source-panel">
+            <div class="drop-zone" id="voice-drop-zone">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+              <p class="drop-hint">将音频文件拖到此处，或 <label for="voice-audio-file" class="drop-link">点击上传</label></p>
+              <p class="drop-formats">支持 MP3、WAV、FLAC、AAC、OGG</p>
+              <input type="file" id="voice-audio-file" accept="audio/*" hidden />
+              <p id="voice-file-name" class="file-name-display"></p>
             </div>
-            <div class="upload-divider"><span>或</span></div>
+          </div>
+          <div id="voice-source-url" class="source-panel" hidden>
             <input type="url" id="voice-audio-url" placeholder="https://... 音频直链或网易云等平台链接" />
           </div>
         </div>
