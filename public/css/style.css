@@ -1084,18 +1084,17 @@ input[type="range"]::-webkit-slider-thumb:active {
 /* ---- Drop zone ---- */
 .drop-zone {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 32px 24px;
+  gap: 12px;
+  padding: 10px 14px;
   border: 2px dashed var(--border-subtle);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   background: var(--bg-surface);
   color: var(--fg-secondary);
-  text-align: center;
   cursor: pointer;
   transition: all 0.2s;
+  min-height: 44px;
+  box-sizing: border-box;
 }
 
 .drop-zone:hover,
@@ -1106,14 +1105,15 @@ input[type="range"]::-webkit-slider-thumb:active {
 }
 
 .drop-zone svg {
+  flex-shrink: 0;
   opacity: 0.6;
-  margin-bottom: 4px;
 }
 
 .drop-hint {
   font-size: 0.875rem;
   margin: 0;
   color: var(--fg-secondary);
+  white-space: nowrap;
 }
 
 .drop-link {
@@ -1130,6 +1130,7 @@ input[type="range"]::-webkit-slider-thumb:active {
   font-size: 0.75rem;
   color: var(--fg-muted);
   margin: 0;
+  white-space: nowrap;
 }
 
 .file-name-display {
@@ -1576,6 +1577,7 @@ input[type="range"]::-webkit-slider-thumb:active {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
+logout
 logout
 logout
 logout
