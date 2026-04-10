@@ -301,10 +301,56 @@
   }
 
   function generateVoice() {
-    const audioUrl = $('voice-audio-url')?.value?.trim();
+    const fileInput = $('voice-audio-file');
+    const urlInput = $('voice-audio-url');
+    const audioUrl = urlInput?.value?.trim();
     const prompt = $('voice-prompt')?.value?.trim();
-    if (!audioUrl && !prompt) { showToast('请提供歌曲链接或描述', 'error'); return; }
 
+    // 优先使用文件上传
+    if (fileInput?.files?.[0]) {
+      const file = fileInput.files[0];
+      if (!prompt) { showToast('请填写翻唱描述', 'error'); return; }
+      generateVoiceWithFile(file, prompt);
+      return;
+    }
+
+    // 其次用 URL
+    if (!audioUrl) { showToast('请上传音频文件或填写歌曲链接', 'error'); return; }
+    if (!prompt) { showToast('请填写翻唱描述', 'error'); return; }
+
+    generateVoiceWithUrl(audioUrl, prompt);
+  }
+
+  async function generateVoiceWithFile(file, prompt) {
+    const btn = $('btn-generate-voice');
+    if (btn) btn.disabled = true;
+    showLoading('正在上传音频...', 0);
+
+    try {
+      // 1. 把文件转成 base64 上传
+      const base64 = await fileToBase64(file);
+      const uploadRes = await fetch('/api/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: file.name, data: base64 }),
+      });
+      const uploadData = await uploadRes.json();
+      if (!uploadData.success) throw new Error(uploadData.error || '文件上传失败');
+
+      const audioUrl = uploadData.url;
+      showLoading('正在处理翻唱...', 50);
+
+      // 2. 用上传后的 URL 发起翻唱
+      await doVoiceGenerate(audioUrl, prompt);
+
+    } catch (err) {
+      hideLoading();
+      showToast(err.message || '处理失败', 'error');
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function generateVoiceWithUrl(audioUrl, prompt) {
     generateContent({
       apiEndpoint: '/api/generate/voice',
       domIds: { audio_url: 'voice-audio-url', prompt: 'voice-prompt', timbre: 'voice-timbre', pitch: 'voice-pitch' },
@@ -318,6 +364,64 @@
     });
   }
 
+  async function doVoiceGenerate(audioUrl, prompt) {
+    const btn = $('btn-generate-voice');
+    const resultEl = $('covervoice-result');
+    const resultTab = 'covervoice';
+
+    if (btn) btn.disabled = true;
+    if (resultEl) resultEl.setAttribute('hidden', '');
+
+    startInlineProgress(resultTab, `${resultTab}-progress-fill`, `${resultTab}-progress-text`);
+
+    try {
+      const config = {
+        audio_url: audioUrl,
+        prompt,
+        timbre: $('voice-timbre')?.value || '',
+        pitch: $('voice-pitch')?.value || '',
+      };
+
+      const res = await fetch('/api/generate/voice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: '请求失败' }));
+        throw new Error(err.error || '生成失败');
+      }
+
+      const data = await res.json();
+      stopInlineProgress();
+
+      $('voice-audio').src = data.audio_url || data.url || '';
+      $('voice-meta').textContent = data.model ? `模型: ${data.model}` : '';
+
+      if (resultEl) { resultEl.removeAttribute('hidden'); resultEl.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' }); }
+      currentResult[resultTab] = data;
+      loadQuota();
+      showToast('歌声翻唱完成！', 'success');
+
+    } catch (err) {
+      stopInlineProgress();
+      showToast(err.message || '生成失败，请重试', 'error');
+    } finally {
+      hideLoading();
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
   // ============================================
   //  Reset
   // ============================================
@@ -325,13 +429,15 @@
     music:      [{ id: 'music-prompt', tag: 'textarea' }, { id: 'music-style' }, { id: 'music-bpm' }, { id: 'music-key' }, { id: 'music-duration' }, { id: 'music-char', val: '0' }],
     lyrics:     [{ id: 'lyrics-prompt', tag: 'textarea' }, { id: 'lyrics-style' }, { id: 'lyrics-structure' }, { id: 'lyrics-char', val: '0' }],
     cover:      [{ id: 'cover-prompt', tag: 'textarea' }, { id: 'cover-ratio' }, { id: 'cover-style' }, { id: 'cover-char', val: '0' }],
-    covervoice: [{ id: 'voice-audio-url' }, { id: 'voice-prompt', tag: 'textarea' }, { id: 'voice-timbre' }, { id: 'voice-pitch' }, { id: 'voice-char', val: '0' }],
+    covervoice: [{ id: 'voice-audio-file' }, { id: 'voice-audio-url' }, { id: 'voice-prompt', tag: 'textarea' }, { id: 'voice-timbre' }, { id: 'voice-pitch' }, { id: 'voice-char', val: '0' }],
   };
 
+  // file input 需要手动清空
   function resetTab(tab) {
     (RESET_MAPS[tab] || []).forEach(item => {
       const el = $(item.id);
       if (!el) return;
+      if (item.id === 'voice-audio-file') { el.value = ''; $('voice-file-name').textContent = ''; return; }
       if (item.val !== undefined) {
         if (el.tagName === 'SELECT') el.selectedIndex = 0;
         else if (item.id.endsWith('-char')) el.textContent = item.val;
@@ -572,6 +678,12 @@
       if (el && counter) el.addEventListener('input', () => { counter.textContent = el.value.length; });
     });
 
+    // 文件上传选中后显示文件名
+    $('voice-audio-file')?.addEventListener('change', e => {
+      const file = e.target.files?.[0];
+      $('voice-file-name').textContent = file ? file.name : '';
+    });
+
     // Generate buttons
     $('btn-generate-music')?.addEventListener('click', generateMusic);
     $('btn-generate-lyrics')?.addEventListener('click', generateLyrics);
@@ -640,3 +752,6 @@
   }
 
 })();
+logout
+logout
+logout

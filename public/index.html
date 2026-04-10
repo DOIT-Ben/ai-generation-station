@@ -371,12 +371,16 @@
       <div class="card">
         <div class="input-group">
           <label>
-            歌曲链接
-            <span class="hint">支持音乐平台链接或直接音频 URL</span>
+            歌曲来源
+            <span class="hint">支持上传音频文件或填写 URL</span>
           </label>
-          <div class="upload-area">
-            <input type="url" id="voice-audio-url" placeholder="https://music.163.com/#/song?id=..." />
-            <span class="upload-hint">或直接填写音频 URL</span>
+          <div class="upload-area" style="flex-direction:column;gap:8px;">
+            <div class="file-upload-row">
+              <input type="file" id="voice-audio-file" accept="audio/*" />
+              <span id="voice-file-name" class="file-name-display"></span>
+            </div>
+            <div class="upload-divider"><span>或</span></div>
+            <input type="url" id="voice-audio-url" placeholder="https://... 音频直链或网易云等平台链接" />
           </div>
         </div>
 

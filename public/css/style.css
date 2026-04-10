@@ -1039,6 +1039,48 @@ input[type="range"]::-webkit-slider-thumb:active {
   font-size: 0.85rem;
 }
 
+.file-upload-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.file-upload-row input[type="file"] {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
+  color: var(--fg-primary);
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.file-name-display {
+  color: var(--fg-secondary);
+  font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.upload-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--fg-muted);
+  font-size: 0.8rem;
+}
+
+.upload-divider::before,
+.upload-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-subtle);
+}
+
 .upload-preview {
   display: flex;
   align-items: center;
