@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI 内容生成站</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+
+<div class="app">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="logo">
+      <div class="logo-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+        </svg>
+      </div>
+      <span class="logo-text">AI Generation</span>
+    </div>
+
+    <nav class="nav-list">
+      <button class="nav-item active" data-tab="chat" data-tooltip="AI 对话">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+        <span class="nav-label">AI 对话</span>
+      </button>
+
+      <button class="nav-item" data-tab="music" data-tooltip="音乐生成">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+        </svg>
+        <span class="nav-label">音乐生成</span>
+      </button>
+
+      <button class="nav-item" data-tab="lyrics" data-tooltip="歌词创作">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+        </svg>
+        <span class="nav-label">歌词创作</span>
+      </button>
+
+      <button class="nav-item" data-tab="cover" data-tooltip="封面生成">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+        </svg>
+        <span class="nav-label">封面生成</span>
+      </button>
+
+      <button class="nav-item" data-tab="covervoice" data-tooltip="歌声翻唱">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+        <span class="nav-label">歌声翻唱</span>
+      </button>
+
+      <button class="nav-item" data-tab="speech" data-tooltip="语音合成">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+        <span class="nav-label">语音合成</span>
+      </button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div id="quota-info" class="quota-card">
+        <div class="quota-loading">加载中...</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="main">
+
+    <!-- Music Tab -->
+    <section id="tab-music" class="tab-content">
+      <div class="section-header">
+        <h1><span class="icon">🎵</span> 音乐生成</h1>
+        <p>输入歌词或描述，让 AI 为你创作专属音乐</p>
+      </div>
+
+      <div class="card">
+        <div class="input-group">
+          <label>
+            歌词 / 描述
+            <span class="hint">支持中英文，可输入完整歌词或仅描述风格</span>
+          </label>
+          <textarea id="music-prompt" rows="4" maxlength="2000" placeholder="例如：一首关于追逐梦想的励志歌曲，节奏明快，充满力量感"></textarea>
+          <div class="char-count"><span id="music-char">0</span> / 2000</div>
+        </div>
+
+        <div class="config-grid">
+          <div class="config-item">
+            <label>音乐风格</label>
+            <select id="music-style">
+              <option value="">默认风格</option>
+              <option value="pop">流行 Pop</option>
+              <option value="rock">摇滚 Rock</option>
+              <option value="electronic">电子 Electronic</option>
+              <option value="classical">古典 Classical</option>
+              <option value="jazz">爵士 Jazz</option>
+              <option value="folk">民谣 Folk</option>
+              <option value="hiphop">Hip-Hop</option>
+            </select>
+          </div>
+
+          <div class="config-item">
+            <label>节奏 BPM</label>
+            <select id="music-bpm">
+              <option value="">自动</option>
+              <option value="慢速 (60-80)">慢速 (60-80)</option>
+              <option value="中速 (90-120)">中速 (90-120)</option>
+              <option value="快速 (130-160)">快速 (130-160)</option>
+              <option value="很快 (170+)">很快 (170+)</option>
+            </select>
+          </div>
+
+          <div class="config-item">
+            <label>调式</label>
+            <select id="music-key">
+              <option value="">自动</option>
+              <option value="C大调">C 大调</option>
+              <option value="C小调">C 小调</option>
+              <option value="D大调">D 大调</option>
+              <option value="D小调">D 小调</option>
+              <option value="E大调">E 大调</option>
+              <option value="G大调">G 大调</option>
+              <option value="A小调">A 小调</option>
+            </select>
+          </div>
+
+          <div class="config-item">
+            <label>时长</label>
+            <select id="music-duration">
+              <option value="">自动</option>
+              <option value="30秒">30 秒</option>
+              <option value="1分钟">1 分钟</option>
+              <option value="2分钟">2 分钟</option>
+              <option value="3分钟">3 分钟</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="action-row">
+          <button class="btn btn-primary" id="btn-generate-music">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="5 3 19 12 5 21 5 3"/>
+            </svg>
+            <span>生成音乐</span>
+          </button>
+          <button class="btn btn-reset" id="btn-reset-music">重置</button>
+        </div>
+
+        <div id="music-generating" class="generating-card" hidden>
+          <div class="generating-header">
+            <span class="generating-icon">🎵</span>
+            <span class="generating-text">正在生成音乐...</span>
+          </div>
+          <div class="generating-progress">
+            <div class="progress-track">
+              <div class="progress-fill" id="music-progress-fill" style="width:0%"></div>
+            </div>
+            <span class="progress-text" id="music-progress-text">0%</span>
+          </div>
+        </div>
+
+        <div id="music-result" class="result-area" hidden>
+          <div class="result-info">
+            <div class="result-label">生成完成</div>
+            <div class="result-meta">
+              <span id="music-duration-info"></span>
+              <span id="music-model-info"></span>
+            </div>
+          </div>
+          <audio id="music-audio" controls></audio>
+          <div class="result-actions">
+            <button class="btn btn-secondary" id="btn-download-music">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              下载音频
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Lyrics Tab -->
+    <section id="tab-lyrics" class="tab-content">
+      <div class="section-header">
+        <h1><span class="icon">✍️</span> 歌词创作</h1>
+        <p>根据主题或风格描述，AI 为你创作专业级歌词</p>
+      </div>
+
+      <div class="card">
+        <div class="input-group">
+          <label>
+            主题 / 描述
+            <span class="hint">描述歌曲想要表达的情感或故事</span>
+          </label>
+          <textarea id="lyrics-prompt" rows="4" maxlength="1000" placeholder="例如：一首关于夏日分手的抒情歌曲，带有遗憾和释然的情感"></textarea>
+          <div class="char-count"><span id="lyrics-char">0</span> / 1000</div>
+        </div>
+
+        <div class="config-grid">
+          <div class="config-item">
+            <label>歌词风格</label>
+            <select id="lyrics-style">
+              <option value="">默认风格</option>
+              <option value="pop">流行 Pop</option>
+              <option value="rock">摇滚 Rock</option>
+              <option value="rap">说唱 Rap</option>
+              <option value="ballad">抒情 Ballad</option>
+              <option value="folk">民谣 Folk</option>
+            </select>
+          </div>
+
+          <div class="config-item">
+            <label>段落结构</label>
+            <select id="lyrics-structure">
+              <option value="">自动</option>
+              <option value="主歌1-副歌-主歌2-副歌-桥段-副歌">标准结构</option>
+              <option value="主歌-副歌-主歌-副歌">简单结构</option>
+              <option value="前奏-主歌1-副歌-主歌2-副歌-桥段-副歌-尾奏">完整结构</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="action-row">
+          <button class="btn btn-primary" id="btn-generate-lyrics">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+            </svg>
+            <span>生成歌词</span>
+          </button>
+          <button class="btn btn-reset" id="btn-reset-lyrics">重置</button>
+        </div>
+
+        <div id="lyrics-generating" class="generating-card" hidden>
+          <div class="generating-header">
+            <span class="generating-icon">✍️</span>
+            <span class="generating-text">正在创作歌词...</span>
+          </div>
+          <div class="generating-progress">
+            <div class="progress-track">
+              <div class="progress-fill" id="lyrics-progress-fill" style="width:0%"></div>
+            </div>
+            <span class="progress-text" id="lyrics-progress-text">0%</span>
+          </div>
+        </div>
+
+        <div id="lyrics-result" class="result-area" hidden>
+          <div class="result-info">
+            <div class="result-label">歌词已生成</div>
+            <div class="result-meta" id="lyrics-meta"></div>
+          </div>
+          <div id="lyrics-content"></div>
+          <div class="result-actions">
+            <button class="btn btn-secondary" id="btn-copy-lyrics">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              </svg>
+              复制歌词
+            </button>
+            <button class="btn btn-secondary" id="btn-use-lyrics">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="5 3 19 12 5 21 5 3"/>
+              </svg>
+              用于音乐生成
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Cover Generation Tab -->
+    <section id="tab-cover" class="tab-content">
+      <div class="section-header">
+        <h1><span class="icon">🖼️</span> 封面生成</h1>
+        <p>为你的音乐作品生成专业封面图</p>
+      </div>
+
+      <div class="card">
+        <div class="input-group">
+          <label>
+            封面描述
+            <span class="hint">描述想要的封面风格、颜色、元素等</span>
+          </label>
+          <textarea id="cover-prompt" rows="4" maxlength="500" placeholder="例如：一幅梦幻风格的音乐专辑封面，粉紫色渐变天空，未来感城市剪影"></textarea>
+          <div class="char-count"><span id="cover-char">0</span> / 500</div>
+        </div>
+
+        <div class="config-grid">
+          <div class="config-item">
+            <label>封面比例</label>
+            <select id="cover-ratio">
+              <option value="1:1">1:1 (方形)</option>
+              <option value="3:4">3:4 (竖版)</option>
+              <option value="16:9">16:9 (横版)</option>
+            </select>
+          </div>
+
+          <div class="config-item">
+            <label>画面风格</label>
+            <select id="cover-style">
+              <option value="">自动</option>
+              <option value="写实摄影">写实摄影</option>
+              <option value="赛博朋克">赛博朋克</option>
+              <option value="水彩">水彩</option>
+              <option value="油画">油画</option>
+              <option value="极简几何">极简几何</option>
+              <option value="像素艺术">像素艺术</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="action-row">
+          <button class="btn btn-primary" id="btn-generate-cover">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+            </svg>
+            <span>生成封面</span>
+          </button>
+          <button class="btn btn-reset" id="btn-reset-cover">重置</button>
+        </div>
+
+        <div id="cover-generating" class="generating-card" hidden>
+          <div class="generating-header">
+            <span class="generating-icon">🖼️</span>
+            <span class="generating-text">正在生成封面...</span>
+          </div>
+          <div class="generating-progress">
+            <div class="progress-track">
+              <div class="progress-fill" id="cover-progress-fill" style="width:0%"></div>
+            </div>
+            <span class="progress-text" id="cover-progress-text">0%</span>
+          </div>
+        </div>
+
+        <div id="cover-result" class="result-area" hidden>
+          <div class="result-info">
+            <div class="result-label">封面已生成</div>
+            <div class="result-meta" id="cover-meta"></div>
+          </div>
+          <img id="cover-image" src="" alt="生成的封面" />
+          <div class="result-actions">
+            <button class="btn btn-secondary" id="btn-download-cover">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              下载封面
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Cover Voice Tab -->
+    <section id="tab-covervoice" class="tab-content">
+      <div class="section-header">
+        <h1><span class="icon">🎤</span> 歌声翻唱</h1>
+        <p>上传任意歌曲，选择音色进行翻唱</p>
+      </div>
+
+      <div class="card">
+        <div class="input-group">
+          <label>
+            歌曲链接
+            <span class="hint">支持音乐平台链接或直接音频 URL</span>
+          </label>
+          <div class="upload-area">
+            <input type="url" id="voice-audio-url" placeholder="https://music.163.com/#/song?id=..." />
+            <span class="upload-hint">或直接填写音频 URL</span>
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label>
+            翻唱描述
+            <span class="hint">描述想要的目标音色和风格</span>
+          </label>
+          <textarea id="voice-prompt" rows="3" maxlength="500" placeholder="例如：磁性低沉的女声，温柔抒情风格，略带沙哑"></textarea>
+          <div class="char-count"><span id="voice-char">0</span> / 500</div>
+        </div>
+
+        <div class="config-grid">
+          <div class="config-item">
+            <label>目标音色</label>
+            <select id="voice-timbre">
+              <option value="">自动匹配</option>
+              <option value="清澈女声">清澈女声</option>
+              <option value="磁性男声">磁性男声</option>
+              <option value="甜美女声">甜美女声</option>
+              <option value="低沉男声">低沉男声</option>
+              <option value="中性嗓音">中性嗓音</option>
+            </select>
+          </div>
+
+          <div class="config-item">
+            <label>变调</label>
+            <select id="voice-pitch">
+              <option value="">原调</option>
+              <option value="-5">-5 半音</option>
+              <option value="-3">-3 半音</option>
+              <option value="+3">+3 半音</option>
+              <option value="+5">+5 半音</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="action-row">
+          <button class="btn btn-primary" id="btn-generate-voice">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            </svg>
+            <span>开始翻唱</span>
+          </button>
+          <button class="btn btn-reset" id="btn-reset-voice">重置</button>
+        </div>
+
+        <div id="voice-generating" class="generating-card" hidden>
+          <div class="generating-header">
+            <span class="generating-icon">🎤</span>
+            <span class="generating-text">正在处理翻唱...</span>
+          </div>
+          <div class="generating-progress">
+            <div class="progress-track">
+              <div class="progress-fill" id="voice-progress-fill" style="width:0%"></div>
+            </div>
+            <span class="progress-text" id="voice-progress-text">0%</span>
+          </div>
+        </div>
+
+        <div id="voice-result" class="result-area" hidden>
+          <div class="result-info">
+            <div class="result-label">翻唱完成</div>
+            <div class="result-meta" id="voice-meta"></div>
+          </div>
+          <audio id="voice-audio" controls></audio>
+          <div class="result-actions">
+            <button class="btn btn-secondary" id="btn-download-voice">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              下载音频
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Speech Tab -->
+    <section id="tab-speech" class="tab-content">
+      <div class="section-header">
+        <h1><span class="icon">🎙️</span> 语音合成</h1>
+        <p>将文字转换为自然流畅的语音，支持多种音色和情绪风格</p>
+      </div>
+
+      <div class="card">
+        <div class="input-group">
+          <label>输入文本 <span class="hint">要转换的文本内容</span></label>
+          <textarea id="speech-text" rows="5" maxlength="2000" placeholder="例如：你好，欢迎使用语音合成功能，我可以帮你把文字转换成自然流畅的语音。"></textarea>
+          <div class="char-count"><span id="speech-char">0</span> / 2000</div>
+        </div>
+
+        <div class="config-grid">
+          <div class="config-item">
+            <label>音色选择</label>
+            <select id="speech-voice">
+              <option value="male-qn-qingse">清朗男声</option>
+              <option value="female-tianmei">甜妹</option>
+              <option value="Chinese (Mandarin)_Lyrical_Voice">抒情女声</option>
+              <option value="Chinese (Mandarin)_HK_Flight_Attendant">港航乘务员</option>
+              <option value="English_Graceful_Lady">优雅女士</option>
+              <option value="English_Insightful_Speaker">洞察演说家</option>
+              <option value="English_radiant_girl">阳光女孩</option>
+              <option value="English_Persuasive_Man">说服力男人</option>
+              <option value="Japanese_Whisper_Belle">密语Belle</option>
+              <option value="korean_female">韩语女声</option>
+              <option value="korean_male">韩语男声</option>
+              <option value="spanish_female">西班牙女声</option>
+              <option value="french_female">法语女声</option>
+              <option value="german_female">德语女声</option>
+            </select>
+          </div>
+          <div class="config-item">
+            <label>情绪风格</label>
+            <select id="speech-emotion">
+              <option value="happy">😊 高兴</option>
+              <option value="sad">😢 悲伤</option>
+              <option value="angry">😠 愤怒</option>
+              <option value="fearful">😨 害怕</option>
+              <option value="disgusted">😒 厌恶</option>
+              <option value="surprised">😮 惊讶</option>
+              <option value="calm">😌 中性</option>
+              <option value="fluent">🎭 生动</option>
+              <option value="whisper">🤫 低语</option>
+            </select>
+          </div>
+          <div class="config-item">
+            <label>语速 <span id="speed-val">1.0x</span></label>
+            <input type="range" id="speech-speed" min="0.5" max="2.0" step="0.1" value="1.0">
+          </div>
+          <div class="config-item">
+            <label>音调 <span id="pitch-val">1.0</span></label>
+            <input type="range" id="speech-pitch" min="0.5" max="2.0" step="0.1" value="1.0">
+          </div>
+          <div class="config-item">
+            <label>音量 <span id="vol-val">50%</span></label>
+            <input type="range" id="speech-vol" min="0" max="100" step="5" value="50">
+          </div>
+          <div class="config-item">
+            <label>输出格式</label>
+            <select id="speech-format">
+              <option value="mp3">MP3</option>
+              <option value="wav">WAV</option>
+              <option value="pcm">PCM</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="btn-group">
+          <button class="btn btn-primary" id="btn-speech-generate">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+            生成语音
+          </button>
+          <button class="btn btn-secondary" id="btn-speech-stop" hidden>停止</button>
+        </div>
+      </div>
+
+      <div class="card" id="speech-result" hidden>
+        <h3>生成结果</h3>
+        <audio id="speech-audio" controls></audio>
+        <div class="result-info" id="speech-info"></div>
+      </div>
+    </section>
+
+    <!-- Chat Tab -->
+    <section id="tab-chat" class="tab-content active">
+      <div class="section-header">
+        <h1><span class="icon">💬</span> AI 对话</h1>
+        <p>与 MiniMax M2.7 进行智能对话</p>
+      </div>
+
+      <div class="card">
+        <div class="chat-container">
+          <div class="chat-messages" id="chat-messages">
+            <div class="chat-message chatbot">
+              <div class="message-avatar">🤖</div>
+              <div class="message-content">
+                <p>你好！我是 AI 对话助手，有什么我可以帮你的吗？</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="chat-input-area">
+            <div class="chat-model-select">
+              <select id="chat-model">
+                <option value="MiniMax-M2.7">MiniMax-M2.7</option>
+                <option value="MiniMax-M2.7-highspeed">MiniMax-M2.7-高速</option>
+              </select>
+            </div>
+            <div class="chat-input-row">
+              <textarea id="chat-input" rows="1" placeholder="输入消息..."></textarea>
+              <button class="btn btn-primary" id="btn-chat-send">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- Theme Toggle (top-right fixed) -->
+<div class="theme-toggle-fixed" id="theme-toggle-fixed">
+  <button class="theme-btn" id="theme-toggle" type="button" aria-label="切换主题" data-tip="深色模式">
+    <span class="sun-icon">☀️</span>
+    <span class="moon-icon">🌙</span>
+  </button>
+</div>
+
+<!-- Loading Overlay (top-right toast) -->
+<div id="loading-overlay" class="loading-overlay" hidden>
+  <div class="loading-spinner"></div>
+  <div class="loading-text" id="loading-text">正在生成...</div>
+  <div class="loading-progress-bar">
+    <div class="loading-progress-fill" id="loading-progress-fill"></div>
+  </div>
+  <div class="loading-percent" id="loading-percent">0%</div>
+</div>
+
+<!-- Toast Container -->
+<div id="toast-container" class="toast-container"></div>
+
+<!-- Image Modal -->
+<div id="image-modal" class="image-modal" hidden>
+  <div class="modal-content">
+    <button class="close" id="modal-close">&times;</button>
+    <img id="modal-image" src="" alt="预览" />
+  </div>
+</div>
+
+<script src="/js/app.js"></script>
+</body>
+</html>
+logout
+logout
