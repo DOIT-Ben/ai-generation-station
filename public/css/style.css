@@ -1093,7 +1093,7 @@ input[type="range"]::-webkit-slider-thumb:active {
   color: var(--fg-secondary);
   cursor: pointer;
   transition: all 0.2s;
-  height: 176px;
+  height: 118px;
   box-sizing: border-box;
   overflow: hidden;
   flex-direction: column;
