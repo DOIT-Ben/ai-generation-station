@@ -120,14 +120,19 @@ async function pollLyricsTask(taskId, maxAttempts = 30) {
 
 // 处理音乐生成的后台任务
 async function processMusicTask(taskId, options) {
-    const { model = 'music-2.6', prompt, lyrics = '[intro][outro]' } = options;
+    const { model = 'music-2.6', prompt, lyrics = '[intro][outro]', duration } = options;
     const task = musicTasks.get(taskId);
     
     task.status = 'processing';
     task.progress = 10;
     
     return new Promise((resolve, reject) => {
-        const postData = JSON.stringify({ model, prompt, lyrics });
+        // 构建请求体，包含时长参数（如果提供）
+        const requestBody = { model, prompt, lyrics };
+        if (duration) {
+            requestBody.duration = duration;
+        }
+        const postData = JSON.stringify(requestBody);
         const reqOptions = {
             hostname: API_HOST, port: 443, path: '/v1/music_generation', method: 'POST',
             headers: { 'Authorization': `Bearer ${API_KEY}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
@@ -430,7 +435,7 @@ const routes = {
 
         musicTasks.set(taskId, { status: 'pending', progress: 0, outputFile, prompt, startedAt: Date.now() });
 
-        processMusicTask(taskId, { model: 'music-2.6', prompt, lyrics: '[intro][outro]' }).catch(err => {
+        processMusicTask(taskId, { model: 'music-2.6', prompt, lyrics: '[intro][outro]', duration }).catch(err => {
             console.error('Background music error:', err.message);
             const t = musicTasks.get(taskId);
             if (t) { t.status = 'error'; t.error = err.message; }

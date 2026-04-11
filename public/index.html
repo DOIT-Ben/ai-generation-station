@@ -13,8 +13,20 @@
 
 <div class="app">
 
+  <!-- Mobile Sidebar Toggle -->
+  <button class="sidebar-toggle" id="sidebar-toggle" aria-label="打开菜单" aria-expanded="false" aria-controls="sidebar">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </button>
+
+  <!-- Sidebar Overlay -->
+  <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
   <!-- Sidebar -->
-  <aside class="sidebar">
+  <aside class="sidebar" id="sidebar" role="navigation" aria-label="主导航">
     <div class="logo">
       <div class="logo-icon">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -24,43 +36,43 @@
       <span class="logo-text">AI Generation</span>
     </div>
 
-    <nav class="nav-list">
-      <button class="nav-item active" data-tab="chat" data-tooltip="AI 对话">
+    <nav class="nav-list" role="menubar">
+      <button class="nav-item active" data-tab="chat" data-tooltip="AI 对话" role="menuitem" aria-current="page" tabindex="0">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
         </svg>
         <span class="nav-label">AI 对话</span>
       </button>
 
-      <button class="nav-item" data-tab="lyrics" data-tooltip="歌词创作">
+      <button class="nav-item" data-tab="lyrics" data-tooltip="歌词创作" role="menuitem" tabindex="-1">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
         </svg>
         <span class="nav-label">歌词创作</span>
       </button>
 
-      <button class="nav-item" data-tab="cover" data-tooltip="图片生成">
+      <button class="nav-item" data-tab="cover" data-tooltip="图片生成" role="menuitem" tabindex="-1">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
         </svg>
         <span class="nav-label">图片生成</span>
       </button>
 
-      <button class="nav-item" data-tab="speech" data-tooltip="语音合成">
+      <button class="nav-item" data-tab="speech" data-tooltip="语音合成" role="menuitem" tabindex="-1">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
         </svg>
         <span class="nav-label">语音合成</span>
       </button>
 
-      <button class="nav-item" data-tab="music" data-tooltip="音乐生成">
+      <button class="nav-item" data-tab="music" data-tooltip="音乐生成" role="menuitem" tabindex="-1">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
         </svg>
         <span class="nav-label">音乐生成</span>
       </button>
 
-      <button class="nav-item" data-tab="covervoice" data-tooltip="歌声翻唱">
+      <button class="nav-item" data-tab="covervoice" data-tooltip="歌声翻唱" role="menuitem" tabindex="-1">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>
         </svg>
@@ -91,14 +103,20 @@
             歌词 / 描述
             <span class="hint">支持中英文，可输入完整歌词或仅描述风格</span>
           </label>
-          <textarea id="music-prompt" rows="4" maxlength="2000" placeholder="例如：一首关于追逐梦想的励志歌曲，节奏明快，充满力量感"></textarea>
+          <textarea id="music-prompt" rows="8" maxlength="2000" placeholder="例如：一首关于追逐梦想的励志歌曲，节奏明快，充满力量感" aria-required="true" aria-describedby="music-hint music-count"></textarea>
           <div class="char-count"><span id="music-char">0</span> / 2000</div>
+          <div class="prompt-examples">
+            <span class="examples-label">示例:</span>
+            <button class="example-chip" data-target="music-prompt" data-text="一首关于追逐梦想的励志歌曲，节奏明快，充满力量感，适合运动场景">励志运动</button>
+            <button class="example-chip" data-target="music-prompt" data-text="深夜独处时的Lo-fi背景音乐，带有雨声和钢琴，宁静治愈">深夜Lo-fi</button>
+            <button class="example-chip" data-target="music-prompt" data-text="中国传统风格的古风音乐，古筝与笛子，适合武侠游戏场景">古风武侠</button>
+          </div>
         </div>
 
         <div class="config-grid">
           <div class="config-item">
             <label>音乐风格</label>
-            <select id="music-style">
+            <select id="music-style" aria-label="选择音乐风格">
               <option value="">默认风格</option>
               <option value="pop">流行 Pop</option>
               <option value="rock">摇滚 Rock</option>
@@ -112,7 +130,7 @@
 
           <div class="config-item">
             <label>节奏 BPM</label>
-            <select id="music-bpm">
+            <select id="music-bpm" aria-label="选择节奏 BPM">
               <option value="">自动</option>
               <option value="慢速 (60-80)">慢速 (60-80)</option>
               <option value="中速 (90-120)">中速 (90-120)</option>
@@ -123,7 +141,7 @@
 
           <div class="config-item">
             <label>调式</label>
-            <select id="music-key">
+            <select id="music-key" aria-label="选择调式">
               <option value="">自动</option>
               <option value="C大调">C 大调</option>
               <option value="C小调">C 小调</option>
@@ -137,7 +155,7 @@
 
           <div class="config-item">
             <label>时长</label>
-            <select id="music-duration">
+            <select id="music-duration" aria-label="选择时长">
               <option value="">自动</option>
               <option value="30秒">30 秒</option>
               <option value="1分钟">1 分钟</option>
@@ -204,8 +222,14 @@
             主题 / 描述
             <span class="hint">描述歌曲想要表达的情感或故事</span>
           </label>
-          <textarea id="lyrics-prompt" rows="4" maxlength="1000" placeholder="例如：一首关于夏日分手的抒情歌曲，带有遗憾和释然的情感"></textarea>
+<textarea id="lyrics-prompt" rows="8" maxlength="1000" placeholder="例如：一首关于夏日分手的抒情歌曲，带有遗憾和释然的情感" aria-required="true" aria-describedby="lyrics-hint lyrics-count"></textarea>
           <div class="char-count"><span id="lyrics-char">0</span> / 1000</div>
+          <div class="prompt-examples">
+            <span class="examples-label">示例:</span>
+            <button class="example-chip" data-target="lyrics-prompt" data-text="一首关于夏日分手的抒情歌曲，带有遗憾和释然的情感">夏日分手</button>
+            <button class="example-chip" data-target="lyrics-prompt" data-text="写给远方挚友的歌，回忆青春岁月，温暖又略带感伤">挚友回忆</button>
+            <button class="example-chip" data-target="lyrics-prompt" data-text="为梦想奋斗的励志歌词，适合毕业季，充满希望">毕业励志</button>
+          </div>
         </div>
 
         <div class="config-grid">
@@ -292,8 +316,14 @@
             封面描述
             <span class="hint">描述想要的封面风格、颜色、元素等</span>
           </label>
-          <textarea id="cover-prompt" rows="4" maxlength="500" placeholder="例如：一幅梦幻风格的音乐专辑封面，粉紫色渐变天空，未来感城市剪影"></textarea>
+          <textarea id="cover-prompt" rows="8" maxlength="500" placeholder="例如：一幅梦幻风格的音乐专辑封面，粉紫色渐变天空，未来感城市剪影" aria-required="true" aria-describedby="cover-hint cover-count"></textarea>
           <div class="char-count"><span id="cover-char">0</span> / 500</div>
+          <div class="prompt-examples">
+            <span class="examples-label">示例:</span>
+            <button class="example-chip" data-target="cover-prompt" data-text="一幅梦幻风格的音乐专辑封面，粉紫色渐变天空，未来感城市剪影">梦幻城市</button>
+            <button class="example-chip" data-target="cover-prompt" data-text="极简几何风格封面，黑白对比，金色线条点缀，现代艺术感">极简几何</button>
+            <button class="example-chip" data-target="cover-prompt" data-text="赛博朋克风格，霓虹灯管，雨中街道，电子音乐氛围">赛博朋克</button>
+          </div>
         </div>
 
         <div class="config-grid">
@@ -385,12 +415,12 @@
               </svg>
               <span class="drop-hint">将音频文件拖到此处，或 <label for="voice-audio-file" class="drop-link">点击上传</label></span>
               <span class="drop-formats">MP3 / WAV / FLAC / AAC / OGG</span>
-              <input type="file" id="voice-audio-file" accept="audio/*" hidden />
+              <input type="file" id="voice-audio-file" accept="audio/*" hidden aria-label="选择音频文件" />
               <span id="voice-file-name" class="file-name-display"></span>
             </div>
           </div>
           <div id="voice-source-url" class="source-panel" hidden>
-            <input type="url" id="voice-audio-url" placeholder="https://... 音频直链或网易云等平台链接" />
+            <input type="url" id="voice-audio-url" placeholder="https://... 音频直链或网易云等平台链接" aria-label="音频链接" />
           </div>
         </div>
 
@@ -399,8 +429,14 @@
             翻唱描述
             <span class="hint">描述想要的目标音色和风格</span>
           </label>
-          <textarea id="voice-prompt" rows="3" maxlength="500" placeholder="例如：磁性低沉的女声，温柔抒情风格，略带沙哑"></textarea>
+          <textarea id="voice-prompt" rows="6" maxlength="500" placeholder="例如：磁性低沉的女声，温柔抒情风格，略带沙哑" aria-describedby="voice-hint voice-count"></textarea>
           <div class="char-count"><span id="voice-char">0</span> / 500</div>
+          <div class="prompt-examples">
+            <span class="examples-label">示例:</span>
+            <button class="example-chip" data-target="voice-prompt" data-text="磁性低沉的女声，温柔抒情风格，略带沙哑，适合情歌翻唱">沙哑女声</button>
+            <button class="example-chip" data-target="voice-prompt" data-text="清亮少年音，活泼俏皮，带点日系动漫风格">少年音</button>
+            <button class="example-chip" data-target="voice-prompt" data-text="成熟稳重男声，欧美流行风格，富有磁性魅力">欧美男声</button>
+          </div>
         </div>
 
         <div class="config-grid">
@@ -479,63 +515,73 @@
       <div class="card">
         <div class="input-group">
           <label>输入文本 <span class="hint">要转换的文本内容</span></label>
-          <textarea id="speech-text" rows="5" maxlength="2000" placeholder="例如：你好，欢迎使用语音合成功能，我可以帮你把文字转换成自然流畅的语音。"></textarea>
+          <textarea id="speech-text" rows="8" maxlength="2000" placeholder="例如：你好，欢迎使用语音合成功能，我可以帮你把文字转换成自然流畅的语音。" aria-required="true" aria-describedby="speech-hint speech-count"></textarea>
           <div class="char-count"><span id="speech-char">0</span> / 2000</div>
+          <div class="prompt-examples">
+            <span class="examples-label">示例:</span>
+            <button class="example-chip" data-target="speech-text" data-text="你好，欢迎使用语音合成功能，我可以帮你把文字转换成自然流畅的语音。">欢迎语</button>
+            <button class="example-chip" data-target="speech-text" data-text="春眠不觉晓，处处闻啼鸟。夜来风雨声，花落知多少。">唐诗</button>
+            <button class="example-chip" data-target="speech-text" data-text="在这个快节奏的时代，我们常常忘记停下脚步，聆听内心的声音。今天，让我们一起慢下来，感受生活的美好。">治愈文案</button>
+          </div>
         </div>
 
-        <div class="config-grid">
-          <div class="config-item">
-            <label>音色选择</label>
-            <select id="speech-voice">
-              <option value="male-qn-qingse">清朗男声</option>
-              <option value="female-tianmei">甜妹</option>
-              <option value="Chinese (Mandarin)_Lyrical_Voice">抒情女声</option>
-              <option value="Chinese (Mandarin)_HK_Flight_Attendant">港航乘务员</option>
-              <option value="English_Graceful_Lady">优雅女士</option>
-              <option value="English_Insightful_Speaker">洞察演说家</option>
-              <option value="English_radiant_girl">阳光女孩</option>
-              <option value="English_Persuasive_Man">说服力男人</option>
-              <option value="Japanese_Whisper_Belle">密语Belle</option>
-              <option value="korean_female">韩语女声</option>
-              <option value="korean_male">韩语男声</option>
-              <option value="spanish_female">西班牙女声</option>
-              <option value="french_female">法语女声</option>
-              <option value="german_female">德语女声</option>
-            </select>
+        <div class="speech-config-row">
+          <div class="speech-selects">
+            <div class="config-item">
+              <label>音色选择</label>
+              <select id="speech-voice" aria-label="选择音色">
+                <option value="male-qn-qingse">清朗男声</option>
+                <option value="female-tianmei">甜妹</option>
+                <option value="Chinese (Mandarin)_Lyrical_Voice">抒情女声</option>
+                <option value="Chinese (Mandarin)_HK_Flight_Attendant">港航乘务员</option>
+                <option value="English_Graceful_Lady">优雅女士</option>
+                <option value="English_Insightful_Speaker">洞察演说家</option>
+                <option value="English_radiant_girl">阳光女孩</option>
+                <option value="English_Persuasive_Man">说服力男人</option>
+                <option value="Japanese_Whisper_Belle">密语Belle</option>
+                <option value="korean_female">韩语女声</option>
+                <option value="korean_male">韩语男声</option>
+                <option value="spanish_female">西班牙女声</option>
+                <option value="french_female">法语女声</option>
+                <option value="german_female">德语女声</option>
+              </select>
+            </div>
+            <div class="config-item">
+              <label>情绪风格</label>
+              <select id="speech-emotion" aria-label="选择情绪风格">
+                <option value="happy">😊 高兴</option>
+                <option value="sad">😢 悲伤</option>
+                <option value="angry">😠 愤怒</option>
+                <option value="fearful">😨 害怕</option>
+                <option value="disgusted">😒 厌恶</option>
+                <option value="surprised">😮 惊讶</option>
+                <option value="calm">😌 中性</option>
+                <option value="fluent">🎭 生动</option>
+                <option value="whisper">🤫 低语</option>
+              </select>
+            </div>
+            <div class="config-item">
+              <label>输出格式</label>
+              <select id="speech-format">
+                <option value="mp3">MP3</option>
+                <option value="wav">WAV</option>
+                <option value="pcm">PCM</option>
+              </select>
+            </div>
           </div>
-          <div class="config-item">
-            <label>情绪风格</label>
-            <select id="speech-emotion">
-              <option value="happy">😊 高兴</option>
-              <option value="sad">😢 悲伤</option>
-              <option value="angry">😠 愤怒</option>
-              <option value="fearful">😨 害怕</option>
-              <option value="disgusted">😒 厌恶</option>
-              <option value="surprised">😮 惊讶</option>
-              <option value="calm">😌 中性</option>
-              <option value="fluent">🎭 生动</option>
-              <option value="whisper">🤫 低语</option>
-            </select>
-          </div>
-          <div class="config-item">
-            <label>语速 <span id="speed-val">1.0x</span></label>
-            <input type="range" id="speech-speed" min="0.5" max="2.0" step="0.1" value="1.0">
-          </div>
-          <div class="config-item">
-            <label>音调 <span id="pitch-val">1.0</span></label>
-            <input type="range" id="speech-pitch" min="0.5" max="2.0" step="0.1" value="1.0">
-          </div>
-          <div class="config-item">
-            <label>音量 <span id="vol-val">50%</span></label>
-            <input type="range" id="speech-vol" min="0" max="100" step="5" value="50">
-          </div>
-          <div class="config-item">
-            <label>输出格式</label>
-            <select id="speech-format">
-              <option value="mp3">MP3</option>
-              <option value="wav">WAV</option>
-              <option value="pcm">PCM</option>
-            </select>
+          <div class="speech-sliders">
+            <div class="config-item">
+              <label>语速 <span id="speed-val">1.0x</span></label>
+              <input type="range" id="speech-speed" min="0.5" max="2.0" step="0.1" value="1.0">
+            </div>
+            <div class="config-item">
+              <label>音调 <span id="pitch-val">1.0</span></label>
+              <input type="range" id="speech-pitch" min="0.5" max="2.0" step="0.1" value="1.0">
+            </div>
+            <div class="config-item">
+              <label>音量 <span id="vol-val">50%</span></label>
+              <input type="range" id="speech-vol" min="0" max="100" step="5" value="50">
+            </div>
           </div>
         </div>
 
@@ -562,7 +608,7 @@
         <p>与 MiniMax M2.7 进行智能对话</p>
       </div>
 
-      <div class="card">
+      <div class="card chat-card">
         <div class="chat-container">
           <div class="chat-messages" id="chat-messages">
             <div class="chat-message chatbot">
@@ -574,13 +620,20 @@
           </div>
 
           <div class="chat-input-area">
-            <div class="chat-model-select">
-              <select id="chat-model">
-                <option value="MiniMax-M2.7">MiniMax-M2.7</option>
-                <option value="MiniMax-M2.7-highspeed">MiniMax-M2.7-高速</option>
-              </select>
-            </div>
             <div class="chat-input-row">
+              <div class="chat-model-select custom-dropdown" id="chat-model-dropdown">
+                <div class="dropdown-trigger">
+                  <span class="dropdown-value">M2.7</span>
+                  <svg class="dropdown-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                </div>
+                <div class="dropdown-menu" hidden>
+                  <div class="dropdown-option active" data-value="MiniMax-M2.7">M2.7</div>
+                  <div class="dropdown-option" data-value="MiniMax-M2.7-highspeed">M2.7-高速</div>
+                </div>
+                <input type="hidden" id="chat-model" value="MiniMax-M2.7">
+              </div>
               <textarea id="chat-input" rows="1" placeholder="输入消息..."></textarea>
               <button class="btn btn-primary" id="btn-chat-send">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -604,16 +657,6 @@
   </button>
 </div>
 
-<!-- Loading Overlay (top-right toast) -->
-<div id="loading-overlay" class="loading-overlay" hidden>
-  <div class="loading-spinner"></div>
-  <div class="loading-text" id="loading-text">正在生成...</div>
-  <div class="loading-progress-bar">
-    <div class="loading-progress-fill" id="loading-progress-fill"></div>
-  </div>
-  <div class="loading-percent" id="loading-percent">0%</div>
-</div>
-
 <!-- Toast Container -->
 <div id="toast-container" class="toast-container"></div>
 
@@ -628,6 +671,3 @@
 <script src="/js/app.js"></script>
 </body>
 </html>
-logout
-logout
-logout

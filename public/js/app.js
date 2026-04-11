@@ -35,26 +35,18 @@
   }
 
   // ============================================
-  //  Loading Overlay
+  //  Loading Overlay (disabled)
   // ============================================
   function showLoading(text = '正在生成...', initialProgress = 0) {
-    const overlay = $('loading-overlay');
-    $('loading-text').textContent = text;
-    $('loading-progress-fill').style.width = initialProgress + '%';
-    $('loading-percent').textContent = initialProgress + '%';
-    overlay.classList.add('show');
-    overlay.removeAttribute('hidden');
+    // Loading overlay removed - use inline progress instead
   }
 
-  function updateLoading(progress) {
-    $('loading-progress-fill').style.width = progress + '%';
-    $('loading-percent').textContent = Math.round(progress) + '%';
+  function updateLoadingProgress(progress) {
+    // Loading overlay removed - use inline progress instead
   }
 
   function hideLoading() {
-    const overlay = $('loading-overlay');
-    overlay.classList.remove('show');
-    setTimeout(() => overlay.setAttribute('hidden', ''), 400);
+    // Loading overlay removed - use inline progress instead
   }
 
   // ============================================
@@ -255,19 +247,90 @@
   // ============================================
   //  Content Generators (thin wrappers)
   // ============================================
-  function generateMusic() {
-    generateContent({
-      apiEndpoint: '/api/generate/music',
-      domIds: { prompt: 'music-prompt', style: 'music-style', bpm: 'music-bpm', key: 'music-key', duration: 'music-duration' },
-      resultTab: 'music',
-      loadingText: '正在生成音乐...',
-      successMessage: '音乐生成成功！',
-      onSuccess: data => {
-        $('music-audio').src = data.audio_url || data.url || '';
-        $('music-duration-info').textContent = data.duration || '';
-        $('music-model-info').textContent = data.model ? `模型: ${data.model}` : '';
-      },
-    });
+  async function generateMusic() {
+    const prompt = $('music-prompt')?.value?.trim();
+    if (!prompt) { showToast('请输入歌词或描述', 'error'); return; }
+
+    const btn = $('btn-generate-music');
+    const resultEl = $('music-result');
+
+    if (btn) btn.disabled = true;
+    if (resultEl) resultEl.setAttribute('hidden', '');
+
+    const style = $('music-style')?.value || '';
+    const bpm = $('music-bpm')?.value || '';
+    const key = $('music-key')?.value || '';
+    const duration = $('music-duration')?.value || '';
+
+    startInlineProgress('music', 'music-progress-fill', 'music-progress-text');
+
+    try {
+      // 1. 启动音乐生成任务
+      const res = await fetch('/api/generate/music', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, style, bpm, key, duration }),
+      });
+
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      const taskId = data.taskId;
+      if (!taskId) throw new Error('未返回任务ID');
+
+      // 2. 轮询检查任务状态
+      const checkStatus = async () => {
+        const statusRes = await fetch('/api/music/status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ taskId }),
+        });
+        return statusRes.json();
+      };
+
+      // 轮询直到完成
+      let statusData;
+      let attempts = 0;
+      const maxAttempts = 60; // 最多轮询60次
+
+      while (attempts < maxAttempts) {
+        await new Promise(r => setTimeout(r, 2000)); // 每2秒检查一次
+        statusData = await checkStatus();
+
+        if (statusData.status === 'completed') {
+          break;
+        } else if (statusData.status === 'error') {
+          throw new Error(statusData.error || '生成失败');
+        }
+        attempts++;
+      }
+
+      if (attempts >= maxAttempts) {
+        throw new Error('生成超时，请稍后查看结果');
+      }
+
+      // 3. 显示结果
+      stopInlineProgress();
+      $('music-audio').src = statusData.audio_url || statusData.url || '';
+      // 转换毫秒为秒显示
+      const durationMs = parseInt(statusData.duration) || 0;
+      const durationSec = (durationMs / 1000).toFixed(1);
+      $('music-duration-info').textContent = durationMs > 0 ? `${durationSec}秒` : '';
+      $('music-model-info').textContent = '模型: music-2.6';
+
+      if (resultEl) {
+        resultEl.removeAttribute('hidden');
+        resultEl.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+      }
+      loadQuota();
+      showToast('音乐生成成功！', 'success');
+
+    } catch (err) {
+      stopInlineProgress();
+      showToast(err.message || '生成失败，请重试', 'error');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   }
 
   function generateLyrics() {
@@ -441,11 +504,12 @@
     const btn = $('btn-generate-voice');
     const resultEl = $('covervoice-result');
     const resultTab = 'covervoice';
+    const progressTab = 'voice'; // HTML中使用voice-generating而不是covervoice-generating
 
     if (btn) btn.disabled = true;
     if (resultEl) resultEl.setAttribute('hidden', '');
 
-    startInlineProgress(resultTab, `${resultTab}-progress-fill`, `${resultTab}-progress-text`);
+    startInlineProgress(progressTab, `${progressTab}-progress-fill`, `${progressTab}-progress-text`);
 
     try {
       const config = {
@@ -538,14 +602,92 @@
   // ============================================
   let chatHistory = [];
 
-  function addChatMessage(role, content) {
+  // Simple Markdown parser for chat messages
+  function parseMarkdown(text) {
+    return text
+      // Bold: **text** or __text__
+      .replace(/\*\*(.+?)\*\*|__(.+?)__/g, '<strong>$1$2</strong>')
+      // Italic: *text* or _text_
+      .replace(/\*(.+?)\*|_(.+?)_/g, '<em>$1$2</em>')
+      // Inline code: `text`
+      .replace(/`(.+?)`/g, '<code style="background:var(--bg-secondary);padding:2px 6px;border-radius:4px;font-family:var(--font-mono);font-size:0.9em;color:var(--accent-cyan);">$1</code>')
+      // Strikethrough: ~~text~~
+      .replace(/~~(.+?)~~/g, '<del>$1</del>')
+      // Links: [text](url)
+      .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" style="color:var(--accent-cyan);text-decoration:underline;">$1</a>');
+  }
+
+  function addChatMessage(role, content, isStreaming = false) {
     const container = $('chat-messages');
+    const chatContainer = document.querySelector('.chat-container');
     const avatar = role === 'user' ? '😀' : '🤖';
     const msgDiv = document.createElement('div');
+
+    // Expand chat container when user sends first message
+    if (role === 'user' && chatContainer && !chatContainer.classList.contains('has-messages')) {
+      chatContainer.classList.add('has-messages');
+      // Also update parent section layout
+      const tabChat = document.getElementById('tab-chat');
+      if (tabChat) tabChat.classList.add('has-messages');
+    }
     msgDiv.className = `chat-message ${role}`;
-    msgDiv.innerHTML = `<div class="message-avatar">${avatar}</div><div class="message-content"><p>${escapeHtml(content)}</p></div>`;
+
+    if (role === 'chatbot' && isStreaming) {
+      // Create streaming message container
+      msgDiv.innerHTML = `<div class="message-avatar">${avatar}</div><div class="message-content"><p class="streaming-content" style="margin:0;line-height:1.5;white-space:normal;word-break:break-word;color:var(--fg-primary);"></p></div>`;
+      container.appendChild(msgDiv);
+      container.scrollTop = container.scrollHeight;
+      return { msgDiv, contentEl: msgDiv.querySelector('.streaming-content') };
+    }
+
+    // Parse markdown then handle line breaks
+    const formattedContent = parseMarkdown(escapeHtml(content)).replace(/\n/g, '<br>');
+    msgDiv.innerHTML = `<div class="message-avatar">${avatar}</div><div class="message-content"><p style="margin:0;line-height:1.5;white-space:normal;word-break:break-word;color:var(--fg-primary);">${formattedContent}</p></div>`;
     container.appendChild(msgDiv);
     container.scrollTop = container.scrollHeight;
+    return null;
+  }
+
+  // Stream text with typing effect
+  async function streamChatMessage(content, onComplete) {
+    const { contentEl, msgDiv } = addChatMessage('chatbot', '', true);
+    const container = $('chat-messages');
+
+    const chars = content.split('');
+    let currentText = '';
+    const batchSize = 3; // Characters per frame
+    const delay = 15; // ms between frames
+
+    return new Promise((resolve) => {
+      let index = 0;
+
+      function typeNext() {
+        if (index >= chars.length) {
+          // Streaming complete - finalize content
+          const finalContent = parseMarkdown(escapeHtml(content)).replace(/\n/g, '<br>');
+          contentEl.innerHTML = finalContent;
+          contentEl.classList.remove('streaming-content');
+          container.scrollTop = container.scrollHeight;
+          if (onComplete) onComplete(content);
+          resolve(content);
+          return;
+        }
+
+        // Add next batch of characters
+        const batch = chars.slice(index, index + batchSize);
+        currentText += batch.join('');
+
+        // Show raw text during streaming (no markdown parsing for performance)
+        contentEl.textContent = currentText;
+
+        index += batchSize;
+        container.scrollTop = container.scrollHeight;
+
+        setTimeout(typeNext, delay);
+      }
+
+      typeNext();
+    });
   }
 
   function setChatLoading(loading) {
@@ -602,9 +744,11 @@
       if (data.error) {
         addChatMessage('chatbot', '抱歉，发生了错误：' + data.error);
       } else {
-        addChatMessage('chatbot', data.reply);
-        chatHistory.push({ role: 'assistant', content: data.reply });
-        loadQuota();
+        // Stream the response with typing effect
+        await streamChatMessage(data.reply, (finalContent) => {
+          chatHistory.push({ role: 'assistant', content: finalContent });
+          loadQuota();
+        });
       }
     } catch {
       addChatMessage('chatbot', '网络错误，请稍后重试。');
@@ -641,9 +785,11 @@
       if (data.error) {
         addChatMessage('chatbot', '抱歉，发生了错误：' + data.error);
       } else {
-        addChatMessage('chatbot', data.reply);
-        chatHistory.push({ role: 'assistant', content: data.reply });
-        loadQuota();
+        // Stream the response with typing effect
+        await streamChatMessage(data.reply, (finalContent) => {
+          chatHistory.push({ role: 'assistant', content: finalContent });
+          loadQuota();
+        });
       }
     } catch {
       addChatMessage('chatbot', '网络错误，请稍后重试。');
@@ -658,6 +804,83 @@
     } else {
       isChatGenerating = false;
     }
+  }
+
+  // ============================================
+  //  Custom Dropdown
+  // ============================================
+  function initCustomDropdown(dropdownId, inputId) {
+    const dropdown = $(dropdownId);
+    if (!dropdown) return;
+
+    const trigger = dropdown.querySelector('.dropdown-trigger');
+    const menu = dropdown.querySelector('.dropdown-menu');
+    const options = dropdown.querySelectorAll('.dropdown-option');
+    const valueSpan = dropdown.querySelector('.dropdown-value');
+    const hiddenInput = $(inputId);
+
+    if (!trigger || !menu) return;
+
+    // Toggle dropdown
+    trigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = dropdown.classList.contains('open');
+
+      // Close all other dropdowns
+      document.querySelectorAll('.custom-dropdown.open').forEach(d => {
+        if (d.id !== dropdownId) {
+          d.classList.remove('open');
+          d.querySelector('.dropdown-menu')?.setAttribute('hidden', '');
+        }
+      });
+
+      if (isOpen) {
+        dropdown.classList.remove('open');
+        menu.setAttribute('hidden', '');
+      } else {
+        dropdown.classList.add('open');
+        menu.removeAttribute('hidden');
+      }
+    });
+
+    // Option selection
+    options.forEach(option => {
+      option.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const value = option.dataset.value;
+        const text = option.textContent;
+
+        // Update hidden input
+        if (hiddenInput) hiddenInput.value = value;
+
+        // Update display
+        if (valueSpan) valueSpan.textContent = text;
+
+        // Update active state
+        options.forEach(o => o.classList.remove('active'));
+        option.classList.add('active');
+
+        // Close dropdown
+        dropdown.classList.remove('open');
+        menu.setAttribute('hidden', '');
+      });
+    });
+
+    // Close on outside click
+    document.addEventListener('click', () => {
+      if (dropdown.classList.contains('open')) {
+        dropdown.classList.remove('open');
+        menu.setAttribute('hidden', '');
+      }
+    });
+
+    // Close on escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && dropdown.classList.contains('open')) {
+        dropdown.classList.remove('open');
+        menu.setAttribute('hidden', '');
+      }
+    });
   }
 
   // ============================================
@@ -745,10 +968,37 @@
 
     // Char counters
     [['music-prompt', 'music-char'], ['lyrics-prompt', 'lyrics-char'],
-     ['cover-prompt', 'cover-char'], ['voice-prompt', 'voice-char']].forEach(([id, counterId]) => {
+     ['cover-prompt', 'cover-char'], ['voice-prompt', 'voice-char'], ['speech-text', 'speech-char']].forEach(([id, counterId]) => {
       const el = $(id);
       const counter = $(counterId);
       if (el && counter) el.addEventListener('input', () => { counter.textContent = el.value.length; });
+    });
+
+    // Example chips - click to fill input
+    document.querySelectorAll('.example-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const targetId = chip.dataset.target;
+        const text = chip.dataset.text;
+        const targetInput = $(targetId);
+        const counterId = targetId === 'music-prompt' ? 'music-char' :
+                         targetId === 'lyrics-prompt' ? 'lyrics-char' :
+                         targetId === 'cover-prompt' ? 'cover-char' :
+                         targetId === 'voice-prompt' ? 'voice-char' :
+                         targetId === 'speech-text' ? 'speech-char' : null;
+
+        if (targetInput) {
+          targetInput.value = text;
+          targetInput.focus();
+          // Update counter if exists
+          if (counterId) {
+            const counter = $(counterId);
+            if (counter) counter.textContent = text.length;
+          }
+          // Visual feedback
+          chip.style.transform = 'scale(0.95)';
+          setTimeout(() => chip.style.transform = '', 150);
+        }
+      });
     });
 
     // 文件上传选中后显示文件名
@@ -771,6 +1021,12 @@
     // 拖拽上传
     const dropZone = $('voice-drop-zone');
     if (dropZone) {
+      // 点击区域触发文件选择
+      dropZone.addEventListener('click', e => {
+        // 避免点击label时重复触发
+        if (e.target.tagName === 'LABEL' || e.target.closest('label')) return;
+        $('voice-audio-file')?.click();
+      });
       dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
       dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
       dropZone.addEventListener('drop', e => {
@@ -852,16 +1108,258 @@
     $('chat-input')?.addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.ctrlKey && !e.shiftKey && !e.altKey) { e.preventDefault(); sendChatMessage(); }
     });
+
+    // Custom dropdown for chat model
+    initCustomDropdown('chat-model-dropdown', 'chat-model');
+
+    // Convert all config selects to custom dropdowns
+    convertAllSelectsToCustomDropdowns();
   }
 
+  // ============================================
+  //  Convert Selects to Custom Dropdowns
+  // ============================================
+  function convertAllSelectsToCustomDropdowns() {
+    // Find all selects that need to be converted
+    const selectsToConvert = [
+      'music-style', 'music-bpm', 'music-key', 'music-duration',
+      'lyrics-style', 'lyrics-structure',
+      'cover-ratio', 'cover-style',
+      'voice-timbre', 'voice-pitch',
+      'speech-voice', 'speech-emotion', 'speech-format'
+    ];
+
+    selectsToConvert.forEach(selectId => {
+      const select = $(selectId);
+      if (!select) return;
+      if (select.closest('.custom-dropdown-sm')) return; // Already converted
+
+      const parent = select.parentElement;
+      if (!parent) return;
+
+      const options = Array.from(select.options);
+      const selectedValue = select.value;
+      const selectedText = options.find(o => o.value === selectedValue)?.text || options[0]?.text || '';
+
+      // Build custom dropdown HTML
+      const dropdownId = `${selectId}-dropdown`;
+      const dropdownHTML = `
+        <div class="custom-dropdown-sm" id="${dropdownId}">
+          <div class="dropdown-trigger">
+            <span class="dropdown-value">${selectedText}</span>
+            <svg class="dropdown-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </div>
+          <div class="dropdown-menu" hidden>
+            ${options.map(opt => `<div class="dropdown-option ${opt.value === selectedValue ? 'active' : ''}" data-value="${opt.value}">${opt.text}</div>`).join('')}
+          </div>
+        </div>
+      `;
+
+      // Replace select with custom dropdown
+      select.style.display = 'none'; // Hide original select
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = dropdownHTML;
+      parent.insertBefore(wrapper.firstElementChild, select);
+
+      // Initialize the custom dropdown
+      initCustomDropdownSm(dropdownId, selectId);
+    });
+  }
+
+  // Initialize small dropdown (for config items)
+  function initCustomDropdownSm(dropdownId, inputId) {
+    const dropdown = document.getElementById(dropdownId);
+    if (!dropdown) return;
+
+    const trigger = dropdown.querySelector('.dropdown-trigger');
+    const menu = dropdown.querySelector('.dropdown-menu');
+    const options = dropdown.querySelectorAll('.dropdown-option');
+    const valueSpan = dropdown.querySelector('.dropdown-value');
+    const hiddenInput = document.getElementById(inputId);
+
+    if (!trigger || !menu) return;
+
+    // Toggle dropdown
+    trigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = dropdown.classList.contains('open');
+
+      // Close all other dropdowns
+      document.querySelectorAll('.custom-dropdown-sm.open, .custom-dropdown.open').forEach(d => {
+        if (d.id !== dropdownId) {
+          d.classList.remove('open');
+          d.querySelector('.dropdown-menu')?.setAttribute('hidden', '');
+        }
+      });
+
+      if (isOpen) {
+        dropdown.classList.remove('open');
+        menu.setAttribute('hidden', '');
+      } else {
+        dropdown.classList.add('open');
+        menu.removeAttribute('hidden');
+      }
+    });
+
+    // Option selection
+    options.forEach(option => {
+      option.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const value = option.dataset.value;
+        const text = option.textContent;
+
+        // Update hidden select
+        if (hiddenInput) {
+          hiddenInput.value = value;
+          // Trigger change event
+          hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        // Update display
+        if (valueSpan) valueSpan.textContent = text;
+
+        // Update active state
+        options.forEach(o => o.classList.remove('active'));
+        option.classList.add('active');
+
+        // Close dropdown
+        dropdown.classList.remove('open');
+        menu.setAttribute('hidden', '');
+      });
+    });
+
+    // Close on outside click
+    document.addEventListener('click', () => {
+      if (dropdown.classList.contains('open')) {
+        dropdown.classList.remove('open');
+        menu.setAttribute('hidden', '');
+      }
+    });
+
+    // Close on escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && dropdown.classList.contains('open')) {
+        dropdown.classList.remove('open');
+        menu.setAttribute('hidden', '');
+      }
+    });
+  }
+
+  // Mobile sidebar toggle
+  function initMobileSidebar() {
+    const toggle = $('sidebar-toggle');
+    const sidebar = document.querySelector('.sidebar');
+    const overlay = $('sidebar-overlay');
+
+    if (!toggle || !sidebar) return;
+
+    function openSidebar() {
+      sidebar.classList.add('open');
+      overlay?.classList.add('show');
+      toggle.setAttribute('aria-expanded', 'true');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeSidebar() {
+      sidebar.classList.remove('open');
+      overlay?.classList.remove('show');
+      toggle.setAttribute('aria-expanded', 'false');
+      document.body.style.overflow = '';
+    }
+
+    toggle.addEventListener('click', () => {
+      if (sidebar.classList.contains('open')) {
+        closeSidebar();
+      } else {
+        openSidebar();
+      }
+    });
+
+    overlay?.addEventListener('click', closeSidebar);
+
+    // Close sidebar when clicking a nav item on mobile
+    $$('.nav-item').forEach(item => {
+      item.addEventListener('click', () => {
+        if (window.innerWidth <= 767) {
+          closeSidebar();
+        }
+      });
+    });
+
+    // Handle window resize
+    window.addEventListener('resize', () => {
+      if (window.innerWidth > 767) {
+        closeSidebar();
+      }
+    });
+  }
+
+  // Form validation helpers
+  function showInputError(inputId, message) {
+    const input = $(inputId);
+    if (!input) return;
+    input.classList.add('input-error');
+    input.setAttribute('aria-invalid', 'true');
+
+    // Remove existing error message
+    const existingError = input.parentElement.querySelector('.input-error-message');
+    if (existingError) existingError.remove();
+
+    // Add error message
+    const errorEl = document.createElement('div');
+    errorEl.className = 'input-error-message';
+    errorEl.textContent = message;
+    errorEl.setAttribute('role', 'alert');
+    input.parentElement.appendChild(errorEl);
+
+    // Focus the input
+    input.focus();
+  }
+
+  function clearInputError(inputId) {
+    const input = $(inputId);
+    if (!input) return;
+    input.classList.remove('input-error');
+    input.removeAttribute('aria-invalid');
+    const errorEl = input.parentElement.querySelector('.input-error-message');
+    if (errorEl) errorEl.remove();
+  }
+
+  // Tab switching with animation
+  function switchTab(tab) {
+    const currentContent = document.querySelector('.tab-content.active');
+    const newContent = $(`tab-${tab}`);
+    const currentNav = document.querySelector('.nav-item.active');
+    const newNav = document.querySelector(`.nav-item[data-tab="${tab}"]`);
+
+    if (newContent && currentContent !== newContent) {
+      // Animate out current
+      currentContent?.classList.add('tab-exit');
+      setTimeout(() => {
+        currentContent?.classList.remove('active', 'tab-exit');
+        // Animate in new
+        newContent.classList.add('tab-enter');
+        requestAnimationFrame(() => {
+          newContent.classList.add('active');
+          setTimeout(() => newContent.classList.remove('tab-enter'), 300);
+        });
+      }, 150);
+    }
+
+    // Update nav
+    currentNav?.classList.remove('active');
+    newNav?.classList.add('active');
+
+    currentTab = tab;
+  }
+
+  // Initialize
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
+    document.addEventListener('DOMContentLoaded', () => { init(); initMobileSidebar(); });
   } else {
     init();
+    initMobileSidebar();
   }
-
 })();
-logout
-logout
-logout
-logout
