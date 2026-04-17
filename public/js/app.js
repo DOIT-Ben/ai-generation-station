@@ -425,7 +425,7 @@
     tryPoll(0);
   }
 
-  function generateVoice() {
+  async function generateVoice() {
     const fileInput = $('voice-audio-file');
     const urlInput = $('voice-audio-url');
     const prompt = $('voice-prompt')?.value?.trim();
@@ -435,22 +435,22 @@
 
     if (activeTab === 'file' && fileInput?.files?.[0]) {
       if (!prompt) { showToast('请填写翻唱描述', 'error'); return; }
-      generateVoiceWithFile(fileInput.files[0], prompt);
+      await generateVoiceWithFile(fileInput.files[0], prompt);
     } else if (activeTab === 'url') {
       const audioUrl = urlInput?.value?.trim();
       if (!audioUrl) { showToast('请填写歌曲链接', 'error'); return; }
       if (!prompt) { showToast('请填写翻唱描述', 'error'); return; }
-      generateVoiceWithUrl(audioUrl, prompt);
+      await generateVoiceWithUrl(audioUrl, prompt);
     } else {
       // 默认行为：优先文件其次 URL
       const file = fileInput?.files?.[0];
       const audioUrl = urlInput?.value?.trim();
       if (file) {
         if (!prompt) { showToast('请填写翻唱描述', 'error'); return; }
-        generateVoiceWithFile(file, prompt);
+        await generateVoiceWithFile(file, prompt);
       } else if (audioUrl) {
         if (!prompt) { showToast('请填写翻唱描述', 'error'); return; }
-        generateVoiceWithUrl(audioUrl, prompt);
+        await generateVoiceWithUrl(audioUrl, prompt);
       } else {
         showToast('请上传音频文件或填写歌曲链接', 'error');
       }
@@ -486,25 +486,10 @@
     }
   }
 
-  function generateVoiceWithUrl(audioUrl, prompt) {
-    generateContent({
-      apiEndpoint: '/api/generate/voice',
-      domIds: { audio_url: 'voice-audio-url', prompt: 'voice-prompt', timbre: 'voice-timbre', pitch: 'voice-pitch' },
-      resultTab: 'covervoice',
-      loadingText: '正在处理翻唱...',
-      successMessage: '歌声翻唱完成！',
-      onSuccess: data => {
-        $('voice-audio').src = data.audio_url || data.url || '';
-        $('voice-meta').textContent = data.model ? `模型: ${data.model}` : '';
-      },
-    });
-  }
-
-  async function doVoiceGenerate(audioUrl, prompt) {
+  async function generateVoiceWithUrl(audioUrl, prompt) {
     const btn = $('btn-generate-voice');
     const resultEl = $('covervoice-result');
-    const resultTab = 'covervoice';
-    const progressTab = 'voice'; // HTML中使用voice-generating而不是covervoice-generating
+    const progressTab = 'voice';
 
     if (btn) btn.disabled = true;
     if (resultEl) resultEl.setAttribute('hidden', '');
@@ -531,13 +516,135 @@
       }
 
       const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      
+      const taskId = data.taskId;
+      if (!taskId) throw new Error('未返回任务ID');
+
+      // 轮询检查任务状态
+      const checkStatus = async () => {
+        const statusRes = await fetch('/api/music-cover/status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ taskId }),
+        });
+        return statusRes.json();
+      };
+
+      // 轮询直到完成
+      let statusData;
+      let attempts = 0;
+      const maxAttempts = 60;
+
+      while (attempts < maxAttempts) {
+        await new Promise(r => setTimeout(r, 2000));
+        statusData = await checkStatus();
+
+        if (statusData.status === 'completed') {
+          break;
+        } else if (statusData.status === 'error') {
+          throw new Error(statusData.error || '生成失败');
+        }
+        attempts++;
+      }
+
+      if (attempts >= maxAttempts) {
+        throw new Error('生成超时，请稍后查看结果');
+      }
+
       stopInlineProgress();
 
-      $('voice-audio').src = data.audio_url || data.url || '';
-      $('voice-meta').textContent = data.model ? `模型: ${data.model}` : '';
+      $('voice-audio').src = statusData.url || '';
+      $('voice-meta').textContent = statusData.duration ? `时长: ${statusData.duration}s` : '';
 
       if (resultEl) { resultEl.removeAttribute('hidden'); resultEl.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' }); }
-      currentResult[resultTab] = data;
+      currentResult['covervoice'] = statusData;
+      loadQuota();
+      showToast('歌声翻唱完成！', 'success');
+
+    } catch (err) {
+      stopInlineProgress();
+      showToast(err.message || '生成失败，请重试', 'error');
+    } finally {
+      hideLoading();
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  async function doVoiceGenerate(audioUrl, prompt) {
+    const btn = $('btn-generate-voice');
+    const resultEl = $('covervoice-result');
+    const resultTab = 'covervoice';
+    const progressTab = 'voice';
+
+    if (btn) btn.disabled = true;
+    if (resultEl) resultEl.setAttribute('hidden', '');
+
+    startInlineProgress(progressTab, `${progressTab}-progress-fill`, `${progressTab}-progress-text`);
+
+    try {
+      const config = {
+        audio_url: audioUrl,
+        prompt,
+        timbre: $('voice-timbre')?.value || '',
+        pitch: $('voice-pitch')?.value || '',
+      };
+
+      const res = await fetch('/api/generate/voice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: '请求失败' }));
+        throw new Error(err.error || '生成失败');
+      }
+
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      
+      const taskId = data.taskId;
+      if (!taskId) throw new Error('未返回任务ID');
+
+      // 轮询检查任务状态
+      const checkStatus = async () => {
+        const statusRes = await fetch('/api/music-cover/status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ taskId }),
+        });
+        return statusRes.json();
+      };
+
+      // 轮询直到完成
+      let statusData;
+      let attempts = 0;
+      const maxAttempts = 60;
+
+      while (attempts < maxAttempts) {
+        await new Promise(r => setTimeout(r, 2000));
+        statusData = await checkStatus();
+
+        if (statusData.status === 'completed') {
+          break;
+        } else if (statusData.status === 'error') {
+          throw new Error(statusData.error || '生成失败');
+        }
+        attempts++;
+      }
+
+      if (attempts >= maxAttempts) {
+        throw new Error('生成超时，请稍后查看结果');
+      }
+
+      stopInlineProgress();
+
+      $('voice-audio').src = statusData.url || '';
+      $('voice-meta').textContent = statusData.duration ? `时长: ${statusData.duration}s` : '';
+
+      if (resultEl) { resultEl.removeAttribute('hidden'); resultEl.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' }); }
+      currentResult[resultTab] = statusData;
       loadQuota();
       showToast('歌声翻唱完成！', 'success');
 

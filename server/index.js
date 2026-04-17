@@ -217,69 +217,151 @@ function downloadFromUrl(fileUrl, outputPath) {
     });
 }
 
-// 处理歌声翻唱任务
+// 处理歌声翻唱任务 - 使用 /v1/music_generation 端点 (music-cover 模型)
 async function processCoverTask(task, maxAttempts = 60) {
-    const { taskId, outputFile } = task;
+    const { taskId, outputFile, audio_url, prompt, timbre, pitch } = task;
     
-    return new Promise((resolve, reject) => {
-        let attempts = 0;
-        
-        const poll = () => {
-            attempts++;
-            const options = {
-                hostname: API_HOST, port: 443,
-                path: `/v1/music_cover_result?task_id=${taskId}`, method: 'GET',
-                headers: { 'Authorization': `Bearer ${API_KEY}` }
+    return new Promise(async (resolve, reject) => {
+        try {
+            // 处理音频源：如果是本地路径，读取文件转为base64
+            let audioBase64 = null;
+            
+            // 从 /output/ 路径提取文件名，并从 OUTPUT_DIR 读取
+            if (audio_url && audio_url.startsWith('/output/')) {
+                const filename = path.basename(audio_url);
+                const localPath = path.join(OUTPUT_DIR, filename);
+                console.log('[Voice Cover] 尝试读取文件:', localPath);
+                if (fs.existsSync(localPath)) {
+                    const audioBuffer = fs.readFileSync(localPath);
+                    audioBase64 = audioBuffer.toString('base64');
+                    console.log('[Voice Cover] 读取成功, 大小:', audioBase64.length);
+                } else {
+                    console.error('[Voice Cover] 文件不存在:', localPath);
+                }
+            }
+            
+            if (!audioBase64) {
+                task.status = 'error';
+                task.error = '无法读取音频文件: ' + audio_url;
+                reject(new Error(task.error));
+                return;
+            }
+            
+            // 构建请求体 - 使用 music-cover 模型
+            const requestBody = {
+                model: 'music-cover',  // Token Plan 用户使用
+                prompt: prompt || '保持原曲风格',
+                audio_base64: audioBase64,
+                output_format: 'url',  // 返回 URL 便于下载
+                stream: false
             };
             
-            const req = https.request(options, (res) => {
-                let data = '';
-                res.on('data', chunk => data += chunk);
-                res.on('end', async () => {
+            const postData = JSON.stringify(requestBody);
+            console.log('[Voice Cover] 请求 /v1/music_generation, 模型: music-cover');
+            
+            const apiOptions = {
+                hostname: API_HOST, port: 443,
+                path: '/v1/music_generation', method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${API_KEY}`,
+                    'Content-Type': 'application/json',
+                    'Content-Length': Buffer.byteLength(postData)
+                }
+            };
+            
+            const apiReq = https.request(apiOptions, (apiRes) => {
+                let apiData = '';
+                apiRes.on('data', chunk => apiData += chunk);
+                apiRes.on('end', () => {
                     try {
-                        const response = JSON.parse(data);
+                        console.log('[Voice Cover] API 响应状态:', apiRes.statusCode);
                         
-                        if (response.data?.audio) {
-                            task.progress = 80;
-                            const buffer = Buffer.from(response.data.audio, 'base64');
-                            fs.writeFileSync(outputFile, buffer);
-                            task.status = 'completed';
+                        if (apiRes.statusCode !== 200) {
+                            task.status = 'error';
+                            task.error = `MiniMax API 错误: HTTP ${apiRes.statusCode}`;
+                            console.error('[Voice Cover] API 错误:', apiRes.statusCode, apiData.substring(0, 500));
+                            reject(new Error(task.error));
+                            return;
+                        }
+                        
+                        const response = JSON.parse(apiData);
+                        console.log('[Voice Cover] API 响应:', JSON.stringify(response, null, 2).substring(0, 500));
+                        
+                        // 检查 API 错误
+                        if (response.base_resp?.status_code !== 0) {
+                            task.status = 'error';
+                            task.error = response.base_resp?.status_msg || '翻唱请求失败';
+                            console.error('[Voice Cover] API 业务错误:', task.error);
+                            reject(new Error(task.error));
+                            return;
+                        }
+                        
+                        // 处理响应
+                        if (response.data?.status === 2) {
+                            // 同步完成，直接获取音频
                             task.progress = 100;
-                            task.url = `/output/${path.basename(outputFile)}`;
-                            resolve(task);
-                        } else if (response.status === 2 && response.data?.audio) {
-                            task.progress = 80;
-                            const buffer = Buffer.from(response.data.audio, 'base64');
-                            fs.writeFileSync(outputFile, buffer);
                             task.status = 'completed';
-                            task.progress = 100;
+                            
+                            // 保存音频文件
+                            if (response.data?.audio) {
+                                // hex 格式
+                                const buffer = Buffer.from(response.data.audio, 'hex');
+                                fs.writeFileSync(outputFile, buffer);
+                            } else if (response.data?.audio_url) {
+                                // url 格式，需要下载
+                                task.url = response.data.audio_url;
+                                // 下载音频
+                                downloadFile(response.data.audio_url, outputFile).then(() => {
+                                    task.url = `/output/${path.basename(outputFile)}`;
+                                    resolve(task);
+                                }).catch(err => {
+                                    task.status = 'error';
+                                    task.error = '下载音频失败: ' + err.message;
+                                    reject(err);
+                                });
+                                return;
+                            }
+                            
                             task.url = `/output/${path.basename(outputFile)}`;
+                            task.duration = response.extra_info?.music_duration || 0;
                             resolve(task);
-                        } else if (attempts < maxAttempts) {
-                            task.progress = Math.min(70, 10 + attempts * 5);
-                            setTimeout(poll, 3000);
+                        } else if (response.data?.status === 1) {
+                            // 异步处理，需要轮询（但文档说 music-cover 是同步返回）
+                            task.status = 'error';
+                            task.error = '翻唱任务需要异步处理，但当前不支持';
+                            reject(new Error(task.error));
                         } else {
                             task.status = 'error';
-                            task.error = 'Timeout';
-                            reject(new Error('Cover generation timeout'));
+                            task.error = '未知的响应状态';
+                            reject(new Error(task.error));
                         }
+                        
                     } catch (e) {
-                        if (attempts < maxAttempts) {
-                            setTimeout(poll, 3000);
-                        } else {
-                            task.status = 'error';
-                            task.error = e.message;
-                            reject(e);
-                        }
+                        console.error('[Voice Cover] 解析响应错误:', e.message);
+                        console.error('[Voice Cover] 原始响应:', apiData.substring(0, 500));
+                        task.status = 'error';
+                        task.error = '解析响应失败: ' + e.message;
+                        reject(e);
                     }
                 });
             });
-            req.on('error', reject);
-            req.end();
-        };
-        
-        // 等待几秒再开始轮询
-        setTimeout(poll, 5000);
+            
+            apiReq.on('error', (e) => {
+                console.error('[Voice Cover] 请求错误:', e.message);
+                task.status = 'error';
+                task.error = e.message;
+                reject(e);
+            });
+            
+            apiReq.write(postData);
+            apiReq.end();
+            
+        } catch (e) {
+            console.error('[Voice Cover] 任务错误:', e.message);
+            task.status = 'error';
+            task.error = e.message;
+            reject(e);
+        }
     });
 }
 
@@ -484,7 +566,7 @@ const routes = {
         const taskId = `cover_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         const outputFile = path.join(OUTPUT_DIR, `${taskId}.mp3`);
 
-        const task = { taskId, status: 'processing', progress: 0, outputFile, startedAt: Date.now() };
+        const task = { taskId, status: 'processing', progress: 0, outputFile, startedAt: Date.now(), audio_url, prompt, timbre, pitch };
         coverTasks.set(taskId, task);
 
         processCoverTask(task).catch(err => { task.status = 'error'; task.error = err.message; });
@@ -972,6 +1054,24 @@ const server = http.createServer(async (req, res) => {
     }
     
     if (!handler) {
+        // 处理 /output/ 路径 - 从 OUTPUT_DIR 提供文件
+        if (parsedUrl.pathname.startsWith('/output/')) {
+            const filename = path.basename(parsedUrl.pathname);
+            const filepath = path.join(OUTPUT_DIR, filename);
+            try {
+                const ext = path.extname(filepath);
+                const content = fs.readFileSync(filepath);
+                res.writeHead(200, { 'Content-Type': MIME_TYPES[ext] || 'text/plain' });
+                res.end(content);
+            } catch (e) {
+                console.error('[Serve Output] 文件未找到:', filepath);
+                res.writeHead(404);
+                res.end('File not found');
+            }
+            return;
+        }
+        
+        // 默认从 public 目录提供文件
         let filepath = parsedUrl.pathname === '/' ? '/index.html' : parsedUrl.pathname;
         filepath = path.join(__dirname, '..', 'public', filepath);
         try {
