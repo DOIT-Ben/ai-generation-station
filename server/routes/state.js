@@ -1,6 +1,10 @@
 const { parseCookies, sendJson, setCookie, clearCookie } = require('../lib/http');
 
 function createStateRoutes({ stateStore, sessionCookieName, authConfig }) {
+    function getPathParts(req) {
+        return String(req.url || '').split('?')[0].split('/').filter(Boolean);
+    }
+
     function getCurrentSession(req) {
         const cookies = parseCookies(req.headers.cookie || '');
         const token = cookies[sessionCookieName];
@@ -129,6 +133,39 @@ function createStateRoutes({ stateStore, sessionCookieName, authConfig }) {
             return {
                 usage: stateStore.getUsageDaily(session.userId)
             };
+        },
+
+        '/api/templates/*': async (req, res, body) => {
+            const session = requireUser(req, res);
+            if (!session) return null;
+
+            const parts = getPathParts(req);
+            const feature = parts[2];
+            if (!feature) {
+                sendJson(res, 400, { error: 'feature is required' });
+                return null;
+            }
+
+            if (req.method === 'GET' && parts.length === 3) {
+                return stateStore.listTemplates(feature, session.userId);
+            }
+
+            if (req.method === 'POST' && parts.length === 3) {
+                if (!body || typeof body !== 'object' || !body.label || (!body.message && !body.values)) {
+                    sendJson(res, 400, { error: 'template label and message/values are required' });
+                    return null;
+                }
+                return {
+                    template: stateStore.createUserTemplate(session.userId, feature, body)
+                };
+            }
+
+            if (req.method === 'POST' && parts.length === 5 && parts[4] === 'favorite') {
+                return stateStore.toggleTemplateFavorite(session.userId, feature, parts[3]);
+            }
+
+            sendJson(res, 404, { error: 'template route not found' });
+            return null;
         }
     };
 }

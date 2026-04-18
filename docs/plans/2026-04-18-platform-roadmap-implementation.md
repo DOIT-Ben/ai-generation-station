@@ -505,3 +505,20 @@ The next implementation batch should follow this exact order:
 3. template backend
 4. admin basics
 5. full regression and release checkpoint
+
+---
+
+## 2026-04-19 Resume Note
+
+- Resume checkpoint: user preferences, usage tracking, and task persistence are already present in code, so the real unfinished mainline is Task 7 (`template backend`).
+- Implemented in this batch:
+  - added SQLite-backed template tables and favorite state
+  - exposed `/api/templates/:feature`, `POST /api/templates/:feature`, and `POST /api/templates/:feature/:id/favorite`
+  - switched frontend template loading from hard-coded runtime usage to server API usage with local fallback
+  - extended auth/history and frontend-state tests to cover the new template API surface
+- New issue discovered during verification:
+  - local Node.js runtime on this machine currently fails before script execution with `Assertion failed: ncrypto::CSPRNG(nullptr, 0)`, so `node` and `npm` test commands could not complete
+- Follow-up once runtime is healthy again:
+  1. rerun `npm run test:auth-history`
+  2. rerun `npm run test:frontend`
+  3. rerun `node test-regression.js --skip-live --port 18797`

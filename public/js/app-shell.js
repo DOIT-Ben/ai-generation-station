@@ -329,6 +329,31 @@
         const response = await fetchImpl('/api/usage/today', { credentials: 'same-origin' });
         const data = await parseResponse(response);
         return data.usage || {};
+      },
+
+      async getTemplates(feature) {
+        const response = await fetchImpl(`/api/templates/${feature}`, { credentials: 'same-origin' });
+        return parseResponse(response);
+      },
+
+      async createTemplate(feature, template) {
+        const response = await fetchImpl(`/api/templates/${feature}`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(template)
+        });
+        const data = await parseResponse(response);
+        return data.template || null;
+      },
+
+      async toggleTemplateFavorite(feature, templateId) {
+        const response = await fetchImpl(`/api/templates/${feature}/${templateId}/favorite`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        return parseResponse(response);
       }
     };
   }

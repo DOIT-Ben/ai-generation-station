@@ -21,7 +21,7 @@
   const $$ = (sel, ctx) => (ctx || document).querySelectorAll(sel);
   const appShell = window.AppShell || null;
   const persistence = appShell && window.fetch ? appShell.createRemotePersistence(window.fetch.bind(window)) : null;
-  const templates = appShell?.TEMPLATE_LIBRARY || {};
+  let templates = appShell?.TEMPLATE_LIBRARY || {};
   const featureMeta = appShell?.FEATURE_META || {};
   const historyState = {};
   let currentUser = null;
@@ -163,6 +163,26 @@
     }
   }
 
+  async function loadTemplateLibraries() {
+    if (!currentUser || !persistence?.getTemplates) {
+      renderTemplateLibraries();
+      return;
+    }
+    try {
+      const features = Object.keys(featureMeta);
+      const responses = await Promise.all(features.map(feature => persistence.getTemplates(feature)));
+      const nextTemplates = {};
+      responses.forEach((response, index) => {
+        nextTemplates[features[index]] = response.groups || [];
+      });
+      templates = nextTemplates;
+    } catch {
+      templates = appShell?.TEMPLATE_LIBRARY || {};
+      showToast('模板库加载失败，已使用本地模板', 'error', 1800);
+    }
+    renderTemplateLibraries();
+  }
+
   function ensureAuthGate() {
     if ($('auth-gate')) return;
     const gate = document.createElement('div');
@@ -194,7 +214,7 @@
     const panel = $('user-panel');
     if (!panel) return;
     if (!currentUser) {
-      panel.innerHTML = '<div class="user-panel-empty">未登录，历史记录将不会展示。</div>';
+      panel.innerHTML = '<div class="user-panel-empty">未登录，历史记录与模板偏好不会展示。</div>';
       return;
     }
     panel.innerHTML = `
@@ -232,6 +252,7 @@
       hideAuthGate();
       await loadUserPreferences();
       await refreshUsageToday();
+      await loadTemplateLibraries();
       await loadAllHistories();
       showToast(`欢迎回来，${currentUser}`, 'success', 1800);
     } catch (loginError) {
@@ -268,6 +289,7 @@
       hideAuthGate();
       await loadUserPreferences();
       await refreshUsageToday();
+      await loadTemplateLibraries();
       await loadAllHistories();
     } catch {
       showAuthGate();
@@ -284,12 +306,17 @@
       wrapper.innerHTML = `
         <section class="feature-card">
           <h3>${featureMeta[feature].title}模板库</h3>
-          <p>按场景选模板，减少手动组织提示词和参数。</p>
+          <p>按场景套用模板，也可以把当前输入直接保存成你自己的模板。</p>
+          <div class="template-creator">
+            <input id="template-label-${feature}" type="text" maxlength="24" placeholder="模板名称" />
+            <input id="template-desc-${feature}" type="text" maxlength="60" placeholder="一句话描述（可选）" />
+            <button type="button" class="template-save-btn" data-template-save="${feature}">保存当前内容</button>
+          </div>
           <div class="template-groups" id="template-groups-${feature}"></div>
         </section>
         <aside class="feature-card">
           <h3>${featureMeta[feature].historyTitle}</h3>
-          <p>自动保存当前账号下的最近记录，可随时恢复。</p>
+          <p>自动保存当前账号下的最近记录，后续可以继续恢复或复用。</p>
           <div class="history-list" id="history-list-${feature}"></div>
           <div class="history-empty" id="history-empty-${feature}">还没有历史记录，先跑一次生成或对话。</div>
         </aside>
@@ -302,6 +329,10 @@
     Object.entries(templates).forEach(([feature, groups]) => {
       const container = $(`template-groups-${feature}`);
       if (!container) return;
+      if (!groups.length) {
+        container.innerHTML = '<div class="history-empty">当前还没有模板。</div>';
+        return;
+      }
       container.innerHTML = groups.map((group, groupIndex) => `
         <div class="template-category">
           <div class="template-category-header">
@@ -310,18 +341,86 @@
           </div>
           <div class="template-list">
             ${group.items.map((item, itemIndex) => `
-              <article class="template-item">
+              <article class="template-item${item.favorite ? ' is-favorite' : ''}">
+                <div class="template-item-meta">
+                  <span>${item.source === 'user' ? '我的模板' : '系统模板'}</span>
+                  ${item.id ? `<button type="button" class="template-favorite-btn" data-template-favorite="${feature}" data-template-id="${item.id}">${item.favorite ? '已收藏' : '收藏'}</button>` : ''}
+                </div>
                 <strong>${item.label}</strong>
-                <span>${item.description}</span>
-                <button type="button" data-template-feature="${feature}" data-template-group="${groupIndex}" data-template-item="${itemIndex}">
-                  ${feature === 'chat' ? '一键发送' : '应用模板'}
-                </button>
+                <span>${item.description || '暂无描述'}</span>
+                <div class="template-actions">
+                  <button type="button" data-template-feature="${feature}" data-template-group="${groupIndex}" data-template-item="${itemIndex}">
+                    ${feature === 'chat' ? '一键发送' : '应用模板'}
+                  </button>
+                </div>
               </article>
             `).join('')}
           </div>
         </div>
       `).join('');
     });
+  }
+
+  function getTemplateDraft(feature) {
+    const label = $(`template-label-${feature}`)?.value?.trim();
+    const description = $(`template-desc-${feature}`)?.value?.trim() || '';
+    if (!label) {
+      return { error: '请先填写模板名称' };
+    }
+
+    if (feature === 'chat') {
+      const message = $('chat-input')?.value?.trim();
+      if (!message) {
+        return { error: '当前对话输入为空，无法保存成模板' };
+      }
+      return { label, description, category: '我的模板', message };
+    }
+
+    const values = getFeatureInputs(feature);
+    const hasContent = Object.values(values).some(value => String(value || '').trim());
+    if (!hasContent) {
+      return { error: '当前没有可保存的参数内容' };
+    }
+
+    return { label, description, category: '我的模板', values };
+  }
+
+  async function saveCurrentTemplate(feature) {
+    if (!currentUser || !persistence?.createTemplate) {
+      showToast('请先登录后再保存模板', 'error', 1600);
+      return;
+    }
+
+    const draft = getTemplateDraft(feature);
+    if (draft.error) {
+      showToast(draft.error, 'error', 1600);
+      return;
+    }
+
+    try {
+      await persistence.createTemplate(feature, draft);
+      if ($(`template-label-${feature}`)) $(`template-label-${feature}`).value = '';
+      if ($(`template-desc-${feature}`)) $(`template-desc-${feature}`).value = '';
+      await loadTemplateLibraries();
+      showToast('模板已保存到你的账号', 'success', 1600);
+    } catch (error) {
+      showToast(error.message || '模板保存失败', 'error', 1800);
+    }
+  }
+
+  async function toggleTemplateFavoriteAction(feature, templateId) {
+    if (!currentUser || !persistence?.toggleTemplateFavorite) {
+      showToast('请先登录后再收藏模板', 'error', 1600);
+      return;
+    }
+
+    try {
+      const result = await persistence.toggleTemplateFavorite(feature, templateId);
+      await loadTemplateLibraries();
+      showToast(result.favorite ? '模板已加入收藏' : '模板已取消收藏', 'success', 1400);
+    } catch (error) {
+      showToast(error.message || '模板收藏失败', 'error', 1800);
+    }
   }
 
   function getFeatureInputs(feature) {
@@ -541,6 +640,16 @@
 
   function bindEnhancementEvents() {
     document.addEventListener('click', event => {
+      const saveButton = event.target.closest('[data-template-save]');
+      if (saveButton) {
+        saveCurrentTemplate(saveButton.dataset.templateSave);
+        return;
+      }
+      const favoriteButton = event.target.closest('[data-template-favorite]');
+      if (favoriteButton) {
+        toggleTemplateFavoriteAction(favoriteButton.dataset.templateFavorite, favoriteButton.dataset.templateId);
+        return;
+      }
       const templateButton = event.target.closest('[data-template-feature]');
       if (templateButton) {
         applyTemplate(templateButton.dataset.templateFeature, Number(templateButton.dataset.templateGroup), Number(templateButton.dataset.templateItem));
@@ -553,9 +662,9 @@
     });
   }
 
-  // ============================================
+  // ===========================================
   //  Tab Navigation
-  // ============================================
+  // ===========================================
   function initTabs() {
     $$('.nav-item').forEach(btn => {
       btn.addEventListener('click', () => switchTab(btn.dataset.tab));

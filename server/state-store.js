@@ -1,6 +1,7 @@
 const fs = require('fs');
 const crypto = require('crypto');
 const { DatabaseSync } = require('node:sqlite');
+const AppShell = require('../public/js/app-shell.js');
 
 function safeParseJson(value, fallback) {
     if (!value) return fallback;
@@ -112,6 +113,47 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         );
 
         CREATE INDEX IF NOT EXISTS idx_user_history_lookup ON user_history_entries (user_id, feature, created_at DESC, id DESC);
+
+        CREATE TABLE IF NOT EXISTS system_templates (
+            id TEXT PRIMARY KEY,
+            feature TEXT NOT NULL,
+            category TEXT NOT NULL,
+            label TEXT NOT NULL,
+            description TEXT,
+            payload TEXT NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_system_templates_feature_sort ON system_templates (feature, sort_order, category);
+
+        CREATE TABLE IF NOT EXISTS user_templates (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            feature TEXT NOT NULL,
+            category TEXT NOT NULL,
+            label TEXT NOT NULL,
+            description TEXT,
+            payload TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_user_templates_feature_user ON user_templates (user_id, feature, created_at DESC);
+
+        CREATE TABLE IF NOT EXISTS user_template_favorites (
+            user_id TEXT NOT NULL,
+            feature TEXT NOT NULL,
+            template_kind TEXT NOT NULL,
+            template_id TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY (user_id, template_kind, template_id),
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_user_template_favorites_feature ON user_template_favorites (user_id, feature);
 
         CREATE TABLE IF NOT EXISTS tasks (
             task_id TEXT PRIMARY KEY,
@@ -250,6 +292,54 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
     `);
     const countSessionsStmt = db.prepare(`SELECT COUNT(*) AS count FROM user_sessions`);
     const countHistoryStmt = db.prepare(`SELECT COUNT(*) AS count FROM user_history_entries`);
+    const countSystemTemplatesStmt = db.prepare(`SELECT COUNT(*) AS count FROM system_templates`);
+    const insertSystemTemplateStmt = db.prepare(`
+        INSERT INTO system_templates (id, feature, category, label, description, payload, sort_order, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            feature = excluded.feature,
+            category = excluded.category,
+            label = excluded.label,
+            description = excluded.description,
+            payload = excluded.payload,
+            sort_order = excluded.sort_order,
+            updated_at = excluded.updated_at
+    `);
+    const selectSystemTemplatesStmt = db.prepare(`
+        SELECT id, feature, category, label, description, payload, sort_order AS sortOrder
+        FROM system_templates
+        WHERE feature = ?
+        ORDER BY sort_order ASC, category ASC, label ASC
+    `);
+    const insertUserTemplateStmt = db.prepare(`
+        INSERT INTO user_templates (id, user_id, feature, category, label, description, payload, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const selectUserTemplatesStmt = db.prepare(`
+        SELECT id, user_id AS userId, feature, category, label, description, payload, created_at AS createdAt
+        FROM user_templates
+        WHERE user_id = ? AND feature = ?
+        ORDER BY created_at DESC
+    `);
+    const getTemplateFavoriteStmt = db.prepare(`
+        SELECT created_at AS createdAt
+        FROM user_template_favorites
+        WHERE user_id = ? AND template_kind = ? AND template_id = ?
+    `);
+    const insertTemplateFavoriteStmt = db.prepare(`
+        INSERT INTO user_template_favorites (user_id, feature, template_kind, template_id, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(user_id, template_kind, template_id) DO NOTHING
+    `);
+    const deleteTemplateFavoriteStmt = db.prepare(`
+        DELETE FROM user_template_favorites
+        WHERE user_id = ? AND template_kind = ? AND template_id = ?
+    `);
+    const listTemplateFavoritesStmt = db.prepare(`
+        SELECT template_kind AS templateKind, template_id AS templateId
+        FROM user_template_favorites
+        WHERE user_id = ? AND feature = ?
+    `);
     const insertTaskStmt = db.prepare(`
         INSERT INTO tasks (
             task_id, user_id, feature, status, progress, input_payload, output_payload, error, created_at, updated_at
@@ -358,6 +448,53 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         };
     }
 
+    function normalizeTemplateRow(row, kind, favorites = new Set()) {
+        if (!row) return null;
+        const payload = safeParseJson(row.payload, {}) || {};
+        return {
+            id: row.id,
+            feature: row.feature,
+            category: row.category,
+            label: row.label,
+            description: row.description || '',
+            source: kind,
+            favorite: favorites.has(`${kind}:${row.id}`),
+            ...payload
+        };
+    }
+
+    function groupTemplates(items) {
+        const groups = new Map();
+        items.forEach(item => {
+            if (!groups.has(item.category)) {
+                groups.set(item.category, { category: item.category, items: [] });
+            }
+            groups.get(item.category).items.push(item);
+        });
+        return Array.from(groups.values());
+    }
+
+    function buildSystemTemplateSeed() {
+        const library = AppShell.TEMPLATE_LIBRARY || {};
+        const rows = [];
+        Object.entries(library).forEach(([feature, groups]) => {
+            groups.forEach((group, groupIndex) => {
+                (group.items || []).forEach((item, itemIndex) => {
+                    rows.push({
+                        id: `sys_${feature}_${groupIndex}_${itemIndex}`,
+                        feature,
+                        category: group.category || '系统模板',
+                        label: item.label || `模板 ${itemIndex + 1}`,
+                        description: item.description || '',
+                        payload: item.message ? { message: item.message } : { values: item.values || {} },
+                        sortOrder: groupIndex * 100 + itemIndex
+                    });
+                });
+            });
+        });
+        return rows;
+    }
+
     function ensureSeedUser() {
         if (!seedUser?.username || !seedUser?.password) return;
         const existing = normalizeUserRecord(findUserByUsernameStmt.get(seedUser.username));
@@ -431,6 +568,22 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
 
     ensureSeedUser();
     migrateLegacyJsonIfNeeded();
+    if ((countSystemTemplatesStmt.get().count || 0) === 0) {
+        const now = Date.now();
+        buildSystemTemplateSeed().forEach(template => {
+            insertSystemTemplateStmt.run(
+                template.id,
+                template.feature,
+                template.category,
+                template.label,
+                template.description,
+                JSON.stringify(template.payload || {}),
+                template.sortOrder,
+                now,
+                now
+            );
+        });
+    }
     markInterruptedTasksStmt.run(Date.now());
 
     function cleanupExpiredSessions() {
@@ -440,6 +593,15 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
     return {
         getUserByUsername(username) {
             return normalizeUserRecord(findUserByUsernameStmt.get(username));
+        },
+
+        getUserById(userId) {
+            return normalizeUserRecord(db.prepare(`
+                SELECT id, username, email, display_name AS displayName, status, role, plan_code AS planCode,
+                       timezone, locale, last_login_at AS lastLoginAt, created_at AS createdAt, updated_at AS updatedAt
+                FROM users
+                WHERE id = ? AND deleted_at IS NULL
+            `).get(userId));
         },
 
         authenticateUser(username, password) {
@@ -511,6 +673,10 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
 
         getPreferences(userId) {
             return normalizePreferences(getPreferencesStmt.get(userId));
+        },
+
+        getOrCreatePreferences(userId) {
+            return this.getPreferences(userId);
         },
 
         updatePreferences(userId, patch = {}) {
@@ -601,6 +767,57 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
 
         getTask(taskId) {
             return normalizeTask(getTaskStmt.get(taskId));
+        },
+
+        listTemplates(feature, userId) {
+            const favorites = new Set(
+                listTemplateFavoritesStmt.all(userId, feature)
+                    .map(row => `${row.templateKind}:${row.templateId}`)
+            );
+            const systemTemplates = selectSystemTemplatesStmt.all(feature)
+                .map(row => normalizeTemplateRow(row, 'system', favorites))
+                .filter(Boolean);
+            const userTemplates = userId
+                ? selectUserTemplatesStmt.all(userId, feature)
+                    .map(row => normalizeTemplateRow(row, 'user', favorites))
+                    .filter(Boolean)
+                : [];
+
+            return {
+                feature,
+                groups: groupTemplates(systemTemplates.concat(userTemplates))
+            };
+        },
+
+        createUserTemplate(userId, feature, template) {
+            const payload = template.message ? { message: String(template.message) } : { values: template.values || {} };
+            const now = Date.now();
+            const id = `usr_${crypto.randomUUID()}`;
+            insertUserTemplateStmt.run(
+                id,
+                userId,
+                feature,
+                template.category || '我的模板',
+                template.label,
+                template.description || '',
+                JSON.stringify(payload),
+                now,
+                now
+            );
+            return this.listTemplates(feature, userId).groups
+                .flatMap(group => group.items)
+                .find(item => item.id === id) || null;
+        },
+
+        toggleTemplateFavorite(userId, feature, templateId) {
+            const templateKind = String(templateId || '').startsWith('usr_') ? 'user' : 'system';
+            const existing = getTemplateFavoriteStmt.get(userId, templateKind, templateId);
+            if (existing) {
+                deleteTemplateFavoriteStmt.run(userId, templateKind, templateId);
+                return { favorite: false, templateId, templateKind };
+            }
+            insertTemplateFavoriteStmt.run(userId, feature, templateKind, templateId, Date.now());
+            return { favorite: true, templateId, templateKind };
         },
 
         close() {

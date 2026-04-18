@@ -138,6 +138,33 @@ async function main() {
       throw new Error('Expected usage increment to be visible');
     }
 
+    const templates = await request(port, '/api/templates/chat', 'GET', null, { Cookie: cookie });
+    if (templates.status !== 200 || !Array.isArray(templates.data.groups) || templates.data.groups.length < 1) {
+      throw new Error('Expected chat templates to be returned');
+    }
+
+    const createdTemplate = await request(port, '/api/templates/chat', 'POST', {
+      category: '我的模板',
+      label: '测试模板',
+      description: '用于回归验证',
+      message: '请输出一段简短的测试文案'
+    }, { Cookie: cookie });
+    if (createdTemplate.status !== 200 || createdTemplate.data.template?.label !== '测试模板') {
+      throw new Error('Expected user template creation to persist');
+    }
+
+    const favorite = await request(port, `/api/templates/chat/${createdTemplate.data.template.id}/favorite`, 'POST', {}, { Cookie: cookie });
+    if (favorite.status !== 200 || favorite.data.favorite !== true) {
+      throw new Error('Expected template favorite toggle to succeed');
+    }
+
+    const templatesAfter = await request(port, '/api/templates/chat', 'GET', null, { Cookie: cookie });
+    const flattenedTemplates = (templatesAfter.data.groups || []).flatMap(group => group.items || []);
+    const savedTemplate = flattenedTemplates.find(item => item.id === createdTemplate.data.template.id);
+    if (!savedTemplate || savedTemplate.favorite !== true) {
+      throw new Error('Expected favorited user template to be returned');
+    }
+
     const logout = await request(port, '/api/auth/logout', 'POST', {}, { Cookie: cookie });
     if (logout.status !== 200) throw new Error(`Expected 200 for logout, got ${logout.status}`);
 

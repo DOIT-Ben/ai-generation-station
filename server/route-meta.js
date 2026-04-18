@@ -5,6 +5,7 @@ const ROUTE_METHODS = {
     '/api/history/*': ['GET', 'POST'],
     '/api/preferences': ['GET', 'POST'],
     '/api/usage/today': ['GET'],
+    '/api/templates/*': ['GET', 'POST'],
     '/api/upload': ['POST'],
     '/api/tts': ['POST'],
     '/api/voices': ['GET'],
