@@ -306,6 +306,29 @@
         });
         const data = await parseResponse(response);
         return data.items || [];
+      },
+
+      async getPreferences() {
+        const response = await fetchImpl('/api/preferences', { credentials: 'same-origin' });
+        const data = await parseResponse(response);
+        return data.preferences || {};
+      },
+
+      async savePreferences(patch) {
+        const response = await fetchImpl('/api/preferences', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(patch)
+        });
+        const data = await parseResponse(response);
+        return data.preferences || {};
+      },
+
+      async getUsageToday() {
+        const response = await fetchImpl('/api/usage/today', { credentials: 'same-origin' });
+        const data = await parseResponse(response);
+        return data.usage || {};
       }
     };
   }

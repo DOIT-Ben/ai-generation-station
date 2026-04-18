@@ -100,6 +100,35 @@ function createStateRoutes({ stateStore, sessionCookieName, authConfig }) {
             return {
                 items: stateStore.appendHistory(session.userId, feature, body.entry)
             };
+        },
+
+        '/api/preferences': async (req, res, body) => {
+            const session = requireUser(req, res);
+            if (!session) return null;
+
+            if (req.method === 'GET') {
+                return {
+                    preferences: stateStore.getPreferences(session.userId)
+                };
+            }
+
+            if (!body || typeof body !== 'object') {
+                sendJson(res, 400, { error: 'preferences payload is required' });
+                return null;
+            }
+
+            return {
+                preferences: stateStore.updatePreferences(session.userId, body)
+            };
+        },
+
+        '/api/usage/today': async (req, res) => {
+            const session = requireUser(req, res);
+            if (!session) return null;
+
+            return {
+                usage: stateStore.getUsageDaily(session.userId)
+            };
         }
     };
 }

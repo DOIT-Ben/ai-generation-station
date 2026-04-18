@@ -18,6 +18,21 @@ function testTemplates() {
   }
 }
 
+function testRemotePersistenceShape() {
+  const remote = AppShell.createRemotePersistence(async () => ({
+    ok: true,
+    status: 200,
+    async json() {
+      return {};
+    }
+  }));
+
+  ['loadSession', 'login', 'logout', 'getHistory', 'appendHistory', 'getPreferences', 'savePreferences', 'getUsageToday']
+    .forEach(method => {
+      assert.equal(typeof remote[method], 'function', `${method} should exist on remote persistence`);
+    });
+}
+
 function testPersistence() {
   const storage = AppShell.createMemoryStorage();
   const persistence = AppShell.createPersistence(storage);
@@ -37,6 +52,7 @@ function testPersistence() {
 function main() {
   testAuth();
   testTemplates();
+  testRemotePersistenceShape();
   testPersistence();
   console.log('✅ Frontend state tests passed');
 }

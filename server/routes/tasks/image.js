@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { downloadFromUrl } = require('./shared');
 
-function createImageRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, imageTasks }) {
+function createImageRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, imageTasks, trackUsage }) {
     function buildImagePrompt(prompt, style) {
         if (!style) {
             return prompt;
@@ -37,6 +37,7 @@ function createImageRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, imageTasks })
                                 task.progress = 100;
                                 task.url = `/output/${path.basename(task.outputFile)}`;
                                 task.duration = Math.round((Date.now() - task.startedAt) / 1000);
+                                trackUsage?.(task.userId, 'image');
                                 resolve(task);
                             } else if (attempts < maxAttempts) {
                                 task.progress = 30 + Math.min(40, attempts * 3);
@@ -112,6 +113,7 @@ function createImageRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, imageTasks })
                             task.url = `/output/${path.basename(task.outputFile)}`;
                             task.size = fs.statSync(task.outputFile).size;
                             task.duration = Date.now() - task.startedAt;
+                            trackUsage?.(task.userId, 'image');
                             resolve(task);
                         } else if (response.task_id) {
                             task.taskId = response.task_id;
@@ -150,7 +152,7 @@ function createImageRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, imageTasks })
             const taskId = `image_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
             const outputFile = path.join(OUTPUT_DIR, `${taskId}.png`);
 
-            imageTasks.set(taskId, { status: 'pending', progress: 0, outputFile, prompt, style, startedAt: Date.now() });
+            imageTasks.set(taskId, { status: 'pending', progress: 0, outputFile, prompt, style, userId: req.authSession?.userId || null, startedAt: Date.now() });
             processImageTask(taskId, { prompt, aspect_ratio: ratio || '1:1', style }).catch(error => {
                 const task = imageTasks.get(taskId);
                 if (task) {

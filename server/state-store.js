@@ -149,6 +149,52 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         SET failed_login_count = ?, locked_until = ?
         WHERE user_id = ?
     `);
+    const getPreferencesStmt = db.prepare(`
+        SELECT theme, default_model_chat AS defaultModelChat, default_voice AS defaultVoice,
+               default_music_style AS defaultMusicStyle, default_cover_ratio AS defaultCoverRatio,
+               template_preferences_json AS templatePreferencesJson,
+               created_at AS createdAt, updated_at AS updatedAt
+        FROM user_preferences
+        WHERE user_id = ?
+    `);
+    const upsertPreferencesStmt = db.prepare(`
+        INSERT INTO user_preferences (
+            user_id, theme, default_model_chat, default_voice, default_music_style, default_cover_ratio,
+            template_preferences_json, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+            theme = excluded.theme,
+            default_model_chat = excluded.default_model_chat,
+            default_voice = excluded.default_voice,
+            default_music_style = excluded.default_music_style,
+            default_cover_ratio = excluded.default_cover_ratio,
+            template_preferences_json = excluded.template_preferences_json,
+            updated_at = excluded.updated_at
+    `);
+    const getUsageDailyStmt = db.prepare(`
+        SELECT usage_date AS usageDate, chat_count AS chatCount, lyrics_count AS lyricsCount,
+               music_count AS musicCount, image_count AS imageCount, speech_count AS speechCount,
+               cover_count AS coverCount, input_tokens AS inputTokens, output_tokens AS outputTokens,
+               storage_bytes AS storageBytes
+        FROM user_usage_daily
+        WHERE user_id = ? AND usage_date = ?
+    `);
+    const upsertUsageStmt = db.prepare(`
+        INSERT INTO user_usage_daily (
+            user_id, usage_date, chat_count, lyrics_count, music_count, image_count, speech_count, cover_count,
+            input_tokens, output_tokens, storage_bytes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(user_id, usage_date) DO UPDATE SET
+            chat_count = chat_count + excluded.chat_count,
+            lyrics_count = lyrics_count + excluded.lyrics_count,
+            music_count = music_count + excluded.music_count,
+            image_count = image_count + excluded.image_count,
+            speech_count = speech_count + excluded.speech_count,
+            cover_count = cover_count + excluded.cover_count,
+            input_tokens = input_tokens + excluded.input_tokens,
+            output_tokens = output_tokens + excluded.output_tokens,
+            storage_bytes = storage_bytes + excluded.storage_bytes
+    `);
 
     const getSessionStmt = db.prepare(`
         SELECT s.id, s.user_id AS userId, s.created_at AS createdAt, s.expires_at AS expiresAt,
@@ -204,6 +250,43 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
             lastLoginAt: row.lastLoginAt || null,
             createdAt: row.createdAt,
             updatedAt: row.updatedAt
+        };
+    }
+
+    function getDefaultPreferences() {
+        return {
+            theme: 'dark',
+            defaultModelChat: 'MiniMax-M2.7',
+            defaultVoice: 'male-qn-qingse',
+            defaultMusicStyle: '',
+            defaultCoverRatio: '1:1',
+            templatePreferencesJson: '{}'
+        };
+    }
+
+    function normalizePreferences(row) {
+        return {
+            ...getDefaultPreferences(),
+            ...(row || {})
+        };
+    }
+
+    function getUsageDate(date = new Date()) {
+        return date.toISOString().slice(0, 10);
+    }
+
+    function getEmptyUsage(usageDate) {
+        return {
+            usageDate,
+            chatCount: 0,
+            lyricsCount: 0,
+            musicCount: 0,
+            imageCount: 0,
+            speechCount: 0,
+            coverCount: 0,
+            inputTokens: 0,
+            outputTokens: 0,
+            storageBytes: 0
         };
     }
 
@@ -355,6 +438,62 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
                 db.exec('ROLLBACK');
                 throw error;
             }
+        },
+
+        getPreferences(userId) {
+            return normalizePreferences(getPreferencesStmt.get(userId));
+        },
+
+        updatePreferences(userId, patch = {}) {
+            const current = this.getPreferences(userId);
+            const next = {
+                ...current,
+                ...patch
+            };
+            const now = Date.now();
+            upsertPreferencesStmt.run(
+                userId,
+                next.theme,
+                next.defaultModelChat,
+                next.defaultVoice,
+                next.defaultMusicStyle,
+                next.defaultCoverRatio,
+                typeof next.templatePreferencesJson === 'string' ? next.templatePreferencesJson : JSON.stringify(next.templatePreferencesJson || {}),
+                current.createdAt || now,
+                now
+            );
+            return this.getPreferences(userId);
+        },
+
+        getUsageDaily(userId, usageDate = getUsageDate()) {
+            return getUsageDailyStmt.get(userId, usageDate) || getEmptyUsage(usageDate);
+        },
+
+        incrementUsageDaily(userId, feature, metrics = {}) {
+            const counters = {
+                chat: [1, 0, 0, 0, 0, 0],
+                lyrics: [0, 1, 0, 0, 0, 0],
+                music: [0, 0, 1, 0, 0, 0],
+                image: [0, 0, 0, 1, 0, 0],
+                speech: [0, 0, 0, 0, 1, 0],
+                cover: [0, 0, 0, 0, 0, 1]
+            }[feature] || [0, 0, 0, 0, 0, 0];
+
+            const usageDate = metrics.usageDate || getUsageDate();
+            upsertUsageStmt.run(
+                userId,
+                usageDate,
+                counters[0],
+                counters[1],
+                counters[2],
+                counters[3],
+                counters[4],
+                counters[5],
+                Number(metrics.inputTokens || 0),
+                Number(metrics.outputTokens || 0),
+                Number(metrics.storageBytes || 0)
+            );
+            return this.getUsageDaily(userId, usageDate);
         },
 
         close() {

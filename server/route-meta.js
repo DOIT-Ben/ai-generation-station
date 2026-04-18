@@ -3,6 +3,8 @@ const ROUTE_METHODS = {
     '/api/auth/login': ['POST'],
     '/api/auth/logout': ['POST'],
     '/api/history/*': ['GET', 'POST'],
+    '/api/preferences': ['GET', 'POST'],
+    '/api/usage/today': ['GET'],
     '/api/upload': ['POST'],
     '/api/tts': ['POST'],
     '/api/voices': ['GET'],

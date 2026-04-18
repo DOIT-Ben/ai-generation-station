@@ -25,6 +25,15 @@
   const featureMeta = appShell?.FEATURE_META || {};
   const historyState = {};
   let currentUser = null;
+  let userPreferences = {
+    theme: 'dark',
+    defaultModelChat: 'MiniMax-M2.7',
+    defaultVoice: 'male-qn-qingse',
+    defaultMusicStyle: '',
+    defaultCoverRatio: '1:1'
+  };
+  let usageToday = null;
+  let preferenceSaveTimer = null;
 
   const FEATURE_FIELDS = {
     lyrics: { prompt: 'lyrics-prompt', style: 'lyrics-style', structure: 'lyrics-structure' },
@@ -99,6 +108,61 @@
     return `${normalized.slice(0, length)}...`;
   }
 
+  function formatUsageSummary(usage) {
+    if (!usage) return '今日用量待加载';
+    return `今日日志 Chat ${usage.chatCount || 0} / Lyrics ${usage.lyricsCount || 0} / Music ${usage.musicCount || 0} / Image ${usage.imageCount || 0} / Speech ${usage.speechCount || 0} / Cover ${usage.coverCount || 0}`;
+  }
+
+  function applyUserPreferences() {
+    setTheme(userPreferences.theme || 'dark');
+    setFieldValue('chat-model', userPreferences.defaultModelChat || 'MiniMax-M2.7');
+    setFieldValue('speech-voice', userPreferences.defaultVoice || 'male-qn-qingse');
+    setFieldValue('music-style', userPreferences.defaultMusicStyle || '');
+    setFieldValue('cover-ratio', userPreferences.defaultCoverRatio || '1:1');
+  }
+
+  async function loadUserPreferences() {
+    if (!currentUser || !persistence?.getPreferences) return;
+    try {
+      const preferences = await persistence.getPreferences();
+      userPreferences = {
+        ...userPreferences,
+        ...preferences
+      };
+      applyUserPreferences();
+    } catch {
+      showToast('用户偏好加载失败，已使用默认设置', 'error', 1800);
+    }
+  }
+
+  function schedulePreferenceSave(patch) {
+    if (!currentUser || !persistence?.savePreferences) return;
+    userPreferences = {
+      ...userPreferences,
+      ...patch
+    };
+    clearTimeout(preferenceSaveTimer);
+    preferenceSaveTimer = setTimeout(async () => {
+      try {
+        userPreferences = await persistence.savePreferences(userPreferences);
+        renderUserPanel();
+      } catch {
+        showToast('偏好保存失败', 'error', 1800);
+      }
+    }, 300);
+  }
+
+  async function refreshUsageToday() {
+    if (!currentUser || !persistence?.getUsageToday) return;
+    try {
+      usageToday = await persistence.getUsageToday();
+      renderUserPanel();
+    } catch {
+      usageToday = null;
+      renderUserPanel();
+    }
+  }
+
   function ensureAuthGate() {
     if ($('auth-gate')) return;
     const gate = document.createElement('div');
@@ -137,7 +201,7 @@
       <div class="user-panel-row">
         <div class="user-panel-label">
           <strong>${currentUser}</strong>
-          <span>历史记录已启用</span>
+          <span>${formatUsageSummary(usageToday)}</span>
         </div>
         <button id="btn-logout" type="button">退出</button>
       </div>
@@ -166,6 +230,8 @@
       if (error) error.textContent = '';
       renderUserPanel();
       hideAuthGate();
+      await loadUserPreferences();
+      await refreshUsageToday();
       await loadAllHistories();
       showToast(`欢迎回来，${currentUser}`, 'success', 1800);
     } catch (loginError) {
@@ -177,6 +243,7 @@
     currentUser = null;
     historyState.chat = [];
     Object.keys(featureMeta).forEach(feature => { historyState[feature] = []; renderHistory(feature); });
+    usageToday = null;
     try {
       await persistence?.logout();
     } catch {
@@ -199,6 +266,8 @@
       currentUser = session.username;
       renderUserPanel();
       hideAuthGate();
+      await loadUserPreferences();
+      await refreshUsageToday();
       await loadAllHistories();
     } catch {
       showAuthGate();
@@ -566,16 +635,20 @@
   // ============================================
   //  Theme
   // ============================================
-  function getStoredTheme() { return localStorage.getItem('theme') || 'dark'; }
+  function getStoredTheme() { return userPreferences.theme || 'dark'; }
 
   function setTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('theme', theme);
+    userPreferences.theme = theme;
     const btn = $('theme-toggle');
     if (btn) btn.setAttribute('data-tip', theme === 'light' ? '浅色模式' : '深色模式');
   }
 
-  function toggleTheme() { setTheme(getStoredTheme() === 'dark' ? 'light' : 'dark'); }
+  function toggleTheme() {
+    const nextTheme = getStoredTheme() === 'dark' ? 'light' : 'dark';
+    setTheme(nextTheme);
+    schedulePreferenceSave({ theme: nextTheme });
+  }
 
   function initTheme() {
     setTheme(getStoredTheme());
@@ -707,6 +780,7 @@
       const area = $(`${resultTab}-result`);
       if (area) { area.removeAttribute('hidden'); area.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' }); }
       loadQuota();
+      refreshUsageToday();
       showToast(successMessage, 'success');
 
     } catch (err) {
@@ -801,6 +875,7 @@
         resultEl.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
       }
       loadQuota();
+      refreshUsageToday();
       showToast('音乐生成成功！', 'success');
 
     } catch (err) {
@@ -890,6 +965,7 @@
             $('cover-result')?.removeAttribute('hidden');
             $('cover-result')?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
             loadQuota();
+            refreshUsageToday();
             recordFeatureHistory('cover', inputs.prompt, `${inputs.style || '自动风格'} · ${inputs.ratio || '1:1'}`, inputs, {
               url: data.url,
               size: data.size,
@@ -1054,6 +1130,7 @@
       if (resultEl) { resultEl.removeAttribute('hidden'); resultEl.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' }); }
       currentResult['covervoice'] = statusData;
       loadQuota();
+      refreshUsageToday();
       recordFeatureHistory('covervoice', prompt, `${config.timbre || '自动音色'} · ${config.pitch || '原调'}`, {
         prompt,
         timbre: config.timbre,
@@ -1149,6 +1226,7 @@
       if (resultEl) { resultEl.removeAttribute('hidden'); resultEl.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' }); }
       currentResult[resultTab] = statusData;
       loadQuota();
+      refreshUsageToday();
       recordFeatureHistory('covervoice', prompt, `${config.timbre || '自动音色'} · ${config.pitch || '原调'}`, {
         prompt,
         timbre: config.timbre,
@@ -1377,6 +1455,7 @@
           chatHistory.push({ role: 'assistant', content: finalContent });
           recordChatHistory(message, finalContent);
           loadQuota();
+          refreshUsageToday();
         });
       }
     } catch {
@@ -1419,6 +1498,7 @@
           chatHistory.push({ role: 'assistant', content: finalContent });
           recordChatHistory(message, finalContent);
           loadQuota();
+          refreshUsageToday();
         });
       }
     } catch {
@@ -1576,6 +1656,7 @@
           });
           showToast('语音生成成功！', 'success');
           loadQuota();
+          refreshUsageToday();
         } else {
           showToast(data.error || '生成失败', 'error');
         }
@@ -1761,6 +1842,19 @@
 
     // Convert all config selects to custom dropdowns
     convertAllSelectsToCustomDropdowns();
+
+    $('chat-model')?.addEventListener('change', () => {
+      schedulePreferenceSave({ defaultModelChat: $('chat-model')?.value || 'MiniMax-M2.7' });
+    });
+    $('speech-voice')?.addEventListener('change', () => {
+      schedulePreferenceSave({ defaultVoice: $('speech-voice')?.value || 'male-qn-qingse' });
+    });
+    $('music-style')?.addEventListener('change', () => {
+      schedulePreferenceSave({ defaultMusicStyle: $('music-style')?.value || '' });
+    });
+    $('cover-ratio')?.addEventListener('change', () => {
+      schedulePreferenceSave({ defaultCoverRatio: $('cover-ratio')?.value || '1:1' });
+    });
   }
 
   // ============================================

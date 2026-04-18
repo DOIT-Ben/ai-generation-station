@@ -1,4 +1,4 @@
-function createLyricsRoutes({ https, API_HOST, API_KEY }) {
+function createLyricsRoutes({ https, API_HOST, API_KEY, trackUsage }) {
     function buildLyricsPrompt(prompt, style, structure) {
         const parts = [String(prompt || '').trim()];
 
@@ -61,7 +61,11 @@ function createLyricsRoutes({ https, API_HOST, API_KEY }) {
         '/api/generate/lyrics': async (req, res, body) => {
             const { prompt, style, structure } = body;
             if (!prompt) return { error: 'Prompt is required' };
-            return callLyricsAPI(prompt, style, structure);
+            const result = await callLyricsAPI(prompt, style, structure);
+            if (result?.success) {
+                trackUsage?.(req.authSession?.userId, 'lyrics');
+            }
+            return result;
         }
     };
 

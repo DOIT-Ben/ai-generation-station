@@ -61,7 +61,7 @@ async function withServer(fn) {
       server.once('error', reject);
       server.listen(port, resolve);
     });
-    return await fn(port, stateDb);
+    return await fn(port, stateDb, server);
   } finally {
     await new Promise(resolve => server.close(resolve));
     server.appStateStore?.close?.();
@@ -74,7 +74,7 @@ async function withServer(fn) {
 }
 
 async function main() {
-  await withServer(async (port) => {
+  await withServer(async (port, stateDb, server) => {
     const anonymous = await request(port, '/api/auth/session', 'GET');
     if (anonymous.status !== 401) throw new Error(`Expected 401 before login, got ${anonymous.status}`);
 
@@ -92,6 +92,28 @@ async function main() {
     if (session.status !== 200 || session.data.user?.username !== 'studio' || !session.data.user?.id) {
       throw new Error('Expected authenticated session after login');
     }
+    const userId = session.data.user.id;
+
+    const preferences = await request(port, '/api/preferences', 'GET', null, { Cookie: cookie });
+    if (preferences.status !== 200 || preferences.data.preferences?.theme !== 'dark') {
+      throw new Error('Expected default preferences to be returned');
+    }
+
+    const updatedPreferences = await request(port, '/api/preferences', 'POST', {
+      theme: 'light',
+      defaultModelChat: 'MiniMax-M2.7-highspeed',
+      defaultVoice: 'female-tianmei',
+      defaultMusicStyle: 'rock',
+      defaultCoverRatio: '16:9'
+    }, { Cookie: cookie });
+    if (updatedPreferences.status !== 200 || updatedPreferences.data.preferences?.theme !== 'light') {
+      throw new Error('Expected preferences update to persist');
+    }
+
+    const usageBefore = await request(port, '/api/usage/today', 'GET', null, { Cookie: cookie });
+    if (usageBefore.status !== 200 || usageBefore.data.usage?.chatCount !== 0) {
+      throw new Error('Expected zero usage before increment');
+    }
 
     const save = await request(port, '/api/history/chat', 'POST', {
       entry: {
@@ -108,6 +130,12 @@ async function main() {
     const history = await request(port, '/api/history/chat', 'GET', null, { Cookie: cookie });
     if (history.status !== 200 || history.data.items?.[0]?.title !== '测试标题') {
       throw new Error('Expected history retrieval to return saved entry');
+    }
+
+    server.appStateStore.incrementUsageDaily(userId, 'chat');
+    const usageAfter = await request(port, '/api/usage/today', 'GET', null, { Cookie: cookie });
+    if (usageAfter.status !== 200 || usageAfter.data.usage?.chatCount !== 1) {
+      throw new Error('Expected usage increment to be visible');
     }
 
     const logout = await request(port, '/api/auth/logout', 'POST', {}, { Cookie: cookie });

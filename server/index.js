@@ -10,7 +10,7 @@ const https = require('https');
 
 const { createConfig } = require('./config');
 const { ROUTE_METHODS, API_KEY_REQUIRED_ROUTES } = require('./route-meta');
-const { matchRoute, readJsonBody, sendJson, serveStaticFile } = require('./lib/http');
+const { matchRoute, readJsonBody, sendJson, serveStaticFile, parseCookies } = require('./lib/http');
 const { createLocalRoutes } = require('./routes/local');
 const { createServiceRoutes } = require('./routes/service');
 const { createTaskRoutes } = require('./routes/tasks');
@@ -52,7 +52,16 @@ function createServer(options = {}) {
         }
     });
 
-    const routes = {
+    const trackUsage = (userId, feature, metrics = {}) => {
+        if (!userId) return;
+        try {
+            stateStore.incrementUsageDaily(userId, feature, metrics);
+        } catch {
+            // Do not fail the user request if usage tracking has issues.
+        }
+    };
+
+    const statefulRoutes = {
         ...createStateRoutes({
             stateStore,
             sessionCookieName: SESSION_COOKIE_NAME,
@@ -62,8 +71,8 @@ function createServer(options = {}) {
             }
         }),
         ...createLocalRoutes({ OUTPUT_DIR, MIME_TYPES, musicTasks, coverTasks, imageTasks }),
-        ...createServiceRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR }),
-        ...createTaskRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, musicTasks, imageTasks, coverTasks })
+        ...createServiceRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, trackUsage }),
+        ...createTaskRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, musicTasks, imageTasks, coverTasks, trackUsage })
     };
 
     const server = http.createServer(async (req, res) => {
@@ -78,8 +87,12 @@ function createServer(options = {}) {
             return;
         }
 
+        const cookies = parseCookies(req.headers.cookie || '');
+        const sessionToken = cookies[SESSION_COOKIE_NAME];
+        req.authSession = stateStore.getSession(sessionToken);
+
         const parsedUrl = url.parse(req.url, true);
-        const { handler, matchedRoute } = matchRoute(parsedUrl.pathname, routes);
+        const { handler, matchedRoute } = matchRoute(parsedUrl.pathname, statefulRoutes);
 
         if (handler) {
             const allowedMethods = ROUTE_METHODS[matchedRoute] || ['GET', 'POST'];

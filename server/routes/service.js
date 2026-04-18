@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-function createServiceRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR }) {
+function createServiceRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, trackUsage }) {
     return {
         '/api/tts': async (req, res, body) => {
             const {
@@ -68,6 +68,7 @@ function createServiceRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR }) {
 
                             const buffer = Buffer.from(response.data.audio, 'hex');
                             fs.writeFileSync(outputFile, buffer);
+                            trackUsage?.(req.authSession?.userId, 'speech');
                             resolve({
                                 success: true,
                                 file: outputFile,
@@ -169,6 +170,10 @@ function createServiceRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR }) {
                                 success: true,
                                 reply: replyText,
                                 usage: response.usage
+                            });
+                            trackUsage?.(req.authSession?.userId, 'chat', {
+                                inputTokens: response.usage?.input_tokens || 0,
+                                outputTokens: response.usage?.output_tokens || 0
                             });
                         } catch (error) {
                             reject(error);

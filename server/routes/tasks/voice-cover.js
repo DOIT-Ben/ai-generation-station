@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { downloadFromUrl } = require('./shared');
 
-function createVoiceCoverRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, coverTasks }) {
+function createVoiceCoverRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, coverTasks, trackUsage }) {
     function buildCoverPrompt(prompt, timbre, pitch) {
         const parts = [String(prompt || '保持原曲风格').trim()];
 
@@ -101,6 +101,7 @@ function createVoiceCoverRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, coverTas
 
                                 task.url = `/output/${path.basename(outputFile)}`;
                                 task.duration = response.extra_info?.music_duration || 0;
+                                trackUsage?.(task.userId, 'cover');
                                 resolve(task);
                             } else if (response.data?.status === 1) {
                                 task.status = 'error';
@@ -169,6 +170,7 @@ function createVoiceCoverRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, coverTas
                                 task.progress = 100;
                                 task.url = `/output/${path.basename(task.outputFile)}`;
                                 task.duration = response.extra_info?.music_duration || 0;
+                                trackUsage?.(task.userId, 'cover');
                                 resolve(task);
                                 return;
                             }
@@ -221,7 +223,7 @@ function createVoiceCoverRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, coverTas
 
             const taskId = `cover_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
             const outputFile = path.join(OUTPUT_DIR, `${taskId}.mp3`);
-            const task = { taskId, status: 'processing', progress: 0, outputFile, startedAt: Date.now(), audio_url, prompt, timbre, pitch };
+            const task = { taskId, status: 'processing', progress: 0, outputFile, startedAt: Date.now(), audio_url, prompt, timbre, pitch, userId: req.authSession?.userId || null };
 
             coverTasks.set(taskId, task);
             processCoverTask(task).catch(error => {

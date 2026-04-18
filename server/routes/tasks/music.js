@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-function createMusicRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, musicTasks }) {
+function createMusicRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, musicTasks, trackUsage }) {
     function normalizeDuration(duration) {
         if (duration == null || duration === '') {
             return undefined;
@@ -158,6 +158,7 @@ function createMusicRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, musicTasks })
                                 task.progress = 100;
                                 task.url = `/output/${path.basename(task.outputFile)}`;
                                 task.duration = response.extra_info?.music_duration || 0;
+                                trackUsage?.(task.userId, 'music');
                                 resolve(task);
                             } else if (response.status === 1 || response.status === 0) {
                                 task.progress = 30 + Math.min(50, attempts * 5);
@@ -233,6 +234,7 @@ function createMusicRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, musicTasks })
                             task.progress = 100;
                             task.url = `/output/${path.basename(task.outputFile)}`;
                             task.duration = response.extra_info?.music_duration || 0;
+                            trackUsage?.(task.userId, 'music');
                             resolve(task);
                             return;
                         }
@@ -287,6 +289,7 @@ function createMusicRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, musicTasks })
                 bpm,
                 key,
                 duration: normalizedDuration,
+                userId: req.authSession?.userId || null,
                 startedAt: Date.now()
             });
 
