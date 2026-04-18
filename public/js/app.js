@@ -711,6 +711,15 @@
 
   // Simple Markdown parser for chat messages
   function parseMarkdown(text) {
+    const sanitizeLinkUrl = (rawUrl) => {
+      try {
+        const parsed = new URL(rawUrl, window.location.origin);
+        return ['http:', 'https:', 'mailto:'].includes(parsed.protocol) ? parsed.href : '#';
+      } catch {
+        return '#';
+      }
+    };
+
     return text
       // Bold: **text** or __text__
       .replace(/\*\*(.+?)\*\*|__(.+?)__/g, '<strong>$1$2</strong>')
@@ -721,7 +730,7 @@
       // Strikethrough: ~~text~~
       .replace(/~~(.+?)~~/g, '<del>$1</del>')
       // Links: [text](url)
-      .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" style="color:var(--accent-cyan);text-decoration:underline;">$1</a>');
+      .replace(/\[(.+?)\]\((.+?)\)/g, (_, label, href) => `<a href="${sanitizeLinkUrl(href)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent-cyan);text-decoration:underline;">${label}</a>`);
   }
 
   function addChatMessage(role, content, isStreaming = false) {

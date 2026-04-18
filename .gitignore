@@ -1,5 +1,13 @@
 node_modules/
 package-lock.json
 .env
+backend/config.local.js
 *.log
 .DS_Store
+output/
+exports/
+resources/
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/config.enc

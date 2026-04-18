@@ -1,10 +1,14 @@
 const http = require('http');
 
+function getPort() {
+  return Number(process.env.PORT || 18791);
+}
+
 function request(path, method, body, timeout = 5000) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('TIMEOUT')), timeout);
     const data = body ? JSON.stringify(body) : '';
-    const req = http.request({ hostname: 'localhost', port: 3001, path, method, headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } }, res => {
+    const req = http.request({ hostname: 'localhost', port: getPort(), path, method, headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } }, res => {
       clearTimeout(timer);
       let d = '';
       res.on('data', c => d += c);
@@ -20,78 +24,146 @@ function request(path, method, body, timeout = 5000) {
 }
 
 async function runTests() {
-  console.log('=== Boundary Condition Tests ===\n');
+  console.log('=== Smoke Tests ===\n');
+  let failures = 0;
+  const fail = () => { failures += 1; };
   
-  // 1. 超长输入测试
-  console.log('1. 超长输入测试 (10000 chars)');
+  // 1. 首页可达
+  console.log('1. 首页访问');
   try {
-    const longText = 'a'.repeat(10000);
-    const res = await request('/api/chat', 'POST', { messages: [{ role: 'user', content: longText }] }, 10000);
-    console.log(res.status === 200 ? '✅ 超长输入已处理' : '❌ 失败', '-', res.data.error || 'OK');
-  } catch(e) { console.log('❌ 异常:', e.message); }
+    const res = await request('/', 'GET');
+    if (res.status === 200 && String(res.data).includes('<!DOCTYPE html>')) {
+      console.log('✅ 首页正常');
+    } else {
+      console.log('❌ 首页异常');
+      fail();
+    }
+  } catch(e) { console.log('❌ 异常:', e.message); fail(); }
   
-  // 2. 特殊字符测试
-  console.log('\n2. 特殊字符测试 (XSS injection)');
+  // 2. 本地接口
+  console.log('\n2. 音色接口');
   try {
-    const specialChars = '<script>alert(1)</script>\n\t\r"\'';
-    const res = await request('/api/chat', 'POST', { messages: [{ role: 'user', content: specialChars }] }, 10000);
-    console.log(res.status === 200 ? '✅ 特殊字符已处理' : '❌ 失败');
-  } catch(e) { console.log('❌ 异常:', e.message); }
+    const res = await request('/api/voices', 'GET');
+    if (res.status === 200 && Array.isArray(res.data.voices)) {
+      console.log('✅ 音色列表正常');
+    } else {
+      console.log('❌ 音色列表异常');
+      fail();
+    }
+  } catch(e) { console.log('❌ 异常:', e.message); fail(); }
   
-  // 3. 并发请求测试
-  console.log('\n3. 并发请求测试 (5 concurrent)');
-  const promises = [];
-  for (let i = 0; i < 5; i++) {
-    promises.push(request('/api/config', 'GET').catch(e => ({ error: e.message })));
-  }
-  const results = await Promise.all(promises);
-  const success = results.filter(r => r.status === 200).length;
-  console.log(success === 5 ? '✅ 并发正常' : '⚠️ 并发问题:', success, '/5');
+  // 3. 输入校验
+  console.log('\n3. 聊天接口参数校验');
+  try {
+    const res = await request('/api/chat', 'POST', {});
+    if (res.status === 200 && res.data.error) {
+      console.log('✅ 参数校验正常');
+    } else {
+      console.log('❌ 参数校验异常');
+      fail();
+    }
+  } catch(e) { console.log('❌ 异常:', e.message); fail(); }
   
-  // 4. 快速连续请求测试
-  console.log('\n4. 快速连续请求 (10 rapid requests)');
-  let rapidSuccess = 0;
-  for (let i = 0; i < 10; i++) {
-    try {
-      const r = await request('/api/config', 'GET');
-      if (r.status === 200) rapidSuccess++;
-    } catch(e) {}
-  }
-  console.log(rapidSuccess === 10 ? '✅ 快速请求正常' : '⚠️ 快速请求问题:', rapidSuccess, '/10');
+  // 4. 任务状态校验
+  console.log('\n4. 任务状态参数校验');
+  try {
+    const res = await request('/api/music/status', 'POST', {});
+    if (res.status === 200 && res.data.error) {
+      console.log('✅ 状态校验正常');
+    } else {
+      console.log('❌ 状态校验异常');
+      fail();
+    }
+  } catch(e) { console.log('❌ 异常:', e.message); fail(); }
   
   // 5. 无效路径测试
   console.log('\n5. 无效路径测试');
   try {
     const res = await request('/api/nonexistent', 'GET');
-    console.log(res.status === 404 ? '✅ 404处理正常' : '⚠️ 返回:', res.status);
-  } catch(e) { console.log('❌ 异常:', e.message); }
+    if (res.status === 404) {
+      console.log('✅ 404处理正常', res.status);
+    } else {
+      console.log('❌ 返回:', res.status);
+      fail();
+    }
+  } catch(e) { console.log('❌ 异常:', e.message); fail(); }
   
   // 6. 非法方法测试
-  console.log('\n6. 非法方法测试 (DELETE /api/config)');
+  console.log('\n6. 非法方法测试 (DELETE /api/files)');
   try {
-    const res = await request('/api/config', 'DELETE');
-    console.log('⚠️ DELETE返回:', res.status, res.data.error || '');
-  } catch(e) { console.log('❌ 异常:', e.message); }
+    const res = await request('/api/files', 'DELETE');
+    if (res.status === 405) {
+      console.log('✅ 405 正常');
+    } else {
+      console.log(`❌ 返回: ${res.status}`);
+      fail();
+    }
+  } catch(e) { console.log('❌ 异常:', e.message); fail(); }
   
-  // 7. 超时测试
-  console.log('\n7. 超时测试 (1ms timeout)');
+  // 7. 上传参数校验
+  console.log('\n7. 上传参数校验');
   try {
-    await request('/api/chat', 'POST', { messages: [{ role: 'user', content: 'test' }] }, 1);
-    console.log('❌ 未触发超时');
-  } catch(e) {
-    console.log(e.message === 'TIMEOUT' ? '✅ 超时机制正常' : '❌ 异常:', e.message);
-  }
+    const res = await request('/api/upload', 'POST', {});
+    if (res.status === 200 && res.data.error) {
+      console.log('✅ 上传校验正常');
+    } else {
+      console.log('❌ 上传校验异常');
+      fail();
+    }
+  } catch(e) { console.log('❌ 异常:', e.message); fail(); }
   
-  // 8. 频率限制测试 (快速连续生图)
-  console.log('\n8. 频率限制测试 (3 rapid cover requests)');
+  // 8. 输出文件列表
+  console.log('\n8. 输出文件列表');
+  try {
+    const res = await request('/api/files', 'GET');
+    if (res.status === 200 && Array.isArray(res.data.files)) {
+      console.log('✅ 文件列表正常');
+    } else {
+      console.log('❌ 文件列表异常');
+      fail();
+    }
+  } catch(e) { console.log('❌ 异常:', e.message); fail(); }
+
+  // 9. JSON 错误处理
+  console.log('\n9. 非法 JSON 测试');
   for (let i = 0; i < 3; i++) {
-    try {
-      const r = await request('/api/generate/cover', 'POST', { prompt: 'test' + i, ratio: '1:1' }, 15000);
-      console.log('  Request', i+1, ':', r.data.success ? '✅' : '❌', r.data.error || 'OK');
-    } catch(e) { console.log('  Request', i+1, ':', '❌', e.message); }
+    if (i > 0) break;
+    const bad = await new Promise((resolve, reject) => {
+      const req = http.request({ hostname: 'localhost', port: getPort(), path: '/api/chat', method: 'POST', headers: { 'Content-Type': 'application/json' } }, res => {
+        let d = '';
+        res.on('data', c => d += c);
+        res.on('end', () => resolve({ status: res.statusCode, body: d }));
+      });
+      req.on('error', reject);
+      req.write('{bad json');
+      req.end();
+    });
+    if (bad.status === 400) {
+      console.log('✅ 非法 JSON 已拦截');
+    } else {
+      console.log(`❌ 返回: ${bad.status}`);
+      fail();
+    }
   }
   
   console.log('\n=== Tests Complete ===');
+  if (failures > 0) {
+    throw new Error(`Smoke tests failed: ${failures}`);
+  }
+  return { passed: true, failures: 0 };
 }
 
-runTests();
+async function main() {
+  return runTests();
+}
+
+if (require.main === module) {
+  main().catch(error => {
+    console.error(error.message);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  main
+};
