@@ -42,7 +42,14 @@ function createServer(options = {}) {
         dbPath: APP_STATE_DB,
         legacyFilePath: LEGACY_STATE_FILE,
         sessionTtlMs: SESSION_TTL_MS,
-        maxHistoryItems: MAX_HISTORY_ITEMS
+        maxHistoryItems: MAX_HISTORY_ITEMS,
+        seedUser: {
+            username: APP_USERNAME,
+            password: APP_PASSWORD,
+            displayName: 'Studio Admin',
+            role: 'admin',
+            planCode: 'internal'
+        }
     });
 
     const routes = {

@@ -89,7 +89,7 @@ async function main() {
     const cookie = String(cookieHeader).split(';')[0];
 
     const session = await request(port, '/api/auth/session', 'GET', null, { Cookie: cookie });
-    if (session.status !== 200 || session.data.user?.username !== 'studio') {
+    if (session.status !== 200 || session.data.user?.username !== 'studio' || !session.data.user?.id) {
       throw new Error('Expected authenticated session after login');
     }
 

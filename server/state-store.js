@@ -1,4 +1,5 @@
 const fs = require('fs');
+const crypto = require('crypto');
 const { DatabaseSync } = require('node:sqlite');
 
 function safeParseJson(value, fallback) {
@@ -10,69 +11,226 @@ function safeParseJson(value, fallback) {
     }
 }
 
-function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItems }) {
+function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
+    const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+    return `${salt}:${hash}`;
+}
+
+function verifyPassword(password, storedHash) {
+    const [salt, expected] = String(storedHash || '').split(':');
+    if (!salt || !expected) return false;
+    const actual = crypto.scryptSync(password, salt, 64).toString('hex');
+    return crypto.timingSafeEqual(Buffer.from(actual, 'hex'), Buffer.from(expected, 'hex'));
+}
+
+function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItems, seedUser }) {
     const db = new DatabaseSync(dbPath);
     db.exec(`
         PRAGMA journal_mode = WAL;
         PRAGMA synchronous = NORMAL;
         PRAGMA busy_timeout = 5000;
 
-        CREATE TABLE IF NOT EXISTS sessions (
-            token TEXT PRIMARY KEY,
-            username TEXT NOT NULL,
+        CREATE TABLE IF NOT EXISTS users (
+            id TEXT PRIMARY KEY,
+            username TEXT NOT NULL UNIQUE,
+            email TEXT UNIQUE,
+            display_name TEXT,
+            status TEXT NOT NULL DEFAULT 'active',
+            role TEXT NOT NULL DEFAULT 'user',
+            plan_code TEXT NOT NULL DEFAULT 'free',
+            timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
+            locale TEXT NOT NULL DEFAULT 'zh-CN',
+            last_login_at INTEGER,
             created_at INTEGER NOT NULL,
-            expires_at INTEGER NOT NULL
+            updated_at INTEGER NOT NULL,
+            deleted_at INTEGER
         );
 
-        CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions (expires_at);
+        CREATE TABLE IF NOT EXISTS user_credentials (
+            user_id TEXT PRIMARY KEY,
+            password_hash TEXT NOT NULL,
+            password_algo TEXT NOT NULL DEFAULT 'scrypt',
+            password_updated_at INTEGER NOT NULL,
+            must_reset_password INTEGER NOT NULL DEFAULT 0,
+            failed_login_count INTEGER NOT NULL DEFAULT 0,
+            locked_until INTEGER,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+        );
 
-        CREATE TABLE IF NOT EXISTS history_entries (
+        CREATE TABLE IF NOT EXISTS user_sessions (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            session_token_hash TEXT NOT NULL UNIQUE,
+            ip TEXT,
+            user_agent TEXT,
+            device_label TEXT,
+            created_at INTEGER NOT NULL,
+            last_seen_at INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL,
+            revoked_at INTEGER,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_user_sessions_lookup ON user_sessions (session_token_hash);
+        CREATE INDEX IF NOT EXISTS idx_user_sessions_expires_at ON user_sessions (expires_at);
+
+        CREATE TABLE IF NOT EXISTS user_preferences (
+            user_id TEXT PRIMARY KEY,
+            theme TEXT,
+            default_model_chat TEXT,
+            default_voice TEXT,
+            default_music_style TEXT,
+            default_cover_ratio TEXT,
+            template_preferences_json TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS user_usage_daily (
+            user_id TEXT NOT NULL,
+            usage_date TEXT NOT NULL,
+            chat_count INTEGER NOT NULL DEFAULT 0,
+            lyrics_count INTEGER NOT NULL DEFAULT 0,
+            music_count INTEGER NOT NULL DEFAULT 0,
+            image_count INTEGER NOT NULL DEFAULT 0,
+            speech_count INTEGER NOT NULL DEFAULT 0,
+            cover_count INTEGER NOT NULL DEFAULT 0,
+            input_tokens INTEGER NOT NULL DEFAULT 0,
+            output_tokens INTEGER NOT NULL DEFAULT 0,
+            storage_bytes INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (user_id, usage_date),
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS user_history_entries (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL,
+            user_id TEXT NOT NULL,
             feature TEXT NOT NULL,
             payload TEXT NOT NULL,
             created_at INTEGER NOT NULL
         );
 
-        CREATE INDEX IF NOT EXISTS idx_history_lookup ON history_entries (username, feature, created_at DESC, id DESC);
+        CREATE INDEX IF NOT EXISTS idx_user_history_lookup ON user_history_entries (user_id, feature, created_at DESC, id DESC);
+    `);
+
+    const findUserByUsernameStmt = db.prepare(`
+        SELECT id, username, email, display_name AS displayName, status, role, plan_code AS planCode,
+               timezone, locale, last_login_at AS lastLoginAt, created_at AS createdAt, updated_at AS updatedAt
+        FROM users
+        WHERE username = ? AND deleted_at IS NULL
+    `);
+    const insertUserStmt = db.prepare(`
+        INSERT INTO users (id, username, email, display_name, status, role, plan_code, timezone, locale, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const updateUserLoginStmt = db.prepare(`
+        UPDATE users
+        SET last_login_at = ?, updated_at = ?
+        WHERE id = ?
+    `);
+    const getCredentialStmt = db.prepare(`
+        SELECT user_id AS userId, password_hash AS passwordHash, failed_login_count AS failedLoginCount,
+               locked_until AS lockedUntil
+        FROM user_credentials
+        WHERE user_id = ?
+    `);
+    const upsertCredentialStmt = db.prepare(`
+        INSERT INTO user_credentials (user_id, password_hash, password_updated_at, failed_login_count, locked_until)
+        VALUES (?, ?, ?, 0, NULL)
+        ON CONFLICT(user_id) DO UPDATE SET
+            password_hash = excluded.password_hash,
+            password_updated_at = excluded.password_updated_at,
+            failed_login_count = 0,
+            locked_until = NULL
+    `);
+    const setFailedLoginStmt = db.prepare(`
+        UPDATE user_credentials
+        SET failed_login_count = ?, locked_until = ?
+        WHERE user_id = ?
     `);
 
     const getSessionStmt = db.prepare(`
-        SELECT token, username, created_at AS createdAt, expires_at AS expiresAt
-        FROM sessions
-        WHERE token = ?
+        SELECT s.id, s.user_id AS userId, s.created_at AS createdAt, s.expires_at AS expiresAt,
+               s.last_seen_at AS lastSeenAt, u.username, u.role, u.plan_code AS planCode, u.status
+        FROM user_sessions s
+        JOIN users u ON u.id = s.user_id
+        WHERE s.session_token_hash = ? AND s.revoked_at IS NULL
     `);
     const insertSessionStmt = db.prepare(`
-        INSERT INTO sessions (token, username, created_at, expires_at)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO user_sessions (id, user_id, session_token_hash, created_at, last_seen_at, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?)
     `);
-    const deleteSessionStmt = db.prepare(`DELETE FROM sessions WHERE token = ?`);
-    const deleteExpiredSessionsStmt = db.prepare(`DELETE FROM sessions WHERE expires_at <= ?`);
+    const deleteSessionStmt = db.prepare(`DELETE FROM user_sessions WHERE session_token_hash = ?`);
+    const deleteExpiredSessionsStmt = db.prepare(`DELETE FROM user_sessions WHERE expires_at <= ? OR revoked_at IS NOT NULL`);
 
     const selectHistoryStmt = db.prepare(`
         SELECT payload
-        FROM history_entries
-        WHERE username = ? AND feature = ?
+        FROM user_history_entries
+        WHERE user_id = ? AND feature = ?
         ORDER BY created_at DESC, id DESC
         LIMIT ?
     `);
     const insertHistoryStmt = db.prepare(`
-        INSERT INTO history_entries (username, feature, payload, created_at)
+        INSERT INTO user_history_entries (user_id, feature, payload, created_at)
         VALUES (?, ?, ?, ?)
     `);
     const pruneHistoryStmt = db.prepare(`
-        DELETE FROM history_entries
-        WHERE username = ? AND feature = ?
+        DELETE FROM user_history_entries
+        WHERE user_id = ? AND feature = ?
           AND id NOT IN (
             SELECT id
-            FROM history_entries
-            WHERE username = ? AND feature = ?
+            FROM user_history_entries
+            WHERE user_id = ? AND feature = ?
             ORDER BY created_at DESC, id DESC
             LIMIT ?
           )
     `);
-    const countSessionsStmt = db.prepare(`SELECT COUNT(*) AS count FROM sessions`);
-    const countHistoryStmt = db.prepare(`SELECT COUNT(*) AS count FROM history_entries`);
+    const countSessionsStmt = db.prepare(`SELECT COUNT(*) AS count FROM user_sessions`);
+    const countHistoryStmt = db.prepare(`SELECT COUNT(*) AS count FROM user_history_entries`);
+
+    function normalizeUserRecord(row) {
+        if (!row) return null;
+        return {
+            id: row.id,
+            username: row.username,
+            email: row.email || null,
+            displayName: row.displayName || row.username,
+            status: row.status,
+            role: row.role,
+            planCode: row.planCode,
+            timezone: row.timezone,
+            locale: row.locale,
+            lastLoginAt: row.lastLoginAt || null,
+            createdAt: row.createdAt,
+            updatedAt: row.updatedAt
+        };
+    }
+
+    function ensureSeedUser() {
+        if (!seedUser?.username || !seedUser?.password) return;
+        const existing = normalizeUserRecord(findUserByUsernameStmt.get(seedUser.username));
+        const now = Date.now();
+        if (!existing) {
+            const userId = crypto.randomUUID();
+            insertUserStmt.run(
+                userId,
+                seedUser.username,
+                seedUser.email || null,
+                seedUser.displayName || seedUser.username,
+                'active',
+                seedUser.role || 'admin',
+                seedUser.planCode || 'internal',
+                'Asia/Shanghai',
+                'zh-CN',
+                now,
+                now
+            );
+            upsertCredentialStmt.run(userId, hashPassword(seedUser.password), now);
+            return;
+        }
+        upsertCredentialStmt.run(existing.id, hashPassword(seedUser.password), now);
+    }
 
     function migrateLegacyJsonIfNeeded() {
         if (!legacyFilePath || !fs.existsSync(legacyFilePath)) {
@@ -87,21 +245,25 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         const legacy = safeParseJson(fs.readFileSync(legacyFilePath, 'utf8'), { sessions: {}, history: {} });
         db.exec('BEGIN');
         try {
+            const defaultUser = normalizeUserRecord(findUserByUsernameStmt.get(seedUser?.username || 'studio'));
             Object.entries(legacy.sessions || {}).forEach(([token, session]) => {
-                if (!token || !session?.username) return;
+                if (!token || !session?.username || !defaultUser || session.username !== defaultUser.username) return;
                 insertSessionStmt.run(
+                    crypto.randomUUID(),
+                    defaultUser.id,
                     token,
-                    session.username,
+                    Number(session.createdAt || Date.now()),
                     Number(session.createdAt || Date.now()),
                     Number(session.expiresAt || Date.now() + sessionTtlMs)
                 );
             });
 
             Object.entries(legacy.history || {}).forEach(([username, features]) => {
+                if (!defaultUser || username !== defaultUser.username) return;
                 Object.entries(features || {}).forEach(([feature, entries]) => {
                     (entries || []).slice().reverse().forEach((entry, index) => {
                         insertHistoryStmt.run(
-                            username,
+                            defaultUser.id,
                             feature,
                             JSON.stringify(entry),
                             Number(entry?.timestamp || Date.now() - index)
@@ -116,6 +278,7 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         }
     }
 
+    ensureSeedUser();
     migrateLegacyJsonIfNeeded();
 
     function cleanupExpiredSessions() {
@@ -123,39 +286,67 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
     }
 
     return {
+        getUserByUsername(username) {
+            return normalizeUserRecord(findUserByUsernameStmt.get(username));
+        },
+
+        authenticateUser(username, password) {
+            const user = normalizeUserRecord(findUserByUsernameStmt.get(username));
+            if (!user || user.status !== 'active') return null;
+            const credential = getCredentialStmt.get(user.id);
+            const now = Date.now();
+            if (!credential) return null;
+            if (credential.lockedUntil && credential.lockedUntil > now) {
+                return { error: '账号已被临时锁定，请稍后重试' };
+            }
+            if (!verifyPassword(password, credential.passwordHash)) {
+                const failedCount = Number(credential.failedLoginCount || 0) + 1;
+                const lockedUntil = failedCount >= 5 ? now + 15 * 60 * 1000 : null;
+                setFailedLoginStmt.run(failedCount, lockedUntil, user.id);
+                return null;
+            }
+            setFailedLoginStmt.run(0, null, user.id);
+            updateUserLoginStmt.run(now, now, user.id);
+            user.lastLoginAt = now;
+            return user;
+        },
+
         getSession(token) {
             if (!token) return null;
             cleanupExpiredSessions();
-            return getSessionStmt.get(token) || null;
+            const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+            return getSessionStmt.get(tokenHash) || null;
         },
 
-        createSession(username) {
+        createSession(user) {
             cleanupExpiredSessions();
             const token = require('crypto').randomBytes(24).toString('hex');
+            const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
             const createdAt = Date.now();
             const expiresAt = createdAt + sessionTtlMs;
-            insertSessionStmt.run(token, username, createdAt, expiresAt);
-            return { token, username, createdAt, expiresAt };
+            insertSessionStmt.run(crypto.randomUUID(), user.id, tokenHash, createdAt, createdAt, expiresAt);
+            return { token, userId: user.id, username: user.username, createdAt, expiresAt };
         },
 
         clearSession(token) {
             if (!token) return;
-            deleteSessionStmt.run(token);
+            const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+            deleteSessionStmt.run(tokenHash);
         },
 
-        getHistory(username, feature) {
-            return selectHistoryStmt.all(username, feature, maxHistoryItems)
+        getHistory(userId, feature) {
+            return selectHistoryStmt.all(userId, feature, maxHistoryItems)
                 .map(row => safeParseJson(row.payload, null))
                 .filter(Boolean);
         },
 
-        appendHistory(username, feature, entry) {
+        appendHistory(userId, feature, entry) {
             const now = Number(entry?.timestamp || Date.now());
             db.exec('BEGIN');
             try {
-                insertHistoryStmt.run(username, feature, JSON.stringify(entry), now);
-                pruneHistoryStmt.run(username, feature, username, feature, maxHistoryItems);
-                const items = selectHistoryStmt.all(username, feature, maxHistoryItems)
+                insertHistoryStmt.run(userId, feature, JSON.stringify(entry), now);
+                pruneHistoryStmt.run(userId, feature, userId, feature, maxHistoryItems);
+                const items = selectHistoryStmt.all(userId, feature, maxHistoryItems)
                     .map(row => safeParseJson(row.payload, null))
                     .filter(Boolean);
                 db.exec('COMMIT');

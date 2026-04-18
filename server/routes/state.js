@@ -26,7 +26,12 @@ function createStateRoutes({ stateStore, sessionCookieName, authConfig }) {
             }
             return {
                 authenticated: true,
-                user: { username: session.username }
+                user: {
+                    id: session.userId,
+                    username: session.username,
+                    role: session.role,
+                    planCode: session.planCode
+                }
             };
         },
 
@@ -34,12 +39,18 @@ function createStateRoutes({ stateStore, sessionCookieName, authConfig }) {
             const username = String(body.username || '').trim();
             const password = String(body.password || '');
 
-            if (username !== authConfig.username || password !== authConfig.password) {
+            const user = stateStore.authenticateUser(username, password);
+            if (user?.error) {
+                sendJson(res, 423, { error: user.error });
+                return null;
+            }
+
+            if (!user) {
                 sendJson(res, 401, { error: '账号或密码不正确' });
                 return null;
             }
 
-            const session = stateStore.createSession(username);
+            const session = stateStore.createSession(user);
             setCookie(res, sessionCookieName, session.token, {
                 httpOnly: true,
                 sameSite: 'Lax',
@@ -49,7 +60,12 @@ function createStateRoutes({ stateStore, sessionCookieName, authConfig }) {
 
             return {
                 success: true,
-                user: { username }
+                user: {
+                    id: user.id,
+                    username: user.username,
+                    role: user.role,
+                    planCode: user.planCode
+                }
             };
         },
 
@@ -72,7 +88,7 @@ function createStateRoutes({ stateStore, sessionCookieName, authConfig }) {
 
             if (req.method === 'GET') {
                 return {
-                    items: stateStore.getHistory(session.username, feature)
+                    items: stateStore.getHistory(session.userId, feature)
                 };
             }
 
@@ -82,7 +98,7 @@ function createStateRoutes({ stateStore, sessionCookieName, authConfig }) {
             }
 
             return {
-                items: stateStore.appendHistory(session.username, feature, body.entry)
+                items: stateStore.appendHistory(session.userId, feature, body.entry)
             };
         }
     };
