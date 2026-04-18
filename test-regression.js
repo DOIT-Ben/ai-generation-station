@@ -5,6 +5,7 @@ const http = require('http');
 const smokeTest = require('./test-suite');
 const failureTest = require('./test-failures');
 const authHistoryTest = require('./test-auth-history');
+const taskPersistenceTest = require('./test-task-persistence');
 const frontendStateTest = require('./test-frontend-state');
 const pageMarkupTest = require('./test-page-markup');
 const lyricsTest = require('./test-lyrics');
@@ -124,6 +125,7 @@ async function main() {
     await runCase(results, 'FrontendState', () => frontendStateTest.main());
     await runCase(results, 'PageMarkup', () => pageMarkupTest.main());
     await runCase(results, 'AuthHistory', () => authHistoryTest.main());
+    await runCase(results, 'TaskPersistence', () => taskPersistenceTest.main());
 
     await withServer(port, async () => {
         await runCase(results, 'Smoke', () => smokeTest.main());

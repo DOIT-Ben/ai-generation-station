@@ -70,9 +70,9 @@ function createServer(options = {}) {
                 password: APP_PASSWORD
             }
         }),
-        ...createLocalRoutes({ OUTPUT_DIR, MIME_TYPES, musicTasks, coverTasks, imageTasks }),
+        ...createLocalRoutes({ OUTPUT_DIR, MIME_TYPES, musicTasks, coverTasks, imageTasks, stateStore }),
         ...createServiceRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, trackUsage }),
-        ...createTaskRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, musicTasks, imageTasks, coverTasks, trackUsage })
+        ...createTaskRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, musicTasks, imageTasks, coverTasks, trackUsage, stateStore })
     };
 
     const server = http.createServer(async (req, res) => {

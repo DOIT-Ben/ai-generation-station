@@ -22,9 +22,22 @@ const VOICES = [
     { id: 'german_female', name: '德语女声', language: '德文', gender: 'female' }
 ];
 
-function getTaskStatus(taskMap, taskId) {
+function getTaskStatus(taskMap, taskId, stateStore) {
     if (!taskId) {
         return { error: 'taskId is required' };
+    }
+
+    const persistedTask = stateStore?.getTask(taskId);
+    if (persistedTask) {
+        return {
+            taskId,
+            status: persistedTask.status,
+            progress: persistedTask.progress,
+            url: persistedTask.url,
+            duration: persistedTask.duration,
+            size: persistedTask.size,
+            error: persistedTask.error
+        };
     }
 
     const task = taskMap.get(taskId);
@@ -43,7 +56,7 @@ function getTaskStatus(taskMap, taskId) {
     };
 }
 
-function createLocalRoutes({ OUTPUT_DIR, MIME_TYPES, musicTasks, coverTasks, imageTasks }) {
+function createLocalRoutes({ OUTPUT_DIR, MIME_TYPES, musicTasks, coverTasks, imageTasks, stateStore }) {
     return {
         '/api/upload': async (req, res, body) => {
             const { filename, data } = body;
@@ -84,9 +97,9 @@ function createLocalRoutes({ OUTPUT_DIR, MIME_TYPES, musicTasks, coverTasks, ima
             ]
         }),
 
-        '/api/music/status': async (req, res, body) => getTaskStatus(musicTasks, body.taskId),
-        '/api/music-cover/status': async (req, res, body) => getTaskStatus(coverTasks, body.taskId),
-        '/api/image/status': async (req, res, body) => getTaskStatus(imageTasks, body.taskId),
+        '/api/music/status': async (req, res, body) => getTaskStatus(musicTasks, body.taskId, stateStore),
+        '/api/music-cover/status': async (req, res, body) => getTaskStatus(coverTasks, body.taskId, stateStore),
+        '/api/image/status': async (req, res, body) => getTaskStatus(imageTasks, body.taskId, stateStore),
 
         '/api/files': async () => {
             try {

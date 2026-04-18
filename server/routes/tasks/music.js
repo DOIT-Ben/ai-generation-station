@@ -1,7 +1,21 @@
 const fs = require('fs');
 const path = require('path');
 
-function createMusicRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, musicTasks, trackUsage }) {
+function createMusicRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, musicTasks, trackUsage, stateStore }) {
+    function persistTask(task, patch = {}) {
+        if (!stateStore) return;
+        stateStore.updateTask(task.taskId, {
+            status: patch.status || task.status,
+            progress: patch.progress != null ? patch.progress : task.progress,
+            error: patch.error !== undefined ? patch.error : task.error,
+            outputPayload: {
+                providerTaskId: task.providerTaskId,
+                url: task.url,
+                duration: task.duration,
+                size: task.size
+            }
+        });
+    }
     function normalizeDuration(duration) {
         if (duration == null || duration === '') {
             return undefined;
@@ -139,7 +153,7 @@ function createMusicRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, musicTasks, t
                 const options = {
                     hostname: API_HOST,
                     port: 443,
-                    path: `/v1/music_generation_result?task_id=${task.taskId}`,
+                    path: `/v1/music_generation_result?task_id=${task.providerTaskId}`,
                     method: 'GET',
                     headers: { 'Authorization': `Bearer ${API_KEY}` }
                 };
@@ -158,25 +172,31 @@ function createMusicRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, musicTasks, t
                                 task.progress = 100;
                                 task.url = `/output/${path.basename(task.outputFile)}`;
                                 task.duration = response.extra_info?.music_duration || 0;
+                                task.size = fs.statSync(task.outputFile).size;
+                                persistTask(task);
                                 trackUsage?.(task.userId, 'music');
                                 resolve(task);
                             } else if (response.status === 1 || response.status === 0) {
                                 task.progress = 30 + Math.min(50, attempts * 5);
+                                persistTask(task);
                                 if (attempts < maxAttempts) {
                                     setTimeout(poll, 2000);
                                 } else {
                                     task.status = 'error';
                                     task.error = 'Timeout';
+                                    persistTask(task);
                                     reject(new Error('Music generation timeout'));
                                 }
                             } else {
                                 task.status = 'error';
                                 task.error = 'Failed';
+                                persistTask(task);
                                 reject(new Error('Music generation failed'));
                             }
                         } catch (error) {
                             task.status = 'error';
                             task.error = error.message;
+                            persistTask(task);
                             if (attempts < maxAttempts) {
                                 setTimeout(poll, 2000);
                             } else {
@@ -189,6 +209,7 @@ function createMusicRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, musicTasks, t
                 req.on('error', (error) => {
                     task.status = 'error';
                     task.error = error.message;
+                    persistTask(task);
                     reject(error);
                 });
 
@@ -204,6 +225,7 @@ function createMusicRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, musicTasks, t
 
         task.status = 'processing';
         task.progress = 10;
+        persistTask(task);
 
         return new Promise((resolve, reject) => {
             const requestBody = buildMusicRequest(options);
@@ -234,14 +256,17 @@ function createMusicRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, musicTasks, t
                             task.progress = 100;
                             task.url = `/output/${path.basename(task.outputFile)}`;
                             task.duration = response.extra_info?.music_duration || 0;
+                            task.size = fs.statSync(task.outputFile).size;
+                            persistTask(task);
                             trackUsage?.(task.userId, 'music');
                             resolve(task);
                             return;
                         }
 
                         if (response.task_id) {
-                            task.taskId = response.task_id;
+                            task.providerTaskId = response.task_id;
                             task.progress = 30;
+                            persistTask(task);
                             await pollMusicTask(task);
                             resolve(task);
                             return;
@@ -249,10 +274,12 @@ function createMusicRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, musicTasks, t
 
                         task.status = 'error';
                         task.error = 'Music generation failed';
+                        persistTask(task);
                         reject(new Error('Music generation failed'));
                     } catch (error) {
                         task.status = 'error';
                         task.error = error.message;
+                        persistTask(task);
                         reject(error);
                     }
                 });
@@ -261,6 +288,7 @@ function createMusicRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, musicTasks, t
             req.on('error', (error) => {
                 task.status = 'error';
                 task.error = error.message;
+                persistTask(task);
                 reject(error);
             });
 
@@ -281,6 +309,7 @@ function createMusicRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, musicTasks, t
             const normalizedPrompt = String(prompt || '').trim();
 
             musicTasks.set(taskId, {
+                taskId,
                 status: 'pending',
                 progress: 0,
                 outputFile,
@@ -291,6 +320,15 @@ function createMusicRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, musicTasks, t
                 duration: normalizedDuration,
                 userId: req.authSession?.userId || null,
                 startedAt: Date.now()
+            });
+            stateStore?.createTask({
+                taskId,
+                userId: req.authSession?.userId || null,
+                feature: 'music',
+                status: 'pending',
+                progress: 0,
+                inputPayload: { prompt: normalizedPrompt, style, bpm, key, duration: normalizedDuration },
+                outputPayload: {}
             });
 
             processMusicTask(taskId, {
@@ -304,6 +342,7 @@ function createMusicRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, musicTasks, t
                 if (task) {
                     task.status = 'error';
                     task.error = error.message;
+                    persistTask(task);
                 }
             });
 

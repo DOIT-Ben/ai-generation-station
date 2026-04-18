@@ -112,6 +112,22 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         );
 
         CREATE INDEX IF NOT EXISTS idx_user_history_lookup ON user_history_entries (user_id, feature, created_at DESC, id DESC);
+
+        CREATE TABLE IF NOT EXISTS tasks (
+            task_id TEXT PRIMARY KEY,
+            user_id TEXT,
+            feature TEXT NOT NULL,
+            status TEXT NOT NULL,
+            progress INTEGER NOT NULL DEFAULT 0,
+            input_payload TEXT,
+            output_payload TEXT,
+            error TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_tasks_feature_status ON tasks (feature, status, updated_at DESC);
     `);
 
     const findUserByUsernameStmt = db.prepare(`
@@ -234,6 +250,38 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
     `);
     const countSessionsStmt = db.prepare(`SELECT COUNT(*) AS count FROM user_sessions`);
     const countHistoryStmt = db.prepare(`SELECT COUNT(*) AS count FROM user_history_entries`);
+    const insertTaskStmt = db.prepare(`
+        INSERT INTO tasks (
+            task_id, user_id, feature, status, progress, input_payload, output_payload, error, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(task_id) DO UPDATE SET
+            user_id = excluded.user_id,
+            feature = excluded.feature,
+            status = excluded.status,
+            progress = excluded.progress,
+            input_payload = excluded.input_payload,
+            output_payload = excluded.output_payload,
+            error = excluded.error,
+            updated_at = excluded.updated_at
+    `);
+    const getTaskStmt = db.prepare(`
+        SELECT task_id AS taskId, user_id AS userId, feature, status, progress, input_payload AS inputPayload,
+               output_payload AS outputPayload, error, created_at AS createdAt, updated_at AS updatedAt
+        FROM tasks
+        WHERE task_id = ?
+    `);
+    const updateTaskStmt = db.prepare(`
+        UPDATE tasks
+        SET status = ?, progress = ?, output_payload = ?, error = ?, updated_at = ?
+        WHERE task_id = ?
+    `);
+    const markInterruptedTasksStmt = db.prepare(`
+        UPDATE tasks
+        SET status = 'error',
+            error = COALESCE(error, 'Server restarted before task completion'),
+            updated_at = ?
+        WHERE status IN ('pending', 'processing')
+    `);
 
     function normalizeUserRecord(row) {
         if (!row) return null;
@@ -273,6 +321,26 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
 
     function getUsageDate(date = new Date()) {
         return date.toISOString().slice(0, 10);
+    }
+
+    function normalizeTask(row) {
+        if (!row) return null;
+        const output = safeParseJson(row.outputPayload, null) || {};
+        return {
+            taskId: row.taskId,
+            userId: row.userId || null,
+            feature: row.feature,
+            status: row.status,
+            progress: row.progress,
+            url: output.url,
+            duration: output.duration,
+            size: output.size,
+            error: row.error || undefined,
+            createdAt: row.createdAt,
+            updatedAt: row.updatedAt,
+            inputPayload: safeParseJson(row.inputPayload, null),
+            outputPayload: output
+        };
     }
 
     function getEmptyUsage(usageDate) {
@@ -363,6 +431,7 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
 
     ensureSeedUser();
     migrateLegacyJsonIfNeeded();
+    markInterruptedTasksStmt.run(Date.now());
 
     function cleanupExpiredSessions() {
         deleteExpiredSessionsStmt.run(Date.now());
@@ -494,6 +563,44 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
                 Number(metrics.storageBytes || 0)
             );
             return this.getUsageDaily(userId, usageDate);
+        },
+
+        createTask(task) {
+            const now = Date.now();
+            insertTaskStmt.run(
+                task.taskId,
+                task.userId || null,
+                task.feature,
+                task.status || 'pending',
+                Number(task.progress || 0),
+                JSON.stringify(task.inputPayload || {}),
+                JSON.stringify(task.outputPayload || {}),
+                task.error || null,
+                task.createdAt || now,
+                now
+            );
+            return this.getTask(task.taskId);
+        },
+
+        updateTask(taskId, patch = {}) {
+            const current = this.getTask(taskId);
+            if (!current) return null;
+            const nextOutput = patch.outputPayload !== undefined
+                ? patch.outputPayload
+                : current.outputPayload || {};
+            updateTaskStmt.run(
+                patch.status || current.status,
+                patch.progress != null ? Number(patch.progress) : Number(current.progress || 0),
+                JSON.stringify(nextOutput || {}),
+                patch.error !== undefined ? patch.error : current.error || null,
+                Date.now(),
+                taskId
+            );
+            return this.getTask(taskId);
+        },
+
+        getTask(taskId) {
+            return normalizeTask(getTaskStmt.get(taskId));
         },
 
         close() {

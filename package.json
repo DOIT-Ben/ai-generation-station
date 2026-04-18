@@ -7,6 +7,7 @@
     "check": "node --check server/index.js",
     "test": "node test-suite.js",
     "test:auth-history": "node test-auth-history.js",
+    "test:task-persistence": "node test-task-persistence.js",
     "test:frontend": "node test-frontend-state.js && node test-page-markup.js",
     "test:regression": "node test-regression.js",
     "test:failures": "node test-failures.js",

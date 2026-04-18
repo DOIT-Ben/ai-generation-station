@@ -2,7 +2,21 @@ const fs = require('fs');
 const path = require('path');
 const { downloadFromUrl } = require('./shared');
 
-function createVoiceCoverRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, coverTasks, trackUsage }) {
+function createVoiceCoverRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, coverTasks, trackUsage, stateStore }) {
+    function persistTask(task, patch = {}) {
+        if (!stateStore) return;
+        stateStore.updateTask(task.taskId, {
+            status: patch.status || task.status,
+            progress: patch.progress != null ? patch.progress : task.progress,
+            error: patch.error !== undefined ? patch.error : task.error,
+            outputPayload: {
+                providerTaskId: task.providerTaskId,
+                url: task.url,
+                duration: task.duration,
+                size: task.size
+            }
+        });
+    }
     function buildCoverPrompt(prompt, timbre, pitch) {
         const parts = [String(prompt || '保持原曲风格').trim()];
 
@@ -36,6 +50,7 @@ function createVoiceCoverRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, coverTas
                 if (!audioBase64) {
                     task.status = 'error';
                     task.error = '无法读取音频文件: ' + audio_url;
+                    persistTask(task);
                     reject(new Error(task.error));
                     return;
                 }
@@ -69,6 +84,7 @@ function createVoiceCoverRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, coverTas
                             if (apiRes.statusCode !== 200) {
                                 task.status = 'error';
                                 task.error = `MiniMax API 错误: HTTP ${apiRes.statusCode}`;
+                                persistTask(task);
                                 reject(new Error(task.error));
                                 return;
                             }
@@ -77,13 +93,15 @@ function createVoiceCoverRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, coverTas
                             if (response.base_resp?.status_code !== 0) {
                                 task.status = 'error';
                                 task.error = response.base_resp?.status_msg || '翻唱请求失败';
+                                persistTask(task);
                                 reject(new Error(task.error));
                                 return;
                             }
 
                             if (response.task_id) {
-                                task.taskId = response.task_id;
+                                task.providerTaskId = response.task_id;
                                 task.progress = 30;
+                                persistTask(task);
                                 pollCoverTask(task).then(resolve).catch(reject);
                                 return;
                             }
@@ -101,20 +119,25 @@ function createVoiceCoverRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, coverTas
 
                                 task.url = `/output/${path.basename(outputFile)}`;
                                 task.duration = response.extra_info?.music_duration || 0;
+                                task.size = fs.statSync(task.outputFile).size;
+                                persistTask(task);
                                 trackUsage?.(task.userId, 'cover');
                                 resolve(task);
                             } else if (response.data?.status === 1) {
                                 task.status = 'error';
                                 task.error = '翻唱任务需要异步处理，但当前不支持';
+                                persistTask(task);
                                 reject(new Error(task.error));
                             } else {
                                 task.status = 'error';
                                 task.error = '未知的响应状态';
+                                persistTask(task);
                                 reject(new Error(task.error));
                             }
                         } catch (error) {
                             task.status = 'error';
                             task.error = '解析响应失败: ' + error.message;
+                            persistTask(task);
                             reject(error);
                         }
                     });
@@ -123,6 +146,7 @@ function createVoiceCoverRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, coverTas
                 apiReq.on('error', (error) => {
                     task.status = 'error';
                     task.error = error.message;
+                    persistTask(task);
                     reject(error);
                 });
 
@@ -131,6 +155,7 @@ function createVoiceCoverRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, coverTas
             } catch (error) {
                 task.status = 'error';
                 task.error = error.message;
+                persistTask(task);
                 reject(error);
             }
         });
@@ -146,7 +171,7 @@ function createVoiceCoverRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, coverTas
                 const req = https.request({
                     hostname: API_HOST,
                     port: 443,
-                    path: `/v1/music_generation_result?task_id=${task.taskId}`,
+                    path: `/v1/music_generation_result?task_id=${task.providerTaskId}`,
                     method: 'GET',
                     headers: { 'Authorization': `Bearer ${API_KEY}` }
                 }, (res) => {
@@ -170,6 +195,8 @@ function createVoiceCoverRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, coverTas
                                 task.progress = 100;
                                 task.url = `/output/${path.basename(task.outputFile)}`;
                                 task.duration = response.extra_info?.music_duration || 0;
+                                task.size = fs.statSync(task.outputFile).size;
+                                persistTask(task);
                                 trackUsage?.(task.userId, 'cover');
                                 resolve(task);
                                 return;
@@ -178,11 +205,13 @@ function createVoiceCoverRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, coverTas
                             if (response.status === 0 || response.status === 1 || response.status === 'pending' || response.status === 'processing') {
                                 task.status = 'processing';
                                 task.progress = Math.min(95, 30 + attempts * 3);
+                                persistTask(task);
                                 if (attempts < maxAttempts) {
                                     setTimeout(poll, 2000);
                                 } else {
                                     task.status = 'error';
                                     task.error = 'Cover generation timeout';
+                                    persistTask(task);
                                     reject(new Error(task.error));
                                 }
                                 return;
@@ -190,6 +219,7 @@ function createVoiceCoverRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, coverTas
 
                             task.status = 'error';
                             task.error = response.base_resp?.status_msg || response.error || '翻唱任务失败';
+                            persistTask(task);
                             reject(new Error(task.error));
                         } catch (error) {
                             if (attempts < maxAttempts) {
@@ -197,6 +227,7 @@ function createVoiceCoverRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, coverTas
                             } else {
                                 task.status = 'error';
                                 task.error = error.message;
+                                persistTask(task);
                                 reject(error);
                             }
                         }
@@ -206,6 +237,7 @@ function createVoiceCoverRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, coverTas
                 req.on('error', (error) => {
                     task.status = 'error';
                     task.error = error.message;
+                    persistTask(task);
                     reject(error);
                 });
 
@@ -226,9 +258,19 @@ function createVoiceCoverRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, coverTas
             const task = { taskId, status: 'processing', progress: 0, outputFile, startedAt: Date.now(), audio_url, prompt, timbre, pitch, userId: req.authSession?.userId || null };
 
             coverTasks.set(taskId, task);
+            stateStore?.createTask({
+                taskId,
+                userId: req.authSession?.userId || null,
+                feature: 'cover',
+                status: 'processing',
+                progress: 0,
+                inputPayload: { audio_url, prompt, timbre, pitch },
+                outputPayload: {}
+            });
             processCoverTask(task).catch(error => {
                 task.status = 'error';
                 task.error = error.message;
+                persistTask(task);
             });
 
             return { taskId, status: 'pending', message: '翻唱生成已启动' };

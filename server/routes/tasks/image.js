@@ -2,7 +2,21 @@ const fs = require('fs');
 const path = require('path');
 const { downloadFromUrl } = require('./shared');
 
-function createImageRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, imageTasks, trackUsage }) {
+function createImageRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, imageTasks, trackUsage, stateStore }) {
+    function persistTask(task, patch = {}) {
+        if (!stateStore) return;
+        stateStore.updateTask(task.taskId, {
+            status: patch.status || task.status,
+            progress: patch.progress != null ? patch.progress : task.progress,
+            error: patch.error !== undefined ? patch.error : task.error,
+            outputPayload: {
+                providerTaskId: task.providerTaskId,
+                url: task.url,
+                duration: task.duration,
+                size: task.size
+            }
+        });
+    }
     function buildImagePrompt(prompt, style) {
         if (!style) {
             return prompt;
@@ -19,7 +33,7 @@ function createImageRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, imageTasks, t
                 const options = {
                     hostname: API_HOST,
                     port: 443,
-                    path: `/v1/image_generation_result?task_id=${task.taskId}`,
+                    path: `/v1/image_generation_result?task_id=${task.providerTaskId}`,
                     method: 'GET',
                     headers: { 'Authorization': `Bearer ${API_KEY}` }
                 };
@@ -37,14 +51,18 @@ function createImageRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, imageTasks, t
                                 task.progress = 100;
                                 task.url = `/output/${path.basename(task.outputFile)}`;
                                 task.duration = Math.round((Date.now() - task.startedAt) / 1000);
+                                task.size = fs.statSync(task.outputFile).size;
+                                persistTask(task);
                                 trackUsage?.(task.userId, 'image');
                                 resolve(task);
                             } else if (attempts < maxAttempts) {
                                 task.progress = 30 + Math.min(40, attempts * 3);
+                                persistTask(task);
                                 setTimeout(poll, 2000);
                             } else {
                                 task.status = 'error';
                                 task.error = 'Timeout';
+                                persistTask(task);
                                 reject(new Error('Image generation timeout'));
                             }
                         } catch (error) {
@@ -53,6 +71,7 @@ function createImageRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, imageTasks, t
                             } else {
                                 task.status = 'error';
                                 task.error = error.message;
+                                persistTask(task);
                                 reject(error);
                             }
                         }
@@ -62,6 +81,7 @@ function createImageRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, imageTasks, t
                 req.on('error', (error) => {
                     task.status = 'error';
                     task.error = error.message;
+                    persistTask(task);
                     reject(error);
                 });
 
@@ -78,6 +98,7 @@ function createImageRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, imageTasks, t
 
         task.status = 'processing';
         task.progress = 10;
+        persistTask(task);
 
         return new Promise((resolve, reject) => {
             const postData = JSON.stringify({
@@ -113,21 +134,25 @@ function createImageRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, imageTasks, t
                             task.url = `/output/${path.basename(task.outputFile)}`;
                             task.size = fs.statSync(task.outputFile).size;
                             task.duration = Date.now() - task.startedAt;
+                            persistTask(task);
                             trackUsage?.(task.userId, 'image');
                             resolve(task);
                         } else if (response.task_id) {
-                            task.taskId = response.task_id;
+                            task.providerTaskId = response.task_id;
                             task.progress = 30;
+                            persistTask(task);
                             await pollImageTask(task);
                             resolve(task);
                         } else {
                             task.status = 'error';
                             task.error = 'Image generation failed';
+                            persistTask(task);
                             reject(new Error('Image generation failed'));
                         }
                     } catch (error) {
                         task.status = 'error';
                         task.error = error.message;
+                        persistTask(task);
                         reject(error);
                     }
                 });
@@ -136,6 +161,7 @@ function createImageRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, imageTasks, t
             req.on('error', (error) => {
                 task.status = 'error';
                 task.error = error.message;
+                persistTask(task);
                 reject(error);
             });
 
@@ -152,12 +178,22 @@ function createImageRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, imageTasks, t
             const taskId = `image_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
             const outputFile = path.join(OUTPUT_DIR, `${taskId}.png`);
 
-            imageTasks.set(taskId, { status: 'pending', progress: 0, outputFile, prompt, style, userId: req.authSession?.userId || null, startedAt: Date.now() });
+            imageTasks.set(taskId, { taskId, status: 'pending', progress: 0, outputFile, prompt, style, userId: req.authSession?.userId || null, startedAt: Date.now() });
+            stateStore?.createTask({
+                taskId,
+                userId: req.authSession?.userId || null,
+                feature: 'image',
+                status: 'pending',
+                progress: 0,
+                inputPayload: { prompt, ratio: ratio || '1:1', style },
+                outputPayload: {}
+            });
             processImageTask(taskId, { prompt, aspect_ratio: ratio || '1:1', style }).catch(error => {
                 const task = imageTasks.get(taskId);
                 if (task) {
                     task.status = 'error';
                     task.error = error.message;
+                    persistTask(task);
                 }
             });
 
