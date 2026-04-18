@@ -59,7 +59,10 @@ function createConfig(options = {}) {
     const APP_PASSWORD = getConfigValue(env, localConfig, 'APP_PASSWORD', 'AIGS2026!');
     const SESSION_COOKIE_NAME = getConfigValue(env, localConfig, 'SESSION_COOKIE_NAME', 'aigs_session');
     const SESSION_TTL_MS = Number(getConfigValue(env, localConfig, 'SESSION_TTL_MS', 7 * 24 * 60 * 60 * 1000));
-    const APP_STATE_FILE = path.isAbsolute(getConfigValue(env, localConfig, 'APP_STATE_FILE', ''))
+    const APP_STATE_DB = path.isAbsolute(getConfigValue(env, localConfig, 'APP_STATE_DB', ''))
+        ? getConfigValue(env, localConfig, 'APP_STATE_DB', '')
+        : path.join(DATA_DIR, getConfigValue(env, localConfig, 'APP_STATE_DB', 'app-state.sqlite'));
+    const LEGACY_STATE_FILE = path.isAbsolute(getConfigValue(env, localConfig, 'APP_STATE_FILE', ''))
         ? getConfigValue(env, localConfig, 'APP_STATE_FILE', '')
         : path.join(DATA_DIR, getConfigValue(env, localConfig, 'APP_STATE_FILE', 'app-state.json'));
     const MAX_HISTORY_ITEMS = Number(getConfigValue(env, localConfig, 'MAX_HISTORY_ITEMS', 12));
@@ -88,7 +91,8 @@ function createConfig(options = {}) {
         APP_PASSWORD,
         SESSION_COOKIE_NAME,
         SESSION_TTL_MS,
-        APP_STATE_FILE,
+        APP_STATE_DB,
+        LEGACY_STATE_FILE,
         MAX_HISTORY_ITEMS,
         MIME_TYPES
     };

@@ -29,7 +29,8 @@ function createServer(options = {}) {
         APP_PASSWORD,
         SESSION_COOKIE_NAME,
         SESSION_TTL_MS,
-        APP_STATE_FILE,
+        APP_STATE_DB,
+        LEGACY_STATE_FILE,
         MAX_HISTORY_ITEMS,
         MIME_TYPES
     } = config;
@@ -38,7 +39,8 @@ function createServer(options = {}) {
     const imageTasks = new Map();
     const coverTasks = new Map();
     const stateStore = createStateStore({
-        filePath: APP_STATE_FILE,
+        dbPath: APP_STATE_DB,
+        legacyFilePath: LEGACY_STATE_FILE,
         sessionTtlMs: SESSION_TTL_MS,
         maxHistoryItems: MAX_HISTORY_ITEMS
     });
@@ -126,6 +128,7 @@ function createServer(options = {}) {
     });
 
     server.appConfig = config;
+    server.appStateStore = stateStore;
     return server;
 }
 

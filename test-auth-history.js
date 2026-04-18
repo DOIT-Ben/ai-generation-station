@@ -43,13 +43,13 @@ function request(port, requestPath, method, body, headers = {}) {
 
 async function withServer(fn) {
   const port = 18802;
-  const stateFile = path.join(os.tmpdir(), `aigs-state-${Date.now()}.json`);
+  const stateDb = path.join(os.tmpdir(), `aigs-state-${Date.now()}.sqlite`);
   const server = createServer({
     config: createConfig({
       env: {
         ...process.env,
         PORT: String(port),
-        APP_STATE_FILE: stateFile,
+        APP_STATE_DB: stateDb,
         APP_USERNAME: 'studio',
         APP_PASSWORD: 'AIGS2026!'
       }
@@ -61,12 +61,15 @@ async function withServer(fn) {
       server.once('error', reject);
       server.listen(port, resolve);
     });
-    return await fn(port, stateFile);
+    return await fn(port, stateDb);
   } finally {
     await new Promise(resolve => server.close(resolve));
-    if (fs.existsSync(stateFile)) {
-      fs.unlinkSync(stateFile);
+    server.appStateStore?.close?.();
+    if (fs.existsSync(stateDb)) {
+      fs.unlinkSync(stateDb);
     }
+    if (fs.existsSync(`${stateDb}-shm`)) fs.unlinkSync(`${stateDb}-shm`);
+    if (fs.existsSync(`${stateDb}-wal`)) fs.unlinkSync(`${stateDb}-wal`);
   }
 }
 
