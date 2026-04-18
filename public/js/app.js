@@ -9,6 +9,7 @@
   let currentTab = 'chat';
   let currentResult = {};
   let progressInterval = null;
+  let activeProgressTab = null;
 
   // ---- Chat Queue State ----
   let chatQueue = [];
@@ -18,6 +19,435 @@
   // ---- DOM helpers ----
   const $ = id => document.getElementById(id);
   const $$ = (sel, ctx) => (ctx || document).querySelectorAll(sel);
+  const appShell = window.AppShell || null;
+  const persistence = appShell && window.localStorage ? appShell.createPersistence(window.localStorage) : null;
+  const templates = appShell?.TEMPLATE_LIBRARY || {};
+  const featureMeta = appShell?.FEATURE_META || {};
+  const historyState = {};
+  let currentUser = null;
+
+  const FEATURE_FIELDS = {
+    lyrics: { prompt: 'lyrics-prompt', style: 'lyrics-style', structure: 'lyrics-structure' },
+    cover: { prompt: 'cover-prompt', ratio: 'cover-ratio', style: 'cover-style' },
+    speech: { text: 'speech-text', voice_id: 'speech-voice', emotion: 'speech-emotion', speed: 'speech-speed', pitch: 'speech-pitch', vol: 'speech-vol', output_format: 'speech-format' },
+    music: { prompt: 'music-prompt', style: 'music-style', bpm: 'music-bpm', key: 'music-key', duration: 'music-duration' },
+    covervoice: { prompt: 'voice-prompt', timbre: 'voice-timbre', pitch: 'voice-pitch', audio_url: 'voice-audio-url' }
+  };
+
+  const RESULT_IDS = {
+    covervoice: 'covervoice-result',
+    speech: 'speech-result'
+  };
+
+  const COUNTER_IDS = {
+    'music-prompt': 'music-char',
+    'lyrics-prompt': 'lyrics-char',
+    'cover-prompt': 'cover-char',
+    'voice-prompt': 'voice-char',
+    'speech-text': 'speech-char'
+  };
+
+  function getResultArea(feature) {
+    return $(RESULT_IDS[feature] || `${feature}-result`);
+  }
+
+  function syncCounter(inputId) {
+    const counterId = COUNTER_IDS[inputId];
+    if (!counterId) return;
+    const input = $(inputId);
+    const counter = $(counterId);
+    if (input && counter) counter.textContent = (input.value || '').length;
+  }
+
+  function syncSelectDropdown(selectId) {
+    const select = $(selectId);
+    if (!select) return;
+    const dropdown = $(`${selectId}-dropdown`);
+    if (!dropdown) return;
+    const valueSpan = dropdown.querySelector('.dropdown-value');
+    const options = dropdown.querySelectorAll('.dropdown-option');
+    const selected = Array.from(select.options).find(opt => opt.value === select.value) || select.options[0];
+    if (valueSpan && selected) valueSpan.textContent = selected.text;
+    options.forEach(option => option.classList.toggle('active', option.dataset.value === select.value));
+  }
+
+  function setFieldValue(inputId, value) {
+    const input = $(inputId);
+    if (!input) return;
+    if (input.type === 'range') {
+      input.value = value;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      return;
+    }
+    input.value = value == null ? '' : value;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    syncCounter(inputId);
+    syncSelectDropdown(inputId);
+  }
+
+  function formatTime(timestamp) {
+    try {
+      return new Date(timestamp).toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return '';
+    }
+  }
+
+  function truncateText(text, length = 72) {
+    const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+    if (normalized.length <= length) return normalized;
+    return `${normalized.slice(0, length)}...`;
+  }
+
+  function ensureAuthGate() {
+    if ($('auth-gate')) return;
+    const gate = document.createElement('div');
+    gate.id = 'auth-gate';
+    gate.className = 'auth-gate';
+    gate.hidden = true;
+    gate.innerHTML = `
+      <div class="auth-card">
+        <div class="auth-eyebrow">固定账号登录</div>
+        <h2>先登录，再继续创作</h2>
+        <p>这个站点现在会为固定账号保存所有功能的历史记录与模板使用状态。</p>
+        <div class="auth-credentials">
+          <div><strong>账号：</strong><code>${appShell?.AUTH?.username || 'studio'}</code></div>
+          <div><strong>密码：</strong><code>${appShell?.AUTH?.password || 'AIGS2026!'}</code></div>
+        </div>
+        <form id="auth-form" class="auth-form">
+          <label>账号<input id="auth-username" type="text" autocomplete="username" value="${appShell?.AUTH?.username || 'studio'}" /></label>
+          <label>密码<input id="auth-password" type="password" autocomplete="current-password" value="${appShell?.AUTH?.password || 'AIGS2026!'}" /></label>
+          <div id="auth-error" class="auth-error"></div>
+          <button class="btn btn-primary" type="submit">进入工作台</button>
+        </form>
+      </div>
+    `;
+    document.body.appendChild(gate);
+    $('auth-form')?.addEventListener('submit', handleLoginSubmit);
+  }
+
+  function renderUserPanel() {
+    const panel = $('user-panel');
+    if (!panel) return;
+    if (!currentUser) {
+      panel.innerHTML = '<div class="user-panel-empty">未登录，历史记录将不会展示。</div>';
+      return;
+    }
+    panel.innerHTML = `
+      <div class="user-panel-row">
+        <div class="user-panel-label">
+          <strong>${currentUser}</strong>
+          <span>历史记录已启用</span>
+        </div>
+        <button id="btn-logout" type="button">退出</button>
+      </div>
+    `;
+    $('btn-logout')?.addEventListener('click', logout);
+  }
+
+  function showAuthGate() {
+    $('auth-gate')?.removeAttribute('hidden');
+    document.querySelector('.app')?.classList.add('auth-locked');
+  }
+
+  function hideAuthGate() {
+    $('auth-gate')?.setAttribute('hidden', '');
+    document.querySelector('.app')?.classList.remove('auth-locked');
+  }
+
+  function handleLoginSubmit(event) {
+    event.preventDefault();
+    const username = $('auth-username')?.value?.trim();
+    const password = $('auth-password')?.value;
+    const error = $('auth-error');
+    if (!appShell?.authenticate(username, password)) {
+      if (error) error.textContent = '账号或密码不正确';
+      return;
+    }
+    currentUser = username;
+    persistence?.saveSession({ username });
+    if (error) error.textContent = '';
+    renderUserPanel();
+    hideAuthGate();
+    loadAllHistories();
+    showToast(`欢迎回来，${username}`, 'success', 1800);
+  }
+
+  function logout() {
+    currentUser = null;
+    persistence?.clearSession();
+    renderUserPanel();
+    showAuthGate();
+  }
+
+  function bootstrapAuth() {
+    ensureAuthGate();
+    renderUserPanel();
+    const session = persistence?.loadSession();
+    if (session?.username === appShell?.AUTH?.username) {
+      currentUser = session.username;
+      renderUserPanel();
+      hideAuthGate();
+      loadAllHistories();
+    } else {
+      showAuthGate();
+    }
+  }
+
+  function ensureFeatureExtensions() {
+    Object.keys(featureMeta).forEach(feature => {
+      const section = $(`tab-${feature}`);
+      if (!section || section.querySelector(`[data-feature-shell="${feature}"]`)) return;
+      const wrapper = document.createElement('div');
+      wrapper.className = 'feature-extensions';
+      wrapper.dataset.featureShell = feature;
+      wrapper.innerHTML = `
+        <section class="feature-card">
+          <h3>${featureMeta[feature].title}模板库</h3>
+          <p>按场景选模板，减少手动组织提示词和参数。</p>
+          <div class="template-groups" id="template-groups-${feature}"></div>
+        </section>
+        <aside class="feature-card">
+          <h3>${featureMeta[feature].historyTitle}</h3>
+          <p>自动保存当前账号下的最近记录，可随时恢复。</p>
+          <div class="history-list" id="history-list-${feature}"></div>
+          <div class="history-empty" id="history-empty-${feature}">还没有历史记录，先跑一次生成或对话。</div>
+        </aside>
+      `;
+      section.appendChild(wrapper);
+    });
+  }
+
+  function renderTemplateLibraries() {
+    Object.entries(templates).forEach(([feature, groups]) => {
+      const container = $(`template-groups-${feature}`);
+      if (!container) return;
+      container.innerHTML = groups.map((group, groupIndex) => `
+        <div class="template-category">
+          <div class="template-category-header">
+            <div class="template-category-title">${group.category}</div>
+            <div class="template-category-meta">${group.items.length} 个模板</div>
+          </div>
+          <div class="template-list">
+            ${group.items.map((item, itemIndex) => `
+              <article class="template-item">
+                <strong>${item.label}</strong>
+                <span>${item.description}</span>
+                <button type="button" data-template-feature="${feature}" data-template-group="${groupIndex}" data-template-item="${itemIndex}">
+                  ${feature === 'chat' ? '一键发送' : '应用模板'}
+                </button>
+              </article>
+            `).join('')}
+          </div>
+        </div>
+      `).join('');
+    });
+  }
+
+  function getFeatureInputs(feature) {
+    const config = FEATURE_FIELDS[feature] || {};
+    return Object.keys(config).reduce((acc, key) => {
+      const inputId = config[key];
+      const input = $(inputId);
+      if (input) acc[key] = input.value;
+      return acc;
+    }, {});
+  }
+
+  function applyFeatureInputs(feature, values) {
+    const config = FEATURE_FIELDS[feature] || {};
+    Object.keys(values || {}).forEach(key => {
+      const inputId = config[key];
+      if (inputId) setFieldValue(inputId, values[key]);
+    });
+  }
+
+  function renderHistory(feature) {
+    const list = $(`history-list-${feature}`);
+    const empty = $(`history-empty-${feature}`);
+    if (!list || !empty) return;
+    const entries = historyState[feature] || [];
+    if (!currentUser || entries.length === 0) {
+      list.innerHTML = '';
+      empty.removeAttribute('hidden');
+      return;
+    }
+    empty.setAttribute('hidden', '');
+    list.innerHTML = entries.map((entry, index) => `
+      <article class="history-item">
+        <div class="history-item-header">
+          <strong>${entry.title}</strong>
+          <time>${formatTime(entry.timestamp)}</time>
+        </div>
+        <p>${entry.summary || '无摘要'}</p>
+        <div class="history-actions">
+          <button type="button" data-history-feature="${feature}" data-history-index="${index}" data-history-action="restore">恢复</button>
+          ${feature === 'chat' ? '<button type="button" data-history-feature="chat" data-history-index="' + index + '" data-history-action="reuse">继续对话</button>' : ''}
+        </div>
+      </article>
+    `).join('');
+  }
+
+  function loadAllHistories() {
+    Object.keys(featureMeta).forEach(feature => {
+      historyState[feature] = currentUser && persistence ? persistence.getHistory(currentUser, feature) : [];
+      renderHistory(feature);
+    });
+    restoreLatestChat();
+  }
+
+  function saveHistoryEntry(feature, entry) {
+    if (!currentUser || !persistence) return;
+    historyState[feature] = persistence.appendHistory(currentUser, feature, entry);
+    renderHistory(feature);
+  }
+
+  function restoreChatMessages(messages) {
+    const container = $('chat-messages');
+    const chatContainer = document.querySelector('.chat-container');
+    const tabChat = $('tab-chat');
+    if (!container) return;
+    container.innerHTML = '';
+    chatContainer?.classList.remove('has-messages');
+    tabChat?.classList.remove('has-messages');
+    if (!Array.isArray(messages) || messages.length === 0) {
+      addChatMessage('chatbot', '你好！我是 AI 对话助手，有什么我可以帮你的吗？');
+      chatHistory = [];
+      return;
+    }
+    chatHistory = messages.slice();
+    messages.forEach(message => {
+      addChatMessage(message.role === 'assistant' ? 'chatbot' : 'user', message.content || '');
+    });
+  }
+
+  function restoreLatestChat() {
+    const latest = historyState.chat?.[0];
+    if (latest?.state?.messages) {
+      restoreChatMessages(latest.state.messages);
+    } else {
+      restoreChatMessages([]);
+    }
+  }
+
+  function recordChatHistory(title, reply) {
+    saveHistoryEntry('chat', {
+      title: truncateText(title, 24),
+      summary: truncateText(reply, 88),
+      timestamp: Date.now(),
+      state: {
+        messages: chatHistory.slice()
+      }
+    });
+  }
+
+  function recordFeatureHistory(feature, title, summary, inputs, result) {
+    saveHistoryEntry(feature, {
+      title: truncateText(title, 24),
+      summary: truncateText(summary, 88),
+      timestamp: Date.now(),
+      state: {
+        inputs,
+        result
+      }
+    });
+  }
+
+  function renderFeatureResult(feature, result, inputs) {
+    currentResult[feature] = result;
+    if (feature === 'lyrics') {
+      $('lyrics-content').innerHTML = `<pre>${escapeHtml(result.lyrics || result.content || '')}</pre>`;
+      $('lyrics-meta').textContent = result.title ? `标题: ${result.title}` : '';
+      getResultArea('lyrics')?.removeAttribute('hidden');
+      return;
+    }
+    if (feature === 'music') {
+      $('music-audio').src = result.url || '';
+      const durationMs = parseInt(result.duration, 10) || 0;
+      $('music-duration-info').textContent = durationMs ? `${(durationMs / 1000).toFixed(1)}秒` : '';
+      $('music-model-info').textContent = '模型: music-2.6';
+      getResultArea('music')?.removeAttribute('hidden');
+      return;
+    }
+    if (feature === 'cover') {
+      $('cover-image').src = result.url || '';
+      $('cover-meta').textContent = inputs?.style ? `风格: ${inputs.style}` : '';
+      getResultArea('cover')?.removeAttribute('hidden');
+      return;
+    }
+    if (feature === 'speech') {
+      $('speech-result')?.removeAttribute('hidden');
+      $('speech-audio').src = result.url || '';
+      $('speech-info').textContent = result.info || '';
+      return;
+    }
+    if (feature === 'covervoice') {
+      $('voice-audio').src = result.url || '';
+      $('voice-meta').textContent = result.duration ? `时长: ${result.duration}s` : '';
+      getResultArea('covervoice')?.removeAttribute('hidden');
+    }
+  }
+
+  function restoreHistoryEntry(feature, index, action) {
+    const entry = historyState[feature]?.[index];
+    if (!entry) return;
+    switchTab(feature);
+    if (feature === 'chat') {
+      restoreChatMessages(entry.state?.messages || []);
+      if (action === 'reuse') {
+        $('chat-input')?.focus();
+      }
+      return;
+    }
+    applyFeatureInputs(feature, entry.state?.inputs || {});
+    if (feature === 'covervoice' && entry.state?.inputs?.audio_url) {
+      document.querySelectorAll('.voice-source-tabs .source-tab').forEach(t => t.classList.remove('active'));
+      document.querySelector('.voice-source-tabs .source-tab[data-source="url"]')?.classList.add('active');
+      $('voice-source-file')?.setAttribute('hidden', '');
+      $('voice-source-url')?.removeAttribute('hidden');
+    }
+    if (entry.state?.result) {
+      renderFeatureResult(feature, entry.state.result, entry.state.inputs || {});
+    }
+    showToast(`${featureMeta[feature]?.title || feature} 历史已恢复`, 'success', 1600);
+  }
+
+  function applyTemplate(feature, groupIndex, itemIndex) {
+    const template = templates?.[feature]?.[groupIndex]?.items?.[itemIndex];
+    if (!template) return;
+    switchTab(feature);
+    if (feature === 'chat') {
+      const input = $('chat-input');
+      if (input) {
+        input.value = template.message;
+        input.focus();
+      }
+      sendChatMessage(template.message);
+      return;
+    }
+    applyFeatureInputs(feature, template.values || {});
+    if (feature === 'covervoice') {
+      document.querySelectorAll('.voice-source-tabs .source-tab').forEach(t => t.classList.remove('active'));
+      document.querySelector('.voice-source-tabs .source-tab[data-source="url"]')?.classList.add('active');
+      $('voice-source-file')?.setAttribute('hidden', '');
+      $('voice-source-url')?.removeAttribute('hidden');
+    }
+    showToast(`${template.label} 模板已应用`, 'success', 1400);
+  }
+
+  function bindEnhancementEvents() {
+    document.addEventListener('click', event => {
+      const templateButton = event.target.closest('[data-template-feature]');
+      if (templateButton) {
+        applyTemplate(templateButton.dataset.templateFeature, Number(templateButton.dataset.templateGroup), Number(templateButton.dataset.templateItem));
+        return;
+      }
+      const historyButton = event.target.closest('[data-history-feature]');
+      if (historyButton) {
+        restoreHistoryEntry(historyButton.dataset.historyFeature, Number(historyButton.dataset.historyIndex), historyButton.dataset.historyAction);
+      }
+    });
+  }
 
   // ============================================
   //  Tab Navigation
@@ -54,6 +484,7 @@
   // ============================================
   function startInlineProgress(tab, fillId, textId) {
     const card = $(`${tab}-generating`);
+    activeProgressTab = tab;
     card.removeAttribute('hidden');
 
     let progress = 0;
@@ -73,11 +504,13 @@
   function stopInlineProgress() {
     clearInterval(progressInterval);
     progressInterval = null;
-    const fill = $(`${currentTab}-progress-fill`);
-    const text = $(`${currentTab}-progress-text`);
+    const progressTab = activeProgressTab || currentTab;
+    const fill = $(`${progressTab}-progress-fill`);
+    const text = $(`${progressTab}-progress-text`);
     if (fill) fill.style.width = '100%';
     if (text) text.textContent = '100%';
-    setTimeout(() => $(`${currentTab}-generating`)?.setAttribute('hidden', ''), 600);
+    setTimeout(() => $(`${progressTab}-generating`)?.setAttribute('hidden', ''), 600);
+    activeProgressTab = null;
   }
 
   // ============================================
@@ -190,7 +623,7 @@
   // ============================================
   //  Generic Content Generator
   // ============================================
-  async function generateContent({ apiEndpoint, domIds, resultTab, loadingText, successMessage, onSuccess }) {
+  async function generateContent({ apiEndpoint, domIds, resultTab, loadingText, successMessage, onSuccess, historyFeature, buildHistoryEntry }) {
     const config = {};
     for (const [key, id] of Object.entries(domIds)) {
       const el = $(id);
@@ -229,6 +662,12 @@
 
       if (onSuccess) onSuccess(data);
       currentResult[resultTab] = data;
+      if (historyFeature && buildHistoryEntry) {
+        const historyEntry = buildHistoryEntry(data, config);
+        if (historyEntry) {
+          recordFeatureHistory(historyFeature, historyEntry.title, historyEntry.summary, historyEntry.inputs, historyEntry.result);
+        }
+      }
 
       const area = $(`${resultTab}-result`);
       if (area) { area.removeAttribute('hidden'); area.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' }); }
@@ -317,6 +756,10 @@
       const durationSec = (durationMs / 1000).toFixed(1);
       $('music-duration-info').textContent = durationMs > 0 ? `${durationSec}秒` : '';
       $('music-model-info').textContent = '模型: music-2.6';
+      recordFeatureHistory('music', prompt, `${style || '默认风格'} · ${duration || '自动时长'}`, { prompt, style, bpm, key, duration }, {
+        url: statusData.url || '',
+        duration: statusData.duration || 0
+      });
 
       if (resultEl) {
         resultEl.removeAttribute('hidden');
@@ -340,10 +783,21 @@
       resultTab: 'lyrics',
       loadingText: '正在创作歌词...',
       successMessage: '歌词创作完成！',
+      historyFeature: 'lyrics',
       onSuccess: data => {
         $('lyrics-content').innerHTML = `<pre>${escapeHtml(data.lyrics || data.content || '')}</pre>`;
-        $('lyrics-meta').textContent = data.model ? `模型: ${data.model}` : '';
+        $('lyrics-meta').textContent = data.title ? `标题: ${data.title}` : '';
       },
+      buildHistoryEntry: (data, config) => ({
+        title: data.title || config.prompt,
+        summary: data.lyrics || data.content || '',
+        inputs: config,
+        result: {
+          title: data.title,
+          lyrics: data.lyrics,
+          content: data.content
+        }
+      })
     });
   }
 
@@ -369,7 +823,7 @@
       .then(res => res.json())
       .then(data => {
         if (data.error) throw new Error(data.error);
-        pollImageStatus(data.taskId, 60);
+        pollImageStatus(data.taskId, 60, { prompt, ratio, style });
       })
       .catch(err => {
         stopInlineProgress();
@@ -379,7 +833,7 @@
       });
   }
 
-  function pollImageStatus(taskId, maxRetries) {
+  function pollImageStatus(taskId, maxRetries, inputs) {
     const btn = $('btn-generate-cover');
 
     const tryPoll = (retry) => {
@@ -401,6 +855,11 @@
             $('cover-result')?.removeAttribute('hidden');
             $('cover-result')?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
             loadQuota();
+            recordFeatureHistory('cover', inputs.prompt, `${inputs.style || '自动风格'} · ${inputs.ratio || '1:1'}`, inputs, {
+              url: data.url,
+              size: data.size,
+              duration: data.duration
+            });
             showToast('封面生成成功！', 'success');
             if (btn) btn.disabled = false;
             hideLoading();
@@ -560,6 +1019,15 @@
       if (resultEl) { resultEl.removeAttribute('hidden'); resultEl.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' }); }
       currentResult['covervoice'] = statusData;
       loadQuota();
+      recordFeatureHistory('covervoice', prompt, `${config.timbre || '自动音色'} · ${config.pitch || '原调'}`, {
+        prompt,
+        timbre: config.timbre,
+        pitch: config.pitch,
+        audio_url: audioUrl
+      }, {
+        url: statusData.url || '',
+        duration: statusData.duration || 0
+      });
       showToast('歌声翻唱完成！', 'success');
 
     } catch (err) {
@@ -646,6 +1114,15 @@
       if (resultEl) { resultEl.removeAttribute('hidden'); resultEl.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' }); }
       currentResult[resultTab] = statusData;
       loadQuota();
+      recordFeatureHistory('covervoice', prompt, `${config.timbre || '自动音色'} · ${config.pitch || '原调'}`, {
+        prompt,
+        timbre: config.timbre,
+        pitch: config.pitch,
+        audio_url: audioUrl
+      }, {
+        url: statusData.url || '',
+        duration: statusData.duration || 0
+      });
       showToast('歌声翻唱完成！', 'success');
 
     } catch (err) {
@@ -827,9 +1304,9 @@
     }
   }
 
-  async function sendChatMessage() {
+  async function sendChatMessage(forcedMessage) {
     const input = $('chat-input');
-    const message = input?.value?.trim();
+    const message = String(forcedMessage != null ? forcedMessage : input?.value || '').trim();
     if (!message) return;
 
     // 如果正在生成，把消息加入队列
@@ -863,6 +1340,7 @@
         // Stream the response with typing effect
         await streamChatMessage(data.reply, (finalContent) => {
           chatHistory.push({ role: 'assistant', content: finalContent });
+          recordChatHistory(message, finalContent);
           loadQuota();
         });
       }
@@ -904,6 +1382,7 @@
         // Stream the response with typing effect
         await streamChatMessage(data.reply, (finalContent) => {
           chatHistory.push({ role: 'assistant', content: finalContent });
+          recordChatHistory(message, finalContent);
           loadQuota();
         });
       }
@@ -1047,6 +1526,19 @@
           if (audio) audio.src = data.url;
           const info = $('speech-info');
           if (info) info.textContent = `音频时长: ${data.extra?.audio_length || '?'}s | 消耗字符: ${data.extra?.usage_characters || text.length}`;
+          currentResult.speech = { url: data.url, info: info?.textContent || '' };
+          recordFeatureHistory('speech', text, `${$('speech-voice')?.value || ''} · ${$('speech-emotion')?.value || ''}`, {
+            text,
+            voice_id: $('speech-voice')?.value,
+            emotion: $('speech-emotion')?.value,
+            speed: $('speech-speed')?.value,
+            pitch: $('speech-pitch')?.value,
+            vol: $('speech-vol')?.value,
+            output_format: $('speech-format')?.value
+          }, {
+            url: data.url,
+            info: info?.textContent || ''
+          });
           showToast('语音生成成功！', 'success');
           loadQuota();
         } else {
@@ -1079,8 +1571,12 @@
   //  Init
   // ============================================
   function init() {
+    ensureFeatureExtensions();
+    renderTemplateLibraries();
+    bindEnhancementEvents();
     initTabs();
     initTheme();
+    bootstrapAuth();
 
     // Char counters
     [['music-prompt', 'music-char'], ['lyrics-prompt', 'lyrics-char'],

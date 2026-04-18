@@ -4,6 +4,8 @@ const http = require('http');
 
 const smokeTest = require('./test-suite');
 const failureTest = require('./test-failures');
+const frontendStateTest = require('./test-frontend-state');
+const pageMarkupTest = require('./test-page-markup');
 const lyricsTest = require('./test-lyrics');
 const musicTest = require('./test-music');
 const imageTest = require('./test-image');
@@ -117,6 +119,9 @@ async function main() {
     console.log('=================================');
     console.log(`端口: ${port}`);
     console.log(`实时链路: ${skipLive ? '跳过' : '开启'}`);
+
+    await runCase(results, 'FrontendState', () => frontendStateTest.main());
+    await runCase(results, 'PageMarkup', () => pageMarkupTest.main());
 
     await withServer(port, async () => {
         await runCase(results, 'Smoke', () => smokeTest.main());

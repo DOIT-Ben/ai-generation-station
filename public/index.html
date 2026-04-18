@@ -81,6 +81,7 @@
     </nav>
 
     <div class="sidebar-footer">
+      <div id="user-panel" class="user-panel"></div>
       <div id="quota-info" class="quota-card">
         <div class="quota-loading">加载中...</div>
       </div>
@@ -487,7 +488,7 @@
           </div>
         </div>
 
-        <div id="voice-result" class="result-area" hidden>
+        <div id="covervoice-result" class="result-area" hidden>
           <div class="result-info">
             <div class="result-label">翻唱完成</div>
             <div class="result-meta" id="voice-meta"></div>
@@ -620,6 +621,7 @@
           </div>
 
           <div class="chat-input-area">
+            <div id="chat-queue-indicator" hidden></div>
             <div class="chat-input-row">
               <div class="chat-model-select custom-dropdown" id="chat-model-dropdown">
                 <div class="dropdown-trigger">
@@ -668,6 +670,7 @@
   </div>
 </div>
 
+<script src="/js/app-shell.js"></script>
 <script src="/js/app.js"></script>
 </body>
 </html>
