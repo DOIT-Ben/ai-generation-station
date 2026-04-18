@@ -1,34 +1,6 @@
 const { createServer } = require('./server/index');
 const { createConfig } = require('./server/config');
-const { makeRequest, sleep } = require('./test-live-utils');
-
-async function waitForServer(port, timeoutMs = 15000) {
-    const startedAt = Date.now();
-    while (Date.now() - startedAt < timeoutMs) {
-        try {
-            const res = await makeRequestWithPort(port, '/', 'GET');
-            if (res.status === 200) {
-                return;
-            }
-        } catch {
-            // Keep polling until timeout.
-        }
-        await sleep(300);
-    }
-    throw new Error(`服务器未在 ${timeoutMs}ms 内启动完成`);
-}
-
-function makeRequestWithPort(port, requestPath, method, body) {
-    const originalPort = process.env.PORT;
-    process.env.PORT = String(port);
-    return makeRequest(requestPath, method, body).finally(() => {
-        if (originalPort === undefined) {
-            delete process.env.PORT;
-        } else {
-            process.env.PORT = originalPort;
-        }
-    });
-}
+const { makeRequest, sleep, withBoundServer } = require('./test-live-utils');
 
 async function withServer(env, fn) {
     const config = createConfig({
@@ -39,16 +11,9 @@ async function withServer(env, fn) {
     });
     const server = createServer({ config });
     try {
-        await new Promise((resolve, reject) => {
-            server.once('error', reject);
-            server.listen(config.PORT, resolve);
-        });
-        await waitForServer(config.PORT);
-        return await fn();
+        return await withBoundServer(server, fn);
     } finally {
-        await new Promise(resolve => {
-            server.close(() => resolve());
-        });
+        server.appStateStore?.close?.();
     }
 }
 
@@ -64,16 +29,9 @@ async function withMainServer(fn) {
     });
 
     try {
-        await new Promise((resolve, reject) => {
-            server.once('error', reject);
-            server.listen(port, resolve);
-        });
-        await waitForServer(port);
-        return await fn();
+        return await withBoundServer(server, fn);
     } finally {
-        await new Promise(resolve => {
-            server.close(() => resolve());
-        });
+        server.appStateStore?.close?.();
     }
 }
 
@@ -84,40 +42,40 @@ function assert(condition, message) {
 }
 
 async function testMissingApiKey() {
-    console.log('\n1. 未配置 API key');
+    console.log('\n1. Missing API key');
     await withServer({ PORT: '18798', MINIMAX_API_KEY: '' }, async () => {
-        const res = await makeRequestWithPort(18798, '/api/generate/lyrics', 'POST', {
-            prompt: '写一段歌词'
+        const res = await makeRequest('/api/generate/lyrics', 'POST', {
+            prompt: 'Write a short lyric'
         });
-        assert(res.status === 503, `期望 503，实际 ${res.status}`);
-        assert(res.data.error === 'MINIMAX_API_KEY is not configured', '缺少 key 时返回信息不正确');
-        console.log('✅ 缺少 key 时返回 503');
+        assert(res.status === 503, `Expected 503, got ${res.status}`);
+        assert(res.data.error === 'MINIMAX_API_KEY is not configured', 'Unexpected error message when API key is missing');
+        console.log('Missing key returns 503 as expected');
     });
 }
 
 async function testTaskValidation() {
-    console.log('\n2. 任务状态校验');
+    console.log('\n2. Task status validation');
     const missingTaskId = await makeRequest('/api/music/status', 'POST', {});
-    assert(missingTaskId.status === 200, `期望 200，实际 ${missingTaskId.status}`);
-    assert(missingTaskId.data.error === 'taskId is required', '缺少 taskId 时返回信息不正确');
+    assert(missingTaskId.status === 200, `Expected 200, got ${missingTaskId.status}`);
+    assert(missingTaskId.data.error === 'taskId is required', 'Missing taskId should return the expected error');
 
     const notFound = await makeRequest('/api/image/status', 'POST', { taskId: 'missing-task' });
-    assert(notFound.status === 200, `期望 200，实际 ${notFound.status}`);
-    assert(notFound.data.status === 'not_found', '不存在任务时状态不正确');
-    assert(notFound.data.error === 'Task not found', '不存在任务时错误信息不正确');
+    assert(notFound.status === 200, `Expected 200, got ${notFound.status}`);
+    assert(notFound.data.status === 'not_found', 'Missing task should return not_found');
+    assert(notFound.data.error === 'Task not found', 'Missing task should return a clear error');
 
-    console.log('✅ 缺少 taskId 和任务不存在都返回预期结果');
+    console.log('Task validation returns the expected results');
 }
 
 async function testVoiceCoverBadLocalAudio() {
-    console.log('\n3. 翻唱坏文件路径');
+    console.log('\n3. Voice cover bad local audio');
     const start = await makeRequest('/api/generate/voice', 'POST', {
         audio_url: '/output/not-exists.mp3',
-        prompt: '测试坏文件'
+        prompt: 'broken file'
     });
 
-    assert(start.status === 200, `期望 200，实际 ${start.status}`);
-    assert(Boolean(start.data.taskId), '坏文件翻唱启动后未返回 taskId');
+    assert(start.status === 200, `Expected 200, got ${start.status}`);
+    assert(Boolean(start.data.taskId), 'Voice cover should still return a taskId for a bad local file');
 
     let finalStatus = null;
     for (let i = 0; i < 10; i++) {
@@ -129,44 +87,40 @@ async function testVoiceCoverBadLocalAudio() {
         }
     }
 
-    assert(finalStatus, '坏文件翻唱没有进入 error 状态');
+    assert(finalStatus, 'Bad local file never reached error state');
     assert(
-        String(finalStatus.error || '').includes('无法读取音频文件'),
-        `坏文件翻唱错误信息不正确: ${finalStatus.error}`
+        String(finalStatus.error || '').includes('/output/not-exists.mp3'),
+        `Unexpected error message: ${finalStatus.error}`
     );
 
-    console.log('✅ 坏文件翻唱会进入 error 状态并返回明确错误');
+    console.log('Bad local file enters error state with a clear message');
 }
 
 async function main() {
     console.log('=================================');
-    console.log('  异常路径回归测试');
+    console.log('  Failure path regression');
     console.log('=================================');
 
-    try {
-        await withMainServer(async () => {
-            console.log('\n🔍 检查主服务状态...');
-            const health = await makeRequest('/', 'GET');
-            if (health.status !== 200) {
-                throw new Error(`主服务未响应: HTTP ${health.status}`);
-            }
-            console.log('✅ 主服务运行正常');
+    await withMainServer(async () => {
+        console.log('\nChecking main server state...');
+        const health = await makeRequest('/', 'GET');
+        if (health.status !== 200) {
+            throw new Error(`Main server returned HTTP ${health.status}`);
+        }
+        console.log('Main server request path is available');
 
-            await testMissingApiKey();
-            await testTaskValidation();
-            await testVoiceCoverBadLocalAudio();
-        });
+        await testMissingApiKey();
+        await testTaskValidation();
+        await testVoiceCoverBadLocalAudio();
+    });
 
-        console.log('\n✅ 异常路径回归通过');
-        return { passed: true };
-    } catch (error) {
-        throw error;
-    }
+    console.log('\nFailure path regression passed');
+    return { passed: true };
 }
 
 if (require.main === module) {
     main().catch(error => {
-        console.error(`\n❌ 异常路径回归失败: ${error.message}`);
+        console.error(`\nFailure path regression failed: ${error.message}`);
         process.exit(1);
     });
 }

@@ -1,54 +1,21 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const http = require('http');
 const { createServer } = require('./server/index');
 const { createConfig } = require('./server/config');
+const { dispatchRequest } = require('./test-live-utils');
 
-function request(port, requestPath, method, body, headers = {}) {
-  return new Promise((resolve, reject) => {
-    const payload = body ? JSON.stringify(body) : '';
-    const req = http.request({
-      hostname: 'localhost',
-      port,
-      path: requestPath,
-      method,
-      headers: {
-        ...(payload ? {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(payload)
-        } : {}),
-        ...headers
-      }
-    }, res => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        let parsed = data;
-        try {
-          parsed = JSON.parse(data);
-        } catch {}
-        resolve({
-          status: res.statusCode,
-          data: parsed,
-          headers: res.headers
-        });
-      });
-    });
-    req.on('error', reject);
-    if (payload) req.write(payload);
-    req.end();
-  });
+function request(server, requestPath, method, body, headers = {}) {
+  return dispatchRequest(server, requestPath, method, body, { headers });
 }
 
 async function withServer(fn) {
-  const port = 18802;
   const stateDb = path.join(os.tmpdir(), `aigs-state-${Date.now()}.sqlite`);
   const server = createServer({
     config: createConfig({
       env: {
         ...process.env,
-        PORT: String(port),
+        PORT: '18802',
         APP_STATE_DB: stateDb,
         APP_USERNAME: 'studio',
         APP_PASSWORD: 'AIGS2026!'
@@ -57,13 +24,8 @@ async function withServer(fn) {
   });
 
   try {
-    await new Promise((resolve, reject) => {
-      server.once('error', reject);
-      server.listen(port, resolve);
-    });
-    return await fn(port, stateDb, server);
+    return await fn(stateDb, server);
   } finally {
-    await new Promise(resolve => server.close(resolve));
     server.appStateStore?.close?.();
     if (fs.existsSync(stateDb)) {
       fs.unlinkSync(stateDb);
@@ -74,24 +36,25 @@ async function withServer(fn) {
 }
 
 async function main() {
-  await withServer(async (port, stateDb, server) => {
-    const anonymous = await request(port, '/api/auth/session', 'GET');
+  await withServer(async (_stateDb, server) => {
+    const anonymous = await request(server, '/api/auth/session', 'GET');
     if (anonymous.status !== 401) throw new Error(`Expected 401 before login, got ${anonymous.status}`);
 
-    const anonymousAdmin = await request(port, '/api/admin/users', 'GET');
+    const anonymousAdmin = await request(server, '/api/admin/users', 'GET');
     if (anonymousAdmin.status !== 401) throw new Error(`Expected 401 for anonymous admin users, got ${anonymousAdmin.status}`);
 
-    const badLogin = await request(port, '/api/auth/login', 'POST', { username: 'studio', password: 'bad' });
+    const badLogin = await request(server, '/api/auth/login', 'POST', { username: 'studio', password: 'bad' });
     if (badLogin.status !== 401) throw new Error(`Expected 401 for bad login, got ${badLogin.status}`);
 
-    const login = await request(port, '/api/auth/login', 'POST', { username: 'studio', password: 'AIGS2026!' });
+    const login = await request(server, '/api/auth/login', 'POST', { username: 'studio', password: 'AIGS2026!' });
     if (login.status !== 200) throw new Error(`Expected 200 for login, got ${login.status}`);
 
-    const cookieHeader = login.headers['set-cookie']?.[0] || login.headers['set-cookie'];
+    const rawCookieHeader = login.headers['set-cookie'];
+    const cookieHeader = Array.isArray(rawCookieHeader) ? rawCookieHeader[0] : rawCookieHeader;
     if (!cookieHeader) throw new Error('Expected session cookie after login');
     const cookie = String(cookieHeader).split(';')[0];
 
-    const session = await request(port, '/api/auth/session', 'GET', null, { Cookie: cookie });
+    const session = await request(server, '/api/auth/session', 'GET', null, { Cookie: cookie });
     if (session.status !== 200 || session.data.user?.username !== 'studio' || !session.data.user?.id) {
       throw new Error('Expected authenticated session after login');
     }
@@ -105,12 +68,12 @@ async function main() {
       planCode: 'free'
     });
 
-    const preferences = await request(port, '/api/preferences', 'GET', null, { Cookie: cookie });
+    const preferences = await request(server, '/api/preferences', 'GET', null, { Cookie: cookie });
     if (preferences.status !== 200 || preferences.data.preferences?.theme !== 'dark') {
       throw new Error('Expected default preferences to be returned');
     }
 
-    const updatedPreferences = await request(port, '/api/preferences', 'POST', {
+    const updatedPreferences = await request(server, '/api/preferences', 'POST', {
       theme: 'light',
       defaultModelChat: 'MiniMax-M2.7-highspeed',
       defaultVoice: 'female-tianmei',
@@ -121,15 +84,15 @@ async function main() {
       throw new Error('Expected preferences update to persist');
     }
 
-    const usageBefore = await request(port, '/api/usage/today', 'GET', null, { Cookie: cookie });
+    const usageBefore = await request(server, '/api/usage/today', 'GET', null, { Cookie: cookie });
     if (usageBefore.status !== 200 || usageBefore.data.usage?.chatCount !== 0) {
       throw new Error('Expected zero usage before increment');
     }
 
-    const save = await request(port, '/api/history/chat', 'POST', {
+    const save = await request(server, '/api/history/chat', 'POST', {
       entry: {
-        title: '测试标题',
-        summary: '测试摘要',
+        title: 'Test Title',
+        summary: 'Test Summary',
         timestamp: Date.now(),
         state: { messages: [{ role: 'user', content: 'hello' }] }
       }
@@ -138,66 +101,77 @@ async function main() {
       throw new Error('Expected history append to succeed');
     }
 
-    const history = await request(port, '/api/history/chat', 'GET', null, { Cookie: cookie });
-    if (history.status !== 200 || history.data.items?.[0]?.title !== '测试标题') {
+    const history = await request(server, '/api/history/chat', 'GET', null, { Cookie: cookie });
+    if (history.status !== 200 || history.data.items?.[0]?.title !== 'Test Title') {
       throw new Error('Expected history retrieval to return saved entry');
     }
 
     server.appStateStore.incrementUsageDaily(userId, 'chat');
-    const usageAfter = await request(port, '/api/usage/today', 'GET', null, { Cookie: cookie });
+    const usageAfter = await request(server, '/api/usage/today', 'GET', null, { Cookie: cookie });
     if (usageAfter.status !== 200 || usageAfter.data.usage?.chatCount !== 1) {
       throw new Error('Expected usage increment to be visible');
     }
 
-    const templates = await request(port, '/api/templates/chat', 'GET', null, { Cookie: cookie });
+    const templates = await request(server, '/api/templates/chat', 'GET', null, { Cookie: cookie });
     if (templates.status !== 200 || !Array.isArray(templates.data.groups) || templates.data.groups.length < 1) {
       throw new Error('Expected chat templates to be returned');
     }
 
-    const createdTemplate = await request(port, '/api/templates/chat', 'POST', {
-      category: '我的模板',
-      label: '测试模板',
-      description: '用于回归验证',
-      message: '请输出一段简短的测试文案'
+    const createdTemplate = await request(server, '/api/templates/chat', 'POST', {
+      category: 'My Templates',
+      label: 'Regression Template',
+      description: 'Template created by regression test',
+      message: 'Write a short regression test sample'
     }, { Cookie: cookie });
-    if (createdTemplate.status !== 200 || createdTemplate.data.template?.label !== '测试模板') {
+    if (createdTemplate.status !== 200 || createdTemplate.data.template?.label !== 'Regression Template') {
       throw new Error('Expected user template creation to persist');
     }
 
-    const favorite = await request(port, `/api/templates/chat/${createdTemplate.data.template.id}/favorite`, 'POST', {}, { Cookie: cookie });
+    const favorite = await request(
+      server,
+      `/api/templates/chat/${createdTemplate.data.template.id}/favorite`,
+      'POST',
+      {},
+      { Cookie: cookie }
+    );
     if (favorite.status !== 200 || favorite.data.favorite !== true) {
       throw new Error('Expected template favorite toggle to succeed');
     }
 
-    const templatesAfter = await request(port, '/api/templates/chat', 'GET', null, { Cookie: cookie });
+    const templatesAfter = await request(server, '/api/templates/chat', 'GET', null, { Cookie: cookie });
     const flattenedTemplates = (templatesAfter.data.groups || []).flatMap(group => group.items || []);
     const savedTemplate = flattenedTemplates.find(item => item.id === createdTemplate.data.template.id);
     if (!savedTemplate || savedTemplate.favorite !== true) {
       throw new Error('Expected favorited user template to be returned');
     }
 
-    const adminUsers = await request(port, '/api/admin/users', 'GET', null, { Cookie: cookie });
+    const adminUsers = await request(server, '/api/admin/users', 'GET', null, { Cookie: cookie });
     if (adminUsers.status !== 200 || !Array.isArray(adminUsers.data.users) || adminUsers.data.users.length < 2) {
       throw new Error('Expected admin users list to be returned');
     }
 
-    const updatedAdminUser = await request(port, `/api/admin/users/${reviewer.id}`, 'POST', {
+    const updatedAdminUser = await request(server, `/api/admin/users/${reviewer.id}`, 'POST', {
       status: 'disabled',
       role: 'admin',
       planCode: 'pro'
     }, { Cookie: cookie });
-    if (updatedAdminUser.status !== 200 || updatedAdminUser.data.user?.status !== 'disabled' || updatedAdminUser.data.user?.role !== 'admin' || updatedAdminUser.data.user?.planCode !== 'pro') {
+    if (
+      updatedAdminUser.status !== 200 ||
+      updatedAdminUser.data.user?.status !== 'disabled' ||
+      updatedAdminUser.data.user?.role !== 'admin' ||
+      updatedAdminUser.data.user?.planCode !== 'pro'
+    ) {
       throw new Error('Expected admin user update to persist');
     }
 
-    const logout = await request(port, '/api/auth/logout', 'POST', {}, { Cookie: cookie });
+    const logout = await request(server, '/api/auth/logout', 'POST', {}, { Cookie: cookie });
     if (logout.status !== 200) throw new Error(`Expected 200 for logout, got ${logout.status}`);
 
-    const afterLogout = await request(port, '/api/auth/session', 'GET', null, { Cookie: cookie });
+    const afterLogout = await request(server, '/api/auth/session', 'GET', null, { Cookie: cookie });
     if (afterLogout.status !== 401) throw new Error(`Expected 401 after logout, got ${afterLogout.status}`);
   });
 
-  console.log('✅ Auth/history tests passed');
+  console.log('Auth/history tests passed');
 }
 
 if (require.main === module) {

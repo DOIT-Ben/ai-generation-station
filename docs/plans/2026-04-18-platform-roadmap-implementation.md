@@ -535,3 +535,24 @@ The next implementation batch should follow this exact order:
   1. rerun `npm run test:auth-history`
   2. rerun `npm run test:frontend`
   3. rerun `node test-regression.js --skip-live --port 18797`
+
+## 2026-04-19 Final Regression Note
+
+- Implemented in this batch:
+  - replaced socket-dependent regression helpers with in-process request dispatch so route/state tests can run even when local Node cannot bind a TCP port on this machine
+  - normalized auth/history, task persistence, smoke, failure-path, and regression scripts around the shared test helper
+  - made the full regression runner auto-skip live MiniMax cases when `MINIMAX_API_KEY` is missing or `api.minimaxi.com` cannot be resolved, instead of reporting false product regressions
+- Verification completed with a working alternate Node runtime:
+  1. `test-frontend-state.js`
+  2. `test-page-markup.js`
+  3. `test-auth-history.js`
+  4. `test-task-persistence.js`
+  5. `test-failures.js`
+  6. `test-regression.js --port 18797`
+- Result:
+  - local/frontend/platform-state regression groups passed
+  - live generation groups were skipped because this environment cannot resolve `api.minimaxi.com`
+- New issues and boundary notes:
+  - the default system Node runtime on this machine still crashes on script execution with `Assertion failed: ncrypto::CSPRNG(nullptr, 0)`
+  - browser-level localhost smoke remains blocked by the same local network stack issue, so the release check relies on in-process route verification plus the existing state/task smoke coverage
+  - live MiniMax checks require both a valid `MINIMAX_API_KEY` and working DNS/connectivity to `api.minimaxi.com`

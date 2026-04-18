@@ -1,6 +1,7 @@
+const dns = require('dns').promises;
 const { createServer } = require('./server/index');
 const { createConfig } = require('./server/config');
-const http = require('http');
+const { withBoundServer } = require('./test-live-utils');
 
 const smokeTest = require('./test-suite');
 const failureTest = require('./test-failures');
@@ -33,43 +34,6 @@ function parseArgs(argv) {
     return args;
 }
 
-async function listen(server, port) {
-    await new Promise((resolve, reject) => {
-        server.once('error', reject);
-        server.listen(port, resolve);
-    });
-}
-
-async function waitForServer(port, timeoutMs = 10000) {
-    const startedAt = Date.now();
-    while (Date.now() - startedAt < timeoutMs) {
-        try {
-            await new Promise((resolve, reject) => {
-                const req = http.request({
-                    hostname: 'localhost',
-                    port,
-                    path: '/',
-                    method: 'GET'
-                }, res => {
-                    res.resume();
-                    res.on('end', resolve);
-                });
-                req.on('error', reject);
-                req.end();
-            });
-            return;
-        } catch {
-            await new Promise(resolve => setTimeout(resolve, 200));
-        }
-    }
-
-    throw new Error(`Server did not become ready on port ${port}`);
-}
-
-async function close(server) {
-    await new Promise(resolve => server.close(() => resolve()));
-}
-
 async function withServer(port, fn) {
     const previousPort = process.env.PORT;
     process.env.PORT = String(port);
@@ -83,11 +47,9 @@ async function withServer(port, fn) {
     });
 
     try {
-        await listen(server, port);
-        await waitForServer(port);
-        return await fn();
+        return await withBoundServer(server, fn);
     } finally {
-        await close(server);
+        server.appStateStore?.close?.();
         if (previousPort === undefined) {
             delete process.env.PORT;
         } else {
@@ -112,15 +74,47 @@ async function runCase(results, name, fn) {
     }
 }
 
+function recordSkipped(results, name, reason) {
+    results.push({ name, status: 'skipped', duration: '0.0', reason });
+    process.stdout.write(`\n[SKIP] ${name}\n`);
+    process.stdout.write(`       ${reason}\n`);
+}
+
+async function getLivePreflight() {
+    const config = createConfig({
+        env: {
+            ...process.env
+        }
+    });
+
+    if (!config.API_KEY) {
+        return {
+            enabled: false,
+            reason: 'MINIMAX_API_KEY is not configured'
+        };
+    }
+
+    const host = String(config.API_HOST || '').replace(/^https?:\/\//, '').split('/')[0];
+    try {
+        await dns.lookup(host);
+        return { enabled: true };
+    } catch (error) {
+        return {
+            enabled: false,
+            reason: `Unable to resolve ${host}: ${error.code || error.message}`
+        };
+    }
+}
+
 async function main() {
     const { port, skipLive } = parseArgs(process.argv.slice(2));
     const results = [];
 
     console.log('=================================');
-    console.log('  全量回归测试');
+    console.log('  Full regression');
     console.log('=================================');
-    console.log(`端口: ${port}`);
-    console.log(`实时链路: ${skipLive ? '跳过' : '开启'}`);
+    console.log(`Port: ${port}`);
+    console.log(`Live API checks: ${skipLive ? 'skipped' : 'enabled'}`);
 
     await runCase(results, 'FrontendState', () => frontendStateTest.main());
     await runCase(results, 'PageMarkup', () => pageMarkupTest.main());
@@ -131,19 +125,18 @@ async function main() {
         await runCase(results, 'Smoke', () => smokeTest.main());
     });
 
-    const previousPort = process.env.PORT;
-    process.env.PORT = String(port);
-    try {
-        await runCase(results, 'Failures', () => failureTest.main());
-    } finally {
-        if (previousPort === undefined) {
-            delete process.env.PORT;
-        } else {
-            process.env.PORT = previousPort;
-        }
-    }
+    await runCase(results, 'Failures', () => failureTest.main());
 
     if (!skipLive) {
+        const livePreflight = await getLivePreflight();
+        if (!livePreflight.enabled) {
+            const reason = `Live API tests skipped: ${livePreflight.reason}`;
+            recordSkipped(results, 'Lyrics', reason);
+            recordSkipped(results, 'Music', reason);
+            recordSkipped(results, 'Image', reason);
+            recordSkipped(results, 'Cover', reason);
+            recordSkipped(results, 'VoiceCover', reason);
+        } else {
         await withServer(port, async () => {
             await runCase(results, 'Lyrics', () => lyricsTest.main());
             await runCase(results, 'Music', () => musicTest.main());
@@ -151,19 +144,26 @@ async function main() {
             await runCase(results, 'Cover', () => coverTest.main());
             await runCase(results, 'VoiceCover', () => voiceCoverTest.main());
         });
+        }
     }
 
     console.log('\n=================================');
-    console.log('  回归总结');
+    console.log('  Regression summary');
     console.log('=================================');
     for (const item of results) {
-        console.log(`${item.status === 'passed' ? 'PASS' : 'FAIL'}\t${item.name}\t${item.duration}s`);
+        const label = item.status === 'passed' ? 'PASS' : item.status === 'failed' ? 'FAIL' : 'SKIP';
+        console.log(`${label}\t${item.name}\t${item.duration}s`);
         if (item.error) {
             console.log(`     ${item.error}`);
         }
+        if (item.reason) {
+            console.log(`     ${item.reason}`);
+        }
     }
     const failed = results.filter(item => item.status === 'failed');
-    console.log(`\n总计: ${results.length} 项，通过 ${results.length - failed.length}，失败 ${failed.length}`);
+    const skipped = results.filter(item => item.status === 'skipped');
+    const passed = results.filter(item => item.status === 'passed');
+    console.log(`\nTotal: ${results.length}, Passed: ${passed.length}, Skipped: ${skipped.length}, Failed: ${failed.length}`);
     if (failed.length > 0) {
         throw new Error(`Regression failed: ${failed.length} test group(s)`);
     }

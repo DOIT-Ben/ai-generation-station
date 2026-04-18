@@ -1,26 +1,10 @@
-const http = require('http');
+const { makeRequest } = require('./test-live-utils');
 
-function getPort() {
-  return Number(process.env.PORT || 18791);
-}
-
-function request(path, method, body, timeout = 5000) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('TIMEOUT')), timeout);
-    const data = body ? JSON.stringify(body) : '';
-    const req = http.request({ hostname: 'localhost', port: getPort(), path, method, headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } }, res => {
-      clearTimeout(timer);
-      let d = '';
-      res.on('data', c => d += c);
-      res.on('end', () => {
-        try { resolve({ status: res.statusCode, data: JSON.parse(d) }); }
-        catch(e) { resolve({ status: res.statusCode, data: d }); }
-      });
-    });
-    req.on('error', (e) => { clearTimeout(timer); reject(e); });
-    if (data) req.write(data);
-    req.end();
-  });
+function request(path, method, body, timeout = 5000, options = {}) {
+  return Promise.race([
+    makeRequest(path, method, body, options),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), timeout))
+  ]);
 }
 
 async function runTests() {
@@ -129,14 +113,12 @@ async function runTests() {
   for (let i = 0; i < 3; i++) {
     if (i > 0) break;
     const bad = await new Promise((resolve, reject) => {
-      const req = http.request({ hostname: 'localhost', port: getPort(), path: '/api/chat', method: 'POST', headers: { 'Content-Type': 'application/json' } }, res => {
-        let d = '';
-        res.on('data', c => d += c);
-        res.on('end', () => resolve({ status: res.statusCode, body: d }));
-      });
-      req.on('error', reject);
-      req.write('{bad json');
-      req.end();
+      request('/api/chat', 'POST', '{bad json', 5000, {
+        raw: true,
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      }).then(result => resolve({ status: result.status, body: result.rawBody })).catch(reject);
     });
     if (bad.status === 400) {
       console.log('✅ 非法 JSON 已拦截');
