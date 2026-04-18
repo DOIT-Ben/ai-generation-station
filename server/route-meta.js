@@ -6,6 +6,8 @@ const ROUTE_METHODS = {
     '/api/preferences': ['GET', 'POST'],
     '/api/usage/today': ['GET'],
     '/api/templates/*': ['GET', 'POST'],
+    '/api/admin/users': ['GET'],
+    '/api/admin/users/*': ['POST'],
     '/api/upload': ['POST'],
     '/api/tts': ['POST'],
     '/api/voices': ['GET'],

@@ -27,7 +27,7 @@ function testRemotePersistenceShape() {
     }
   }));
 
-  ['loadSession', 'login', 'logout', 'getHistory', 'appendHistory', 'getPreferences', 'savePreferences', 'getUsageToday', 'getTemplates', 'createTemplate', 'toggleTemplateFavorite']
+  ['loadSession', 'login', 'logout', 'getHistory', 'appendHistory', 'getPreferences', 'savePreferences', 'getUsageToday', 'getTemplates', 'createTemplate', 'toggleTemplateFavorite', 'getAdminUsers', 'updateAdminUser']
     .forEach(method => {
       assert.equal(typeof remote[method], 'function', `${method} should exist on remote persistence`);
     });

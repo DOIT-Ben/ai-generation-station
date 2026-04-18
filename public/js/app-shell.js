@@ -354,6 +354,23 @@
           headers: { 'Content-Type': 'application/json' }
         });
         return parseResponse(response);
+      },
+
+      async getAdminUsers() {
+        const response = await fetchImpl('/api/admin/users', { credentials: 'same-origin' });
+        const data = await parseResponse(response);
+        return data.users || [];
+      },
+
+      async updateAdminUser(userId, patch) {
+        const response = await fetchImpl(`/api/admin/users/${userId}`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(patch)
+        });
+        const data = await parseResponse(response);
+        return data.user || null;
       }
     };
   }

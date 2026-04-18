@@ -522,3 +522,16 @@ The next implementation batch should follow this exact order:
   1. rerun `npm run test:auth-history`
   2. rerun `npm run test:frontend`
   3. rerun `node test-regression.js --skip-live --port 18797`
+
+## 2026-04-19 Admin Basics Note
+
+- Implemented in this batch:
+  - added admin-only user list and user update APIs
+  - added minimal admin panel placeholder and frontend management actions
+  - extended auth/history and markup tests to cover admin basics
+- New boundary decision:
+  - admin UI is intentionally minimal for this phase and reuses existing card/list styles instead of introducing a separate dashboard system
+- Follow-up once runtime is healthy again:
+  1. rerun `npm run test:auth-history`
+  2. rerun `npm run test:frontend`
+  3. rerun `node test-regression.js --skip-live --port 18797`

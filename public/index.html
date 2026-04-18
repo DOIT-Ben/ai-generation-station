@@ -91,6 +91,19 @@
   <!-- Main Content -->
   <main class="main">
 
+    <section id="admin-panel" hidden>
+      <div class="section-header">
+        <h1><span class="icon">🛠️</span> 管理面板</h1>
+        <p>仅管理员可见，用于快速查看用户状态并做基础调整。</p>
+      </div>
+      <div class="feature-card">
+        <h3>用户列表</h3>
+        <p>本阶段只保留最小管理能力：状态、角色、套餐。</p>
+        <div id="admin-user-list" class="history-list"></div>
+        <div id="admin-user-empty" class="history-empty">当前没有可管理的用户。</div>
+      </div>
+    </section>
+
     <!-- Music Tab -->
     <section id="tab-music" class="tab-content">
       <div class="section-header">

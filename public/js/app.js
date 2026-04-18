@@ -25,6 +25,8 @@
   const featureMeta = appShell?.FEATURE_META || {};
   const historyState = {};
   let currentUser = null;
+  let currentUserProfile = null;
+  let adminUsers = [];
   let userPreferences = {
     theme: 'dark',
     defaultModelChat: 'MiniMax-M2.7',
@@ -183,6 +185,81 @@
     renderTemplateLibraries();
   }
 
+  function renderAdminPanel() {
+    const panel = $('admin-panel');
+    const list = $('admin-user-list');
+    const empty = $('admin-user-empty');
+    if (!panel || !list || !empty) return;
+
+    if (currentUserProfile?.role !== 'admin') {
+      adminUsers = [];
+      list.innerHTML = '';
+      panel.setAttribute('hidden', '');
+      empty.removeAttribute('hidden');
+      return;
+    }
+
+    panel.removeAttribute('hidden');
+    if (!adminUsers.length) {
+      list.innerHTML = '';
+      empty.removeAttribute('hidden');
+      return;
+    }
+
+    empty.setAttribute('hidden', '');
+    list.innerHTML = adminUsers.map(user => {
+      const isSelf = user.id === currentUserProfile?.id;
+      const nextStatus = user.status === 'active' ? 'disabled' : 'active';
+      const nextRole = user.role === 'admin' ? 'user' : 'admin';
+      const nextPlan = user.planCode === 'pro' ? 'free' : 'pro';
+      return `
+        <article class="history-item">
+          <div class="history-item-header">
+            <strong>${user.username}</strong>
+            <time>${user.lastLoginAt ? formatTime(user.lastLoginAt) : '从未登录'}</time>
+          </div>
+          <p>状态：${user.status} · 角色：${user.role} · 套餐：${user.planCode}</p>
+          <div class="history-actions">
+            <button type="button" data-admin-user="${user.id}" data-admin-status="${nextStatus}" ${isSelf ? 'disabled' : ''}>
+              ${nextStatus === 'disabled' ? '禁用' : '启用'}
+            </button>
+            <button type="button" data-admin-user="${user.id}" data-admin-role="${nextRole}" ${isSelf ? 'disabled' : ''}>
+              ${nextRole === 'admin' ? '设为管理员' : '降为普通用户'}
+            </button>
+            <button type="button" data-admin-user="${user.id}" data-admin-plan="${nextPlan}">
+              ${nextPlan === 'pro' ? '设为 Pro' : '设为 Free'}
+            </button>
+          </div>
+        </article>
+      `;
+    }).join('');
+  }
+
+  async function loadAdminUsers() {
+    if (currentUserProfile?.role !== 'admin' || !persistence?.getAdminUsers) {
+      renderAdminPanel();
+      return;
+    }
+    try {
+      adminUsers = await persistence.getAdminUsers();
+    } catch {
+      adminUsers = [];
+      showToast('管理员用户列表加载失败', 'error', 1800);
+    }
+    renderAdminPanel();
+  }
+
+  async function updateAdminUser(userId, patch) {
+    if (currentUserProfile?.role !== 'admin' || !persistence?.updateAdminUser) return;
+    try {
+      await persistence.updateAdminUser(userId, patch);
+      await loadAdminUsers();
+      showToast('用户状态已更新', 'success', 1400);
+    } catch (error) {
+      showToast(error.message || '用户更新失败', 'error', 1800);
+    }
+  }
+
   function ensureAuthGate() {
     if ($('auth-gate')) return;
     const gate = document.createElement('div');
@@ -246,13 +323,16 @@
     const error = $('auth-error');
     try {
       const user = await persistence?.login(username, password);
+      currentUserProfile = user || null;
       currentUser = user?.username || username;
       if (error) error.textContent = '';
       renderUserPanel();
+      renderAdminPanel();
       hideAuthGate();
       await loadUserPreferences();
       await refreshUsageToday();
       await loadTemplateLibraries();
+      await loadAdminUsers();
       await loadAllHistories();
       showToast(`欢迎回来，${currentUser}`, 'success', 1800);
     } catch (loginError) {
@@ -262,6 +342,8 @@
 
   async function logout() {
     currentUser = null;
+    currentUserProfile = null;
+    adminUsers = [];
     historyState.chat = [];
     Object.keys(featureMeta).forEach(feature => { historyState[feature] = []; renderHistory(feature); });
     usageToday = null;
@@ -272,6 +354,7 @@
     }
     restoreChatMessages([]);
     renderUserPanel();
+    renderAdminPanel();
     showAuthGate();
   }
 
@@ -284,12 +367,15 @@
       if (!session?.username) {
         return;
       }
+      currentUserProfile = session;
       currentUser = session.username;
       renderUserPanel();
+      renderAdminPanel();
       hideAuthGate();
       await loadUserPreferences();
       await refreshUsageToday();
       await loadTemplateLibraries();
+      await loadAdminUsers();
       await loadAllHistories();
     } catch {
       showAuthGate();
@@ -648,6 +734,15 @@
       const favoriteButton = event.target.closest('[data-template-favorite]');
       if (favoriteButton) {
         toggleTemplateFavoriteAction(favoriteButton.dataset.templateFavorite, favoriteButton.dataset.templateId);
+        return;
+      }
+      const adminButton = event.target.closest('[data-admin-user]');
+      if (adminButton) {
+        const patch = {};
+        if (adminButton.dataset.adminStatus) patch.status = adminButton.dataset.adminStatus;
+        if (adminButton.dataset.adminRole) patch.role = adminButton.dataset.adminRole;
+        if (adminButton.dataset.adminPlan) patch.planCode = adminButton.dataset.adminPlan;
+        updateAdminUser(adminButton.dataset.adminUser, patch);
         return;
       }
       const templateButton = event.target.closest('[data-template-feature]');
@@ -1798,6 +1893,7 @@
   function init() {
     ensureFeatureExtensions();
     renderTemplateLibraries();
+    renderAdminPanel();
     bindEnhancementEvents();
     initTabs();
     initTheme();

@@ -178,9 +178,27 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         FROM users
         WHERE username = ? AND deleted_at IS NULL
     `);
+    const findUserByIdStmt = db.prepare(`
+        SELECT id, username, email, display_name AS displayName, status, role, plan_code AS planCode,
+               timezone, locale, last_login_at AS lastLoginAt, created_at AS createdAt, updated_at AS updatedAt
+        FROM users
+        WHERE id = ? AND deleted_at IS NULL
+    `);
+    const listUsersStmt = db.prepare(`
+        SELECT id, username, email, display_name AS displayName, status, role, plan_code AS planCode,
+               timezone, locale, last_login_at AS lastLoginAt, created_at AS createdAt, updated_at AS updatedAt
+        FROM users
+        WHERE deleted_at IS NULL
+        ORDER BY created_at DESC, username ASC
+    `);
     const insertUserStmt = db.prepare(`
         INSERT INTO users (id, username, email, display_name, status, role, plan_code, timezone, locale, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const updateUserAdminStmt = db.prepare(`
+        UPDATE users
+        SET status = ?, role = ?, plan_code = ?, updated_at = ?
+        WHERE id = ? AND deleted_at IS NULL
     `);
     const updateUserLoginStmt = db.prepare(`
         UPDATE users
@@ -596,12 +614,66 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         },
 
         getUserById(userId) {
-            return normalizeUserRecord(db.prepare(`
-                SELECT id, username, email, display_name AS displayName, status, role, plan_code AS planCode,
-                       timezone, locale, last_login_at AS lastLoginAt, created_at AS createdAt, updated_at AS updatedAt
-                FROM users
-                WHERE id = ? AND deleted_at IS NULL
-            `).get(userId));
+            return normalizeUserRecord(findUserByIdStmt.get(userId));
+        },
+
+        listUsers() {
+            return listUsersStmt.all().map(row => normalizeUserRecord(row));
+        },
+
+        createUser(user = {}) {
+            const username = String(user.username || '').trim();
+            const password = String(user.password || '').trim();
+            if (!username || !password) {
+                throw new Error('username and password are required');
+            }
+            const existing = this.getUserByUsername(username);
+            if (existing) return existing;
+
+            const now = Date.now();
+            const userId = crypto.randomUUID();
+            insertUserStmt.run(
+                userId,
+                username,
+                user.email || null,
+                user.displayName || username,
+                user.status || 'active',
+                user.role || 'user',
+                user.planCode || 'free',
+                user.timezone || 'Asia/Shanghai',
+                user.locale || 'zh-CN',
+                now,
+                now
+            );
+            upsertCredentialStmt.run(userId, hashPassword(password), now);
+            return this.getUserById(userId);
+        },
+
+        updateUser(userId, patch = {}) {
+            const current = this.getUserById(userId);
+            if (!current) return null;
+
+            const next = {
+                status: patch.status || current.status,
+                role: patch.role || current.role,
+                planCode: patch.planCode || current.planCode
+            };
+
+            if (!['active', 'disabled'].includes(next.status)) {
+                throw new Error('invalid status');
+            }
+            if (!['admin', 'user'].includes(next.role)) {
+                throw new Error('invalid role');
+            }
+
+            updateUserAdminStmt.run(
+                next.status,
+                next.role,
+                next.planCode,
+                Date.now(),
+                userId
+            );
+            return this.getUserById(userId);
         },
 
         authenticateUser(username, password) {

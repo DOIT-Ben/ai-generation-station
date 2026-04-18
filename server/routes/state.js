@@ -9,6 +9,10 @@ function createStateRoutes({ stateStore, sessionCookieName, authConfig }) {
         const cookies = parseCookies(req.headers.cookie || '');
         const token = cookies[sessionCookieName];
         const session = stateStore.getSession(token);
+        if (session && session.status !== 'active') {
+            stateStore.clearSession(token);
+            return { token, session: null };
+        }
         return { token, session };
     }
 
@@ -16,6 +20,16 @@ function createStateRoutes({ stateStore, sessionCookieName, authConfig }) {
         const { session } = getCurrentSession(req);
         if (!session) {
             sendJson(res, 401, { error: '未登录' });
+            return null;
+        }
+        return session;
+    }
+
+    function requireAdmin(req, res) {
+        const session = requireUser(req, res);
+        if (!session) return null;
+        if (session.role !== 'admin') {
+            sendJson(res, 403, { error: '需要管理员权限' });
             return null;
         }
         return session;
@@ -166,6 +180,44 @@ function createStateRoutes({ stateStore, sessionCookieName, authConfig }) {
 
             sendJson(res, 404, { error: 'template route not found' });
             return null;
+        },
+
+        '/api/admin/users': async (req, res) => {
+            const session = requireAdmin(req, res);
+            if (!session) return null;
+
+            return {
+                users: stateStore.listUsers()
+            };
+        },
+
+        '/api/admin/users/*': async (req, res, body) => {
+            const session = requireAdmin(req, res);
+            if (!session) return null;
+
+            const parts = getPathParts(req);
+            const userId = parts[3];
+            if (!userId) {
+                sendJson(res, 400, { error: 'user id is required' });
+                return null;
+            }
+            if (!body || typeof body !== 'object') {
+                sendJson(res, 400, { error: 'user patch is required' });
+                return null;
+            }
+
+            const user = stateStore.updateUser(userId, {
+                status: body.status,
+                role: body.role,
+                planCode: body.planCode
+            });
+
+            if (!user) {
+                sendJson(res, 404, { error: 'user not found' });
+                return null;
+            }
+
+            return { user };
         }
     };
 }

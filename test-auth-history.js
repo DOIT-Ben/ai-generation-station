@@ -78,6 +78,9 @@ async function main() {
     const anonymous = await request(port, '/api/auth/session', 'GET');
     if (anonymous.status !== 401) throw new Error(`Expected 401 before login, got ${anonymous.status}`);
 
+    const anonymousAdmin = await request(port, '/api/admin/users', 'GET');
+    if (anonymousAdmin.status !== 401) throw new Error(`Expected 401 for anonymous admin users, got ${anonymousAdmin.status}`);
+
     const badLogin = await request(port, '/api/auth/login', 'POST', { username: 'studio', password: 'bad' });
     if (badLogin.status !== 401) throw new Error(`Expected 401 for bad login, got ${badLogin.status}`);
 
@@ -93,6 +96,14 @@ async function main() {
       throw new Error('Expected authenticated session after login');
     }
     const userId = session.data.user.id;
+
+    const reviewer = server.appStateStore.createUser({
+      username: 'reviewer',
+      password: 'Review2026!',
+      displayName: 'Reviewer',
+      role: 'user',
+      planCode: 'free'
+    });
 
     const preferences = await request(port, '/api/preferences', 'GET', null, { Cookie: cookie });
     if (preferences.status !== 200 || preferences.data.preferences?.theme !== 'dark') {
@@ -163,6 +174,20 @@ async function main() {
     const savedTemplate = flattenedTemplates.find(item => item.id === createdTemplate.data.template.id);
     if (!savedTemplate || savedTemplate.favorite !== true) {
       throw new Error('Expected favorited user template to be returned');
+    }
+
+    const adminUsers = await request(port, '/api/admin/users', 'GET', null, { Cookie: cookie });
+    if (adminUsers.status !== 200 || !Array.isArray(adminUsers.data.users) || adminUsers.data.users.length < 2) {
+      throw new Error('Expected admin users list to be returned');
+    }
+
+    const updatedAdminUser = await request(port, `/api/admin/users/${reviewer.id}`, 'POST', {
+      status: 'disabled',
+      role: 'admin',
+      planCode: 'pro'
+    }, { Cookie: cookie });
+    if (updatedAdminUser.status !== 200 || updatedAdminUser.data.user?.status !== 'disabled' || updatedAdminUser.data.user?.role !== 'admin' || updatedAdminUser.data.user?.planCode !== 'pro') {
+      throw new Error('Expected admin user update to persist');
     }
 
     const logout = await request(port, '/api/auth/logout', 'POST', {}, { Cookie: cookie });
