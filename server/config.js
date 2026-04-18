@@ -5,6 +5,7 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const ROOT_DIR = path.join(__dirname, '..');
 const PUBLIC_DIR = path.join(ROOT_DIR, 'public');
 const API_HOST = 'api.minimaxi.com';
+const DATA_DIR = path.join(ROOT_DIR, 'data');
 
 function loadLocalConfig() {
     const configPath = path.join(ROOT_DIR, 'backend', 'config.local.js');
@@ -54,6 +55,18 @@ function createConfig(options = {}) {
     const PORT = Number(getConfigValue(env, localConfig, 'PORT', 18791));
     const OUTPUT_DIR = resolveOutputDir(getConfigValue(env, localConfig, 'OUTPUT_DIR', undefined));
     const API_KEY = getConfigValue(env, localConfig, 'MINIMAX_API_KEY', '') || '';
+    const APP_USERNAME = getConfigValue(env, localConfig, 'APP_USERNAME', 'studio');
+    const APP_PASSWORD = getConfigValue(env, localConfig, 'APP_PASSWORD', 'AIGS2026!');
+    const SESSION_COOKIE_NAME = getConfigValue(env, localConfig, 'SESSION_COOKIE_NAME', 'aigs_session');
+    const SESSION_TTL_MS = Number(getConfigValue(env, localConfig, 'SESSION_TTL_MS', 7 * 24 * 60 * 60 * 1000));
+    const APP_STATE_FILE = path.isAbsolute(getConfigValue(env, localConfig, 'APP_STATE_FILE', ''))
+        ? getConfigValue(env, localConfig, 'APP_STATE_FILE', '')
+        : path.join(DATA_DIR, getConfigValue(env, localConfig, 'APP_STATE_FILE', 'app-state.json'));
+    const MAX_HISTORY_ITEMS = Number(getConfigValue(env, localConfig, 'MAX_HISTORY_ITEMS', 12));
+
+    if (!fs.existsSync(DATA_DIR)) {
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
 
     if (!fs.existsSync(OUTPUT_DIR)) {
         fs.mkdirSync(OUTPUT_DIR, { recursive: true });
@@ -70,6 +83,13 @@ function createConfig(options = {}) {
         PORT,
         OUTPUT_DIR,
         API_KEY,
+        DATA_DIR,
+        APP_USERNAME,
+        APP_PASSWORD,
+        SESSION_COOKIE_NAME,
+        SESSION_TTL_MS,
+        APP_STATE_FILE,
+        MAX_HISTORY_ITEMS,
         MIME_TYPES
     };
 }
@@ -78,6 +98,7 @@ module.exports = {
     ROOT_DIR,
     PUBLIC_DIR,
     API_HOST,
+    DATA_DIR,
     MIME_TYPES,
     createConfig
 };

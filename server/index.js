@@ -14,6 +14,8 @@ const { matchRoute, readJsonBody, sendJson, serveStaticFile } = require('./lib/h
 const { createLocalRoutes } = require('./routes/local');
 const { createServiceRoutes } = require('./routes/service');
 const { createTaskRoutes } = require('./routes/tasks');
+const { createStateRoutes } = require('./routes/state');
+const { createStateStore } = require('./state-store');
 
 function createServer(options = {}) {
     const config = options.config || createConfig(options);
@@ -23,23 +25,43 @@ function createServer(options = {}) {
         OUTPUT_DIR,
         API_HOST,
         API_KEY,
+        APP_USERNAME,
+        APP_PASSWORD,
+        SESSION_COOKIE_NAME,
+        SESSION_TTL_MS,
+        APP_STATE_FILE,
+        MAX_HISTORY_ITEMS,
         MIME_TYPES
     } = config;
 
     const musicTasks = new Map();
     const imageTasks = new Map();
     const coverTasks = new Map();
+    const stateStore = createStateStore({
+        filePath: APP_STATE_FILE,
+        sessionTtlMs: SESSION_TTL_MS,
+        maxHistoryItems: MAX_HISTORY_ITEMS
+    });
 
     const routes = {
+        ...createStateRoutes({
+            stateStore,
+            sessionCookieName: SESSION_COOKIE_NAME,
+            authConfig: {
+                username: APP_USERNAME,
+                password: APP_PASSWORD
+            }
+        }),
         ...createLocalRoutes({ OUTPUT_DIR, MIME_TYPES, musicTasks, coverTasks, imageTasks }),
         ...createServiceRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR }),
         ...createTaskRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, musicTasks, imageTasks, coverTasks })
     };
 
     const server = http.createServer(async (req, res) => {
-        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
 
         if (req.method === 'OPTIONS') {
             res.writeHead(200);

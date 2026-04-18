@@ -25,6 +25,44 @@ async function readJsonBody(req) {
     return JSON.parse(rawBody || '{}');
 }
 
+function parseCookies(cookieHeader) {
+    return String(cookieHeader || '')
+        .split(';')
+        .map(part => part.trim())
+        .filter(Boolean)
+        .reduce((acc, part) => {
+            const [key, ...rest] = part.split('=');
+            acc[key] = decodeURIComponent(rest.join('='));
+            return acc;
+        }, {});
+}
+
+function appendHeader(res, name, value) {
+    const existing = res.getHeader(name);
+    if (!existing) {
+        res.setHeader(name, value);
+        return;
+    }
+    res.setHeader(name, Array.isArray(existing) ? existing.concat(value) : [existing, value]);
+}
+
+function serializeCookie(name, value, options = {}) {
+    const parts = [`${name}=${encodeURIComponent(value)}`];
+    if (options.maxAge != null) parts.push(`Max-Age=${options.maxAge}`);
+    if (options.httpOnly) parts.push('HttpOnly');
+    if (options.sameSite) parts.push(`SameSite=${options.sameSite}`);
+    if (options.path) parts.push(`Path=${options.path}`);
+    return parts.join('; ');
+}
+
+function setCookie(res, name, value, options = {}) {
+    appendHeader(res, 'Set-Cookie', serializeCookie(name, value, options));
+}
+
+function clearCookie(res, name, options = {}) {
+    setCookie(res, name, '', { ...options, maxAge: 0 });
+}
+
 function sendJson(res, statusCode, payload) {
     res.writeHead(statusCode, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(payload));
@@ -40,6 +78,9 @@ function serveStaticFile(res, filepath, mimeTypes, fallbackContentType = 'text/p
 module.exports = {
     matchRoute,
     readJsonBody,
+    parseCookies,
+    setCookie,
+    clearCookie,
     sendJson,
     serveStaticFile
 };

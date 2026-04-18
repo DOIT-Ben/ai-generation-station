@@ -250,6 +250,66 @@
     };
   }
 
+  function createRemotePersistence(fetchImpl) {
+    async function parseResponse(response) {
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const error = new Error(data.error || `HTTP ${response.status}`);
+        error.status = response.status;
+        throw error;
+      }
+      return data;
+    }
+
+    return {
+      async loadSession() {
+        const response = await fetchImpl('/api/auth/session', { credentials: 'same-origin' });
+        if (response.status === 401) {
+          return null;
+        }
+        const data = await parseResponse(response);
+        return data.user || null;
+      },
+
+      async login(username, password) {
+        const response = await fetchImpl('/api/auth/login', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        const data = await parseResponse(response);
+        return data.user || null;
+      },
+
+      async logout() {
+        const response = await fetchImpl('/api/auth/logout', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        await parseResponse(response);
+      },
+
+      async getHistory(username, feature) {
+        const response = await fetchImpl(`/api/history/${feature}`, { credentials: 'same-origin' });
+        const data = await parseResponse(response);
+        return data.items || [];
+      },
+
+      async appendHistory(username, feature, entry) {
+        const response = await fetchImpl(`/api/history/${feature}`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ entry })
+        });
+        const data = await parseResponse(response);
+        return data.items || [];
+      }
+    };
+  }
+
   return {
     AUTH,
     FEATURE_META,
@@ -258,6 +318,7 @@
     STORAGE_PREFIX,
     authenticate,
     createMemoryStorage,
-    createPersistence
+    createPersistence,
+    createRemotePersistence
   };
 });

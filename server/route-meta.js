@@ -1,4 +1,8 @@
 const ROUTE_METHODS = {
+    '/api/auth/session': ['GET'],
+    '/api/auth/login': ['POST'],
+    '/api/auth/logout': ['POST'],
+    '/api/history/*': ['GET', 'POST'],
     '/api/upload': ['POST'],
     '/api/tts': ['POST'],
     '/api/voices': ['GET'],

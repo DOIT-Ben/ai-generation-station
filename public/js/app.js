@@ -20,7 +20,7 @@
   const $ = id => document.getElementById(id);
   const $$ = (sel, ctx) => (ctx || document).querySelectorAll(sel);
   const appShell = window.AppShell || null;
-  const persistence = appShell && window.localStorage ? appShell.createPersistence(window.localStorage) : null;
+  const persistence = appShell && window.fetch ? appShell.createRemotePersistence(window.fetch.bind(window)) : null;
   const templates = appShell?.TEMPLATE_LIBRARY || {};
   const featureMeta = appShell?.FEATURE_META || {};
   const historyState = {};
@@ -111,12 +111,12 @@
         <h2>先登录，再继续创作</h2>
         <p>这个站点现在会为固定账号保存所有功能的历史记录与模板使用状态。</p>
         <div class="auth-credentials">
-          <div><strong>账号：</strong><code>${appShell?.AUTH?.username || 'studio'}</code></div>
-          <div><strong>密码：</strong><code>${appShell?.AUTH?.password || 'AIGS2026!'}</code></div>
+          <div><strong>默认账号：</strong><code>studio</code></div>
+          <div><strong>默认密码：</strong><code>AIGS2026!</code></div>
         </div>
         <form id="auth-form" class="auth-form">
-          <label>账号<input id="auth-username" type="text" autocomplete="username" value="${appShell?.AUTH?.username || 'studio'}" /></label>
-          <label>密码<input id="auth-password" type="password" autocomplete="current-password" value="${appShell?.AUTH?.password || 'AIGS2026!'}" /></label>
+          <label>账号<input id="auth-username" type="text" autocomplete="username" value="studio" /></label>
+          <label>密码<input id="auth-password" type="password" autocomplete="current-password" value="AIGS2026!" /></label>
           <div id="auth-error" class="auth-error"></div>
           <button class="btn btn-primary" type="submit">进入工作台</button>
         </form>
@@ -155,41 +155,52 @@
     document.querySelector('.app')?.classList.remove('auth-locked');
   }
 
-  function handleLoginSubmit(event) {
+  async function handleLoginSubmit(event) {
     event.preventDefault();
     const username = $('auth-username')?.value?.trim();
     const password = $('auth-password')?.value;
     const error = $('auth-error');
-    if (!appShell?.authenticate(username, password)) {
-      if (error) error.textContent = '账号或密码不正确';
-      return;
+    try {
+      const user = await persistence?.login(username, password);
+      currentUser = user?.username || username;
+      if (error) error.textContent = '';
+      renderUserPanel();
+      hideAuthGate();
+      await loadAllHistories();
+      showToast(`欢迎回来，${currentUser}`, 'success', 1800);
+    } catch (loginError) {
+      if (error) error.textContent = loginError.message || '账号或密码不正确';
     }
-    currentUser = username;
-    persistence?.saveSession({ username });
-    if (error) error.textContent = '';
-    renderUserPanel();
-    hideAuthGate();
-    loadAllHistories();
-    showToast(`欢迎回来，${username}`, 'success', 1800);
   }
 
-  function logout() {
+  async function logout() {
     currentUser = null;
-    persistence?.clearSession();
+    historyState.chat = [];
+    Object.keys(featureMeta).forEach(feature => { historyState[feature] = []; renderHistory(feature); });
+    try {
+      await persistence?.logout();
+    } catch {
+      // Ignore logout failures and still lock UI locally.
+    }
+    restoreChatMessages([]);
     renderUserPanel();
     showAuthGate();
   }
 
-  function bootstrapAuth() {
+  async function bootstrapAuth() {
     ensureAuthGate();
     renderUserPanel();
-    const session = persistence?.loadSession();
-    if (session?.username === appShell?.AUTH?.username) {
+    showAuthGate();
+    try {
+      const session = await persistence?.loadSession();
+      if (!session?.username) {
+        return;
+      }
       currentUser = session.username;
       renderUserPanel();
       hideAuthGate();
-      loadAllHistories();
-    } else {
+      await loadAllHistories();
+    } catch {
       showAuthGate();
     }
   }
@@ -288,18 +299,42 @@
     `).join('');
   }
 
-  function loadAllHistories() {
-    Object.keys(featureMeta).forEach(feature => {
-      historyState[feature] = currentUser && persistence ? persistence.getHistory(currentUser, feature) : [];
+  async function loadAllHistories() {
+    if (!currentUser || !persistence) {
+      Object.keys(featureMeta).forEach(feature => {
+        historyState[feature] = [];
+        renderHistory(feature);
+      });
+      restoreLatestChat();
+      return;
+    }
+
+    await Promise.all(Object.keys(featureMeta).map(async feature => {
+      try {
+        historyState[feature] = await persistence.getHistory(currentUser, feature);
+      } catch {
+        historyState[feature] = [];
+      }
       renderHistory(feature);
-    });
+    }));
     restoreLatestChat();
   }
 
   function saveHistoryEntry(feature, entry) {
     if (!currentUser || !persistence) return;
-    historyState[feature] = persistence.appendHistory(currentUser, feature, entry);
+    historyState[feature] = [entry].concat(historyState[feature] || []).slice(0, appShell?.MAX_HISTORY_ITEMS || 12);
     renderHistory(feature);
+    persistence.appendHistory(currentUser, feature, entry)
+      .then(items => {
+        historyState[feature] = items;
+        renderHistory(feature);
+        if (feature === 'chat') {
+          restoreLatestChat();
+        }
+      })
+      .catch(() => {
+        showToast(`${featureMeta[feature]?.title || feature} 历史保存失败`, 'error', 1800);
+      });
   }
 
   function restoreChatMessages(messages) {
