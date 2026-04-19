@@ -27,7 +27,7 @@ function testRemotePersistenceShape() {
     }
   }));
 
-  ['loadSession', 'login', 'logout', 'getHistory', 'appendHistory', 'getPreferences', 'savePreferences', 'getUsageToday', 'getTemplates', 'createTemplate', 'toggleTemplateFavorite', 'getAdminUsers', 'updateAdminUser']
+  ['loadSession', 'login', 'logout', 'getHistory', 'appendHistory', 'getPreferences', 'savePreferences', 'getUsageToday', 'getTemplates', 'createTemplate', 'toggleTemplateFavorite', 'getAdminUsers', 'updateAdminUser', 'getConversations', 'createConversation', 'getConversation', 'sendChatMessage']
     .forEach(method => {
       assert.equal(typeof remote[method], 'function', `${method} should exist on remote persistence`);
     });
@@ -47,6 +47,19 @@ function testPersistence() {
   const history = persistence.getHistory('studio', 'chat');
   assert.equal(history.length, AppShell.MAX_HISTORY_ITEMS, 'history should be trimmed to max size');
   assert.equal(history[0].id, AppShell.MAX_HISTORY_ITEMS + 2, 'newest history item should be first');
+
+  const conversation = persistence.createConversation('studio', { title: 'Test Chat', model: 'MiniMax-M2.7-highspeed' });
+  assert.ok(conversation.id, 'conversation should get an id');
+  assert.equal(conversation.title, 'Test Chat', 'conversation should store title');
+  assert.equal(conversation.model, 'MiniMax-M2.7-highspeed', 'conversation should store model');
+
+  persistence.saveConversationMessages('studio', conversation.id, [
+    { role: 'user', content: 'hello' },
+    { role: 'assistant', content: 'hi' }
+  ]);
+  const messages = persistence.getConversationMessages('studio', conversation.id);
+  assert.equal(messages.length, 2, 'conversation messages should round-trip');
+  assert.equal(persistence.getConversation('studio', conversation.id)?.id, conversation.id, 'conversation lookup should work');
 }
 
 function main() {

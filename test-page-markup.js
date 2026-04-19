@@ -9,6 +9,9 @@ function main() {
   assert.ok(html.includes('id="user-panel"'), 'index should contain user panel placeholder');
   assert.ok(html.includes('id="admin-panel"'), 'index should contain admin panel placeholder');
   assert.ok(html.includes('id="chat-queue-indicator"'), 'index should contain chat queue indicator');
+  assert.ok(html.includes('id="chat-conversation-list"'), 'index should contain chat conversation list');
+  assert.ok(html.includes('id="chat-conversation-title"'), 'index should contain active conversation title');
+  assert.ok(html.includes('id="btn-chat-new-conversation"'), 'index should contain new conversation button');
   assert.ok(html.includes('id="covervoice-result"'), 'voice result id should be aligned with app logic');
 
   console.log('✅ Page markup tests passed');

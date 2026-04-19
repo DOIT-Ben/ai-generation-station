@@ -19,6 +19,7 @@ const { createStateStore } = require('./state-store');
 
 function createServer(options = {}) {
     const config = options.config || createConfig(options);
+    const httpsClient = options.https || https;
     const {
         PUBLIC_DIR,
         PORT,
@@ -71,8 +72,8 @@ function createServer(options = {}) {
             }
         }),
         ...createLocalRoutes({ OUTPUT_DIR, MIME_TYPES, musicTasks, coverTasks, imageTasks, stateStore }),
-        ...createServiceRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, trackUsage }),
-        ...createTaskRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, musicTasks, imageTasks, coverTasks, trackUsage, stateStore })
+        ...createServiceRoutes({ https: httpsClient, API_HOST, API_KEY, OUTPUT_DIR, trackUsage, stateStore }),
+        ...createTaskRoutes({ https: httpsClient, API_HOST, API_KEY, OUTPUT_DIR, musicTasks, imageTasks, coverTasks, trackUsage, stateStore })
     };
 
     const server = http.createServer(async (req, res) => {

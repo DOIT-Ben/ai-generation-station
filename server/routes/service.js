@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-function createServiceRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, trackUsage }) {
+function createServiceRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, trackUsage, stateStore }) {
     return {
         '/api/tts': async (req, res, body) => {
             const {
@@ -118,16 +118,52 @@ function createServiceRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, trackUsage 
         },
 
         '/api/chat': async (req, res, body) => {
-            const { messages, model = 'MiniMax-M2.7', max_tokens = 4096, temperature = 0.7 } = body;
+            const {
+                messages,
+                conversationId,
+                message,
+                model = 'MiniMax-M2.7',
+                max_tokens = 4096,
+                temperature = 0.7
+            } = body;
 
-            if (!messages || !Array.isArray(messages) || messages.length === 0) {
-                return { error: 'messages 数组是必需的' };
+            const userId = req.authSession?.userId || null;
+            const isConversationMode = Boolean(conversationId || message);
+            let promptMessages = messages;
+            let conversation = null;
+            let normalizedMessage = null;
+
+            if (isConversationMode) {
+                normalizedMessage = String(message || '').trim();
+                if (!userId) {
+                    return { error: 'authentication is required' };
+                }
+                if (!conversationId) {
+                    return { error: 'conversationId is required' };
+                }
+                if (!normalizedMessage) {
+                    return { error: 'message is required' };
+                }
+
+                conversation = stateStore.getConversation(userId, conversationId);
+                if (!conversation) {
+                    return { error: 'conversation not found' };
+                }
+
+                const existingMessages = stateStore.getConversationMessages(userId, conversationId) || [];
+                promptMessages = existingMessages
+                    .map(item => ({ role: item.role, content: item.content }))
+                    .concat({ role: 'user', content: normalizedMessage });
+            }
+
+            if (!promptMessages || !Array.isArray(promptMessages) || promptMessages.length === 0) {
+                return { error: 'messages array is required' };
             }
 
             return new Promise((resolve, reject) => {
                 const postData = JSON.stringify({
                     model,
-                    messages,
+                    messages: promptMessages,
                     max_tokens,
                     temperature
                 });
@@ -150,7 +186,8 @@ function createServiceRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, trackUsage 
                     apiRes.on('end', () => {
                         try {
                             const response = JSON.parse(data);
-                            if (response.base_resp?.status_code !== 0) {
+                            const statusCode = response.base_resp?.status_code;
+                            if (statusCode != null && statusCode !== 0) {
                                 resolve({ error: response.base_resp?.status_msg || 'Chat API error' });
                                 return;
                             }
@@ -166,15 +203,36 @@ function createServiceRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, trackUsage 
                                 || response.text
                                 || '';
 
-                            resolve({
+                            let payload = {
                                 success: true,
                                 reply: replyText,
                                 usage: response.usage
-                            });
-                            trackUsage?.(req.authSession?.userId, 'chat', {
+                            };
+
+                            if (isConversationMode) {
+                                stateStore.appendConversationMessage(userId, conversation.id, {
+                                    role: 'user',
+                                    content: normalizedMessage,
+                                    model
+                                });
+                                const updatedConversation = stateStore.appendConversationMessage(userId, conversation.id, {
+                                    role: 'assistant',
+                                    content: replyText,
+                                    model,
+                                    tokens: response.usage || null
+                                });
+                                payload = {
+                                    ...payload,
+                                    conversation: updatedConversation,
+                                    messages: stateStore.getConversationMessages(userId, conversation.id) || []
+                                };
+                            }
+
+                            trackUsage?.(userId, 'chat', {
                                 inputTokens: response.usage?.input_tokens || 0,
                                 outputTokens: response.usage?.output_tokens || 0
                             });
+                            resolve(payload);
                         } catch (error) {
                             reject(error);
                         }

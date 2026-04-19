@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { EventEmitter } = require('events');
 const { createServer } = require('./server/index');
 const { createConfig } = require('./server/config');
 const { dispatchRequest } = require('./test-live-utils');
@@ -9,9 +10,57 @@ function request(server, requestPath, method, body, headers = {}) {
   return dispatchRequest(server, requestPath, method, body, { headers });
 }
 
+function createHttpsStub(responses = []) {
+  const calls = [];
+  let responseIndex = 0;
+
+  return {
+    calls,
+    request(_options, callback) {
+      const req = new EventEmitter();
+      let body = '';
+
+      req.write = chunk => {
+        body += Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
+      };
+      req.end = () => {
+        let parsedBody = null;
+        try {
+          parsedBody = body ? JSON.parse(body) : null;
+        } catch {
+          parsedBody = body;
+        }
+        calls.push(parsedBody);
+
+        const res = new EventEmitter();
+        callback(res);
+        process.nextTick(() => {
+          const payload = responses[responseIndex] || responses[responses.length - 1] || {};
+          responseIndex += 1;
+          res.emit('data', JSON.stringify(payload));
+          res.emit('end');
+        });
+      };
+      req.on = req.addListener.bind(req);
+      return req;
+    }
+  };
+}
+
 async function withServer(fn) {
   const stateDb = path.join(os.tmpdir(), `aigs-state-${Date.now()}.sqlite`);
+  const httpsStub = createHttpsStub([
+    {
+      content: [{ type: 'text', text: 'First reply from stub' }],
+      usage: { input_tokens: 11, output_tokens: 7 }
+    },
+    {
+      content: [{ type: 'text', text: 'Second reply from stub' }],
+      usage: { input_tokens: 17, output_tokens: 9 }
+    }
+  ]);
   const server = createServer({
+    https: httpsStub,
     config: createConfig({
       env: {
         ...process.env,
@@ -24,7 +73,7 @@ async function withServer(fn) {
   });
 
   try {
-    return await fn(stateDb, server);
+    return await fn(stateDb, server, httpsStub);
   } finally {
     server.appStateStore?.close?.();
     if (fs.existsSync(stateDb)) {
@@ -36,7 +85,7 @@ async function withServer(fn) {
 }
 
 async function main() {
-  await withServer(async (_stateDb, server) => {
+  await withServer(async (_stateDb, server, httpsStub) => {
     const anonymous = await request(server, '/api/auth/session', 'GET');
     if (anonymous.status !== 401) throw new Error(`Expected 401 before login, got ${anonymous.status}`);
 
@@ -106,10 +155,89 @@ async function main() {
       throw new Error('Expected history retrieval to return saved entry');
     }
 
+    const emptyConversations = await request(server, '/api/conversations', 'GET', null, { Cookie: cookie });
+    if (emptyConversations.status !== 200 || !Array.isArray(emptyConversations.data.conversations) || emptyConversations.data.conversations.length !== 0) {
+      throw new Error('Expected empty conversation list before creation');
+    }
+
+    const conversationA = await request(server, '/api/conversations', 'POST', {
+      title: 'Conversation A',
+      model: 'MiniMax-M2.7'
+    }, { Cookie: cookie });
+    if (conversationA.status !== 200 || !conversationA.data.conversation?.id) {
+      throw new Error('Expected conversation creation to succeed');
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 5));
+    const conversationB = await request(server, '/api/conversations', 'POST', {
+      title: 'Conversation B',
+      model: 'MiniMax-M2.7-highspeed'
+    }, { Cookie: cookie });
+    if (conversationB.status !== 200 || !conversationB.data.conversation?.id) {
+      throw new Error('Expected second conversation creation to succeed');
+    }
+
+    const initialConversationList = await request(server, '/api/conversations', 'GET', null, { Cookie: cookie });
+    if (initialConversationList.data.conversations?.[0]?.id !== conversationB.data.conversation.id) {
+      throw new Error('Expected newest empty conversation to be listed first');
+    }
+
+    const firstChat = await request(server, '/api/chat', 'POST', {
+      conversationId: conversationA.data.conversation.id,
+      message: 'Hello session chain',
+      model: 'MiniMax-M2.7'
+    }, { Cookie: cookie });
+    if (firstChat.status !== 200 || firstChat.data.reply !== 'First reply from stub') {
+      throw new Error('Expected first conversation chat reply to persist');
+    }
+    if (!Array.isArray(firstChat.data.messages) || firstChat.data.messages.length !== 2) {
+      throw new Error('Expected conversation chat to return the persisted message chain');
+    }
+    if (firstChat.data.conversation?.title !== 'Hello session chain') {
+      throw new Error('Expected first user message to seed the conversation title');
+    }
+
+    const conversationADetail = await request(
+      server,
+      `/api/conversations/${conversationA.data.conversation.id}`,
+      'GET',
+      null,
+      { Cookie: cookie }
+    );
+    if (conversationADetail.status !== 200 || conversationADetail.data.messages?.length !== 2) {
+      throw new Error('Expected conversation detail to reload the stored chain');
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 5));
+    const secondChat = await request(server, '/api/chat', 'POST', {
+      conversationId: conversationA.data.conversation.id,
+      message: 'Continue this thread',
+      model: 'MiniMax-M2.7-highspeed'
+    }, { Cookie: cookie });
+    if (secondChat.status !== 200 || secondChat.data.reply !== 'Second reply from stub') {
+      throw new Error('Expected second conversation chat reply to persist');
+    }
+    if (secondChat.data.messages?.length !== 4) {
+      throw new Error('Expected second turn to append to the same conversation chain');
+    }
+    if (!Array.isArray(httpsStub.calls[1]?.messages) || httpsStub.calls[1].messages.length !== 3) {
+      throw new Error('Expected upstream payload to include previous conversation context');
+    }
+
+    const orderedConversationList = await request(server, '/api/conversations', 'GET', null, { Cookie: cookie });
+    if (orderedConversationList.data.conversations?.[0]?.id !== conversationA.data.conversation.id) {
+      throw new Error('Expected active conversation with recent messages to sort to the top');
+    }
+
+    const usageAfterChats = await request(server, '/api/usage/today', 'GET', null, { Cookie: cookie });
+    if (usageAfterChats.status !== 200 || usageAfterChats.data.usage?.chatCount !== 2) {
+      throw new Error('Expected chat usage to reflect the two persisted conversation turns');
+    }
+
     server.appStateStore.incrementUsageDaily(userId, 'chat');
     const usageAfter = await request(server, '/api/usage/today', 'GET', null, { Cookie: cookie });
-    if (usageAfter.status !== 200 || usageAfter.data.usage?.chatCount !== 1) {
-      throw new Error('Expected usage increment to be visible');
+    if (usageAfter.status !== 200 || usageAfter.data.usage?.chatCount !== 3) {
+      throw new Error('Expected manual usage increment to be added on top of chat traffic');
     }
 
     const templates = await request(server, '/api/templates/chat', 'GET', null, { Cookie: cookie });

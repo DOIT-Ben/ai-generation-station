@@ -114,6 +114,36 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
 
         CREATE INDEX IF NOT EXISTS idx_user_history_lookup ON user_history_entries (user_id, feature, created_at DESC, id DESC);
 
+        CREATE TABLE IF NOT EXISTS conversations (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            feature TEXT NOT NULL DEFAULT 'chat',
+            title TEXT NOT NULL,
+            model TEXT NOT NULL DEFAULT 'MiniMax-M2.7',
+            message_count INTEGER NOT NULL DEFAULT 0,
+            last_message_at INTEGER,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            archived_at INTEGER,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_conversations_user_lookup
+            ON conversations (user_id, archived_at, COALESCE(last_message_at, created_at) DESC, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS conversation_messages (
+            id TEXT PRIMARY KEY,
+            conversation_id TEXT NOT NULL,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            tokens_json TEXT,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (conversation_id) REFERENCES conversations (id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_conversation_messages_lookup
+            ON conversation_messages (conversation_id, created_at ASC);
+
         CREATE TABLE IF NOT EXISTS system_templates (
             id TEXT PRIMARY KEY,
             feature TEXT NOT NULL,
@@ -310,6 +340,41 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
     `);
     const countSessionsStmt = db.prepare(`SELECT COUNT(*) AS count FROM user_sessions`);
     const countHistoryStmt = db.prepare(`SELECT COUNT(*) AS count FROM user_history_entries`);
+    const selectConversationByIdStmt = db.prepare(`
+        SELECT id, user_id AS userId, feature, title, model, message_count AS messageCount,
+               last_message_at AS lastMessageAt, created_at AS createdAt, updated_at AS updatedAt
+        FROM conversations
+        WHERE id = ? AND user_id = ? AND archived_at IS NULL
+    `);
+    const listConversationsStmt = db.prepare(`
+        SELECT id, user_id AS userId, feature, title, model, message_count AS messageCount,
+               last_message_at AS lastMessageAt, created_at AS createdAt, updated_at AS updatedAt
+        FROM conversations
+        WHERE user_id = ? AND archived_at IS NULL
+        ORDER BY COALESCE(last_message_at, created_at) DESC, updated_at DESC
+        LIMIT ?
+    `);
+    const insertConversationStmt = db.prepare(`
+        INSERT INTO conversations (
+            id, user_id, feature, title, model, message_count, last_message_at, created_at, updated_at, archived_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+    `);
+    const updateConversationStmt = db.prepare(`
+        UPDATE conversations
+        SET title = ?, model = ?, message_count = ?, last_message_at = ?, updated_at = ?
+        WHERE id = ? AND user_id = ? AND archived_at IS NULL
+    `);
+    const listConversationMessagesStmt = db.prepare(`
+        SELECT id, conversation_id AS conversationId, role, content, tokens_json AS tokensJson, created_at AS createdAt
+        FROM conversation_messages
+        WHERE conversation_id = ?
+        ORDER BY created_at ASC, id ASC
+        LIMIT ?
+    `);
+    const insertConversationMessageStmt = db.prepare(`
+        INSERT INTO conversation_messages (id, conversation_id, role, content, tokens_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+    `);
     const countSystemTemplatesStmt = db.prepare(`SELECT COUNT(*) AS count FROM system_templates`);
     const insertSystemTemplateStmt = db.prepare(`
         INSERT INTO system_templates (id, feature, category, label, description, payload, sort_order, created_at, updated_at)
@@ -424,6 +489,39 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         return {
             ...getDefaultPreferences(),
             ...(row || {})
+        };
+    }
+
+    function buildConversationTitle(text) {
+        const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+        if (!normalized) return 'New Chat';
+        return normalized.length > 48 ? `${normalized.slice(0, 48)}...` : normalized;
+    }
+
+    function normalizeConversation(row) {
+        if (!row) return null;
+        return {
+            id: row.id,
+            userId: row.userId,
+            feature: row.feature || 'chat',
+            title: row.title || 'New Chat',
+            model: row.model || 'MiniMax-M2.7',
+            messageCount: Number(row.messageCount || 0),
+            lastMessageAt: row.lastMessageAt || null,
+            createdAt: row.createdAt,
+            updatedAt: row.updatedAt
+        };
+    }
+
+    function normalizeConversationMessage(row) {
+        if (!row) return null;
+        return {
+            id: row.id,
+            conversationId: row.conversationId,
+            role: row.role,
+            content: row.content,
+            createdAt: row.createdAt,
+            tokens: safeParseJson(row.tokensJson, null)
         };
     }
 
@@ -718,6 +816,86 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
             if (!token) return;
             const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
             deleteSessionStmt.run(tokenHash);
+        },
+
+        listConversations(userId, limit = 40) {
+            return listConversationsStmt.all(userId, Number(limit || 40))
+                .map(row => normalizeConversation(row))
+                .filter(Boolean);
+        },
+
+        createConversation(userId, payload = {}) {
+            const now = Date.now();
+            const id = `conv_${crypto.randomUUID()}`;
+            insertConversationStmt.run(
+                id,
+                userId,
+                'chat',
+                payload.title || 'New Chat',
+                payload.model || 'MiniMax-M2.7',
+                0,
+                null,
+                now,
+                now
+            );
+            return this.getConversation(userId, id);
+        },
+
+        getConversation(userId, conversationId) {
+            return normalizeConversation(selectConversationByIdStmt.get(conversationId, userId));
+        },
+
+        getConversationMessages(userId, conversationId, limit = 200) {
+            const conversation = this.getConversation(userId, conversationId);
+            if (!conversation) return null;
+            return listConversationMessagesStmt.all(conversationId, Number(limit || 200))
+                .map(row => normalizeConversationMessage(row))
+                .filter(Boolean);
+        },
+
+        appendConversationMessage(userId, conversationId, message = {}) {
+            const conversation = this.getConversation(userId, conversationId);
+            if (!conversation) return null;
+
+            const role = String(message.role || '').trim();
+            const content = String(message.content || '').trim();
+            if (!['user', 'assistant'].includes(role) || !content) {
+                throw new Error('invalid conversation message');
+            }
+
+            const now = Number(message.createdAt || Date.now());
+            const nextMessageCount = conversation.messageCount + 1;
+            const nextTitle = conversation.messageCount === 0 && role === 'user'
+                ? buildConversationTitle(content)
+                : conversation.title;
+            const nextModel = message.model || conversation.model || 'MiniMax-M2.7';
+
+            db.exec('BEGIN');
+            try {
+                insertConversationMessageStmt.run(
+                    crypto.randomUUID(),
+                    conversationId,
+                    role,
+                    content,
+                    JSON.stringify(message.tokens || null),
+                    now
+                );
+                updateConversationStmt.run(
+                    nextTitle,
+                    nextModel,
+                    nextMessageCount,
+                    now,
+                    now,
+                    conversationId,
+                    userId
+                );
+                db.exec('COMMIT');
+            } catch (error) {
+                db.exec('ROLLBACK');
+                throw error;
+            }
+
+            return this.getConversation(userId, conversationId);
         },
 
         getHistory(userId, feature) {

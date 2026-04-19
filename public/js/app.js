@@ -24,6 +24,11 @@
   let templates = appShell?.TEMPLATE_LIBRARY || {};
   const featureMeta = appShell?.FEATURE_META || {};
   const historyState = {};
+  const conversationState = {
+    list: [],
+    activeId: null,
+    messages: []
+  };
   let currentUser = null;
   let currentUserProfile = null;
   let adminUsers = [];
@@ -333,6 +338,7 @@
       await refreshUsageToday();
       await loadTemplateLibraries();
       await loadAdminUsers();
+      await loadConversations();
       await loadAllHistories();
       showToast(`欢迎回来，${currentUser}`, 'success', 1800);
     } catch (loginError) {
@@ -344,6 +350,9 @@
     currentUser = null;
     currentUserProfile = null;
     adminUsers = [];
+    conversationState.list = [];
+    conversationState.activeId = null;
+    conversationState.messages = [];
     historyState.chat = [];
     Object.keys(featureMeta).forEach(feature => { historyState[feature] = []; renderHistory(feature); });
     usageToday = null;
@@ -355,6 +364,7 @@
     restoreChatMessages([]);
     renderUserPanel();
     renderAdminPanel();
+    renderConversationList();
     showAuthGate();
   }
 
@@ -376,6 +386,7 @@
       await refreshUsageToday();
       await loadTemplateLibraries();
       await loadAdminUsers();
+      await loadConversations();
       await loadAllHistories();
     } catch {
       showAuthGate();
@@ -384,6 +395,7 @@
 
   function ensureFeatureExtensions() {
     Object.keys(featureMeta).forEach(feature => {
+      if (feature === 'chat') return;
       const section = $(`tab-${feature}`);
       if (!section || section.querySelector(`[data-feature-shell="${feature}"]`)) return;
       const wrapper = document.createElement('div');
@@ -527,7 +539,232 @@
     });
   }
 
+  function getConversationTitlePreview(conversation) {
+    return conversation?.title || 'New Chat';
+  }
+
+  function upsertConversationSummary(conversation) {
+    if (!conversation?.id) return;
+    conversationState.list = [conversation].concat(
+      conversationState.list.filter(item => item.id !== conversation.id)
+    );
+  }
+
+  function applyConversationPayload(conversation, messages = [], options = {}) {
+    if (conversation?.id) {
+      conversationState.activeId = conversation.id;
+      upsertConversationSummary(conversation);
+    }
+    conversationState.messages = Array.isArray(messages) ? messages.slice() : [];
+    chatHistory = conversationState.messages.map(item => ({
+      role: item.role,
+      content: item.content
+    }));
+
+    if (options.restoreMessages !== false) {
+      restoreChatMessages(chatHistory);
+    }
+    renderConversationList();
+  }
+
+  function _legacyRenderConversationMeta() {
+    const title = $('chat-conversation-title');
+    const subtitle = $('chat-conversation-subtitle');
+    if (!title || !subtitle) return;
+
+    const activeConversation = conversationState.list.find(item => item.id === conversationState.activeId) || null;
+    if (!currentUser || !activeConversation) {
+      title.textContent = 'No active conversation';
+      subtitle.textContent = 'Create a conversation to start chatting.';
+      return;
+    }
+
+    title.textContent = getConversationTitlePreview(activeConversation);
+    subtitle.textContent = `${activeConversation.messageCount || 0} messages · ${activeConversation.model || 'MiniMax-M2.7'}`;
+  }
+
+  function renderConversationList() {
+    const list = $('chat-conversation-list');
+    const empty = $('chat-conversation-empty');
+    if (!list || !empty) return;
+
+    if (!currentUser || !conversationState.list.length) {
+      list.innerHTML = '';
+      empty.removeAttribute('hidden');
+      renderConversationMeta();
+      return;
+    }
+
+    empty.setAttribute('hidden', '');
+    list.innerHTML = conversationState.list.map(item => `
+      <button
+        type="button"
+        class="chat-conversation-item${item.id === conversationState.activeId ? ' active' : ''}"
+        data-conversation-id="${item.id}">
+        <strong>${getConversationTitlePreview(item)}</strong>
+        <span>${item.messageCount || 0} messages</span>
+      </button>
+    `).join('');
+    renderConversationMeta();
+  }
+
+  async function _legacySelectConversation(conversationId) {
+    if (!currentUser || !conversationId || !persistence?.getConversation) return;
+    try {
+      const result = await persistence.getConversation(conversationId);
+      if (!result?.conversation) return;
+      conversationState.activeId = result.conversation.id;
+      conversationState.messages = result.messages || [];
+      conversationState.list = conversationState.list.map(item => item.id === result.conversation.id ? result.conversation : item);
+      chatHistory = conversationState.messages.map(item => ({ role: item.role, content: item.content }));
+      restoreChatMessages(chatHistory);
+      renderConversationList();
+    } catch (error) {
+      showToast(error.message || 'Conversation load failed', 'error', 1800);
+    }
+  }
+
+  async function _legacyCreateConversationAndSelect() {
+    if (!currentUser || !persistence?.createConversation) return null;
+    try {
+      const result = await persistence.createConversation({
+        model: $('chat-model')?.value || 'MiniMax-M2.7'
+      });
+      if (!result?.conversation) return null;
+      conversationState.list = [result.conversation].concat(conversationState.list.filter(item => item.id !== result.conversation.id));
+      conversationState.activeId = result.conversation.id;
+      conversationState.messages = result.messages || [];
+      chatHistory = [];
+      restoreChatMessages([]);
+      renderConversationList();
+      return result.conversation;
+    } catch (error) {
+      showToast(error.message || 'Conversation creation failed', 'error', 1800);
+      return null;
+    }
+  }
+
+  async function _legacyLoadConversations() {
+    if (!currentUser || !persistence?.getConversations) {
+      conversationState.list = [];
+      conversationState.activeId = null;
+      conversationState.messages = [];
+      renderConversationList();
+      return;
+    }
+
+    try {
+      conversationState.list = await persistence.getConversations();
+    } catch {
+      conversationState.list = [];
+    }
+
+    if (!conversationState.list.length) {
+      const created = await createConversationAndSelect();
+      if (created) return;
+    }
+
+    const preferredConversation = conversationState.list.find(item => item.id === conversationState.activeId) || conversationState.list[0];
+    if (preferredConversation) {
+      await selectConversation(preferredConversation.id);
+    } else {
+      restoreChatMessages([]);
+      renderConversationList();
+    }
+  }
+
+  function renderConversationMeta() {
+    const title = $('chat-conversation-title');
+    const subtitle = $('chat-conversation-subtitle');
+    if (!title || !subtitle) return;
+
+    const activeConversation = conversationState.list.find(item => item.id === conversationState.activeId) || null;
+    if (!currentUser || !activeConversation) {
+      title.textContent = 'No active conversation';
+      subtitle.textContent = 'Create a conversation to start chatting.';
+      return;
+    }
+
+    title.textContent = getConversationTitlePreview(activeConversation);
+    subtitle.textContent = `${activeConversation.messageCount || 0} messages | ${activeConversation.model || 'MiniMax-M2.7'}`;
+  }
+
+  async function selectConversation(conversationId) {
+    if (!currentUser || !conversationId || !persistence?.getConversation) return;
+    if (isChatGenerating) {
+      showToast('Please wait for the current reply to finish before switching.', 'info', 1800);
+      return;
+    }
+    try {
+      const result = await persistence.getConversation(conversationId);
+      if (!result?.conversation) return;
+      applyConversationPayload(result.conversation, result.messages);
+    } catch (error) {
+      showToast(error.message || 'Conversation load failed', 'error', 1800);
+    }
+  }
+
+  async function createConversationAndSelect() {
+    if (!currentUser || !persistence?.createConversation) return null;
+    try {
+      const result = await persistence.createConversation({
+        model: $('chat-model')?.value || 'MiniMax-M2.7'
+      });
+      if (!result?.conversation) return null;
+      applyConversationPayload(result.conversation, result.messages);
+      return result.conversation;
+    } catch (error) {
+      showToast(error.message || 'Conversation creation failed', 'error', 1800);
+      return null;
+    }
+  }
+
+  async function startNewConversation() {
+    if (isChatGenerating) {
+      showToast('Please wait for the current reply to finish before creating a new conversation.', 'info', 1800);
+      return null;
+    }
+    return createConversationAndSelect();
+  }
+
+  async function ensureActiveConversation() {
+    if (conversationState.activeId) return conversationState.activeId;
+    const conversation = await createConversationAndSelect();
+    return conversation?.id || null;
+  }
+
+  async function loadConversations() {
+    if (!currentUser || !persistence?.getConversations) {
+      conversationState.list = [];
+      conversationState.activeId = null;
+      conversationState.messages = [];
+      renderConversationList();
+      return;
+    }
+
+    try {
+      conversationState.list = await persistence.getConversations();
+    } catch {
+      conversationState.list = [];
+    }
+
+    if (!conversationState.list.length) {
+      const created = await createConversationAndSelect();
+      if (created) return;
+    }
+
+    const preferredConversation = conversationState.list.find(item => item.id === conversationState.activeId) || conversationState.list[0];
+    if (preferredConversation) {
+      await selectConversation(preferredConversation.id);
+    } else {
+      chatHistory = [];
+      restoreChatMessages([]);
+      renderConversationList();
+    }
+  }
+
   function renderHistory(feature) {
+    if (feature === 'chat') return;
     const list = $(`history-list-${feature}`);
     const empty = $(`history-empty-${feature}`);
     if (!list || !empty) return;
@@ -555,15 +792,14 @@
 
   async function loadAllHistories() {
     if (!currentUser || !persistence) {
-      Object.keys(featureMeta).forEach(feature => {
+      Object.keys(featureMeta).filter(feature => feature !== 'chat').forEach(feature => {
         historyState[feature] = [];
         renderHistory(feature);
       });
-      restoreLatestChat();
       return;
     }
 
-    await Promise.all(Object.keys(featureMeta).map(async feature => {
+    await Promise.all(Object.keys(featureMeta).filter(feature => feature !== 'chat').map(async feature => {
       try {
         historyState[feature] = await persistence.getHistory(currentUser, feature);
       } catch {
@@ -571,10 +807,10 @@
       }
       renderHistory(feature);
     }));
-    restoreLatestChat();
   }
 
   function saveHistoryEntry(feature, entry) {
+    if (feature === 'chat') return;
     if (!currentUser || !persistence) return;
     historyState[feature] = [entry].concat(historyState[feature] || []).slice(0, appShell?.MAX_HISTORY_ITEMS || 12);
     renderHistory(feature);
@@ -582,9 +818,6 @@
       .then(items => {
         historyState[feature] = items;
         renderHistory(feature);
-        if (feature === 'chat') {
-          restoreLatestChat();
-        }
       })
       .catch(() => {
         showToast(`${featureMeta[feature]?.title || feature} 历史保存失败`, 'error', 1800);
@@ -611,23 +844,11 @@
   }
 
   function restoreLatestChat() {
-    const latest = historyState.chat?.[0];
-    if (latest?.state?.messages) {
-      restoreChatMessages(latest.state.messages);
-    } else {
-      restoreChatMessages([]);
-    }
+    renderConversationList();
   }
 
   function recordChatHistory(title, reply) {
-    saveHistoryEntry('chat', {
-      title: truncateText(title, 24),
-      summary: truncateText(reply, 88),
-      timestamp: Date.now(),
-      state: {
-        messages: chatHistory.slice()
-      }
-    });
+    return { title, reply };
   }
 
   function recordFeatureHistory(feature, title, summary, inputs, result) {
@@ -726,6 +947,16 @@
 
   function bindEnhancementEvents() {
     document.addEventListener('click', event => {
+      const newConversationButton = event.target.closest('#btn-chat-new-conversation');
+      if (newConversationButton) {
+        startNewConversation();
+        return;
+      }
+      const conversationButton = event.target.closest('[data-conversation-id]');
+      if (conversationButton) {
+        selectConversation(conversationButton.dataset.conversationId);
+        return;
+      }
       const saveButton = event.target.closest('[data-template-save]');
       if (saveButton) {
         saveCurrentTemplate(saveButton.dataset.templateSave);
@@ -1621,7 +1852,7 @@
     }
   }
 
-  async function sendChatMessage(forcedMessage) {
+  async function _legacySendChatMessageOld(forcedMessage) {
     const input = $('chat-input');
     const message = String(forcedMessage != null ? forcedMessage : input?.value || '').trim();
     if (!message) return;
@@ -1680,7 +1911,7 @@
   }
 
   // 仅供队列内部调用，不做队列检查
-  async function sendChatMessageFromQueue(message) {
+  async function _legacySendChatMessageFromQueueOld(message) {
     addChatMessage('user', message);
     chatHistory.push({ role: 'user', content: message });
     setChatLoading(true);
@@ -1718,6 +1949,87 @@
     } else {
       isChatGenerating = false;
     }
+  }
+
+  async function performChatSend(message) {
+    const conversationId = await ensureActiveConversation();
+    if (!conversationId) {
+      throw new Error('Conversation creation failed');
+    }
+
+    const model = $('chat-model')?.value || 'MiniMax-M2.7';
+    addChatMessage('user', message);
+    setChatLoading(true);
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          conversationId,
+          message,
+          model
+        }),
+      });
+      const data = await res.json();
+
+      if (data.error) {
+        restoreChatMessages(chatHistory);
+        throw new Error(data.error);
+      }
+
+      await streamChatMessage(data.reply || '', () => {
+        loadQuota();
+        refreshUsageToday();
+      });
+      applyConversationPayload(data.conversation, data.messages, { restoreMessages: false });
+    } catch (error) {
+      restoreChatMessages(chatHistory);
+      throw error;
+    } finally {
+      setChatLoading(false);
+    }
+  }
+
+  async function drainChatQueue() {
+    while (chatQueue.length > 0) {
+      const next = chatQueue.shift();
+      updateQueueIndicator();
+      await performChatSend(next);
+    }
+  }
+
+  async function sendChatMessage(forcedMessage) {
+    const input = $('chat-input');
+    const message = String(forcedMessage != null ? forcedMessage : input?.value || '').trim();
+    if (!message) return;
+
+    if (isChatGenerating) {
+      chatQueue.push(message);
+      updateQueueIndicator();
+      showToast(`Message queued (${chatQueue.length} waiting)`, 'info', 1800);
+      if (input) input.value = '';
+      return;
+    }
+
+    isChatGenerating = true;
+    if (input) input.value = '';
+
+    try {
+      await performChatSend(message);
+      await drainChatQueue();
+    } catch (error) {
+      showToast(error.message || 'Chat failed, please try again.', 'error', 2200);
+    } finally {
+      isChatGenerating = false;
+      updateQueueIndicator();
+    }
+  }
+
+  async function sendChatMessageFromQueue(message) {
+    if (!message) return;
+    await performChatSend(message);
   }
 
   // ============================================

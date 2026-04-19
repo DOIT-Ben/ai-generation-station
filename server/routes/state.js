@@ -120,6 +120,48 @@ function createStateRoutes({ stateStore, sessionCookieName, authConfig }) {
             };
         },
 
+        '/api/conversations': async (req, res, body) => {
+            const session = requireUser(req, res);
+            if (!session) return null;
+
+            if (req.method === 'GET') {
+                return {
+                    conversations: stateStore.listConversations(session.userId)
+                };
+            }
+
+            return {
+                conversation: stateStore.createConversation(session.userId, {
+                    title: body?.title,
+                    model: body?.model
+                }),
+                messages: []
+            };
+        },
+
+        '/api/conversations/*': async (req, res) => {
+            const session = requireUser(req, res);
+            if (!session) return null;
+
+            const parts = getPathParts(req);
+            const conversationId = parts[2];
+            if (!conversationId) {
+                sendJson(res, 400, { error: 'conversation id is required' });
+                return null;
+            }
+
+            const conversation = stateStore.getConversation(session.userId, conversationId);
+            if (!conversation) {
+                sendJson(res, 404, { error: 'conversation not found' });
+                return null;
+            }
+
+            return {
+                conversation,
+                messages: stateStore.getConversationMessages(session.userId, conversationId) || []
+            };
+        },
+
         '/api/preferences': async (req, res, body) => {
             const session = requireUser(req, res);
             if (!session) return null;

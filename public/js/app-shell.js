@@ -246,6 +246,37 @@
         const next = [entry].concat(existing).slice(0, MAX_HISTORY_ITEMS);
         this.saveHistory(username, feature, next);
         return next;
+      },
+      getConversations(username) {
+        return safeParse(storage.getItem(buildKey(['conversations', username])), []);
+      },
+      saveConversations(username, conversations) {
+        storage.setItem(buildKey(['conversations', username]), JSON.stringify(conversations || []));
+      },
+      createConversation(username, payload = {}) {
+        const now = Date.now();
+        const existing = this.getConversations(username);
+        const conversation = {
+          id: `conv-${now}`,
+          title: payload.title || 'New Chat',
+          model: payload.model || 'MiniMax-M2.7',
+          messageCount: 0,
+          lastMessageAt: null,
+          createdAt: now,
+          updatedAt: now
+        };
+        this.saveConversations(username, [conversation].concat(existing));
+        this.saveConversationMessages(username, conversation.id, []);
+        return conversation;
+      },
+      getConversation(username, conversationId) {
+        return this.getConversations(username).find(item => item.id === conversationId) || null;
+      },
+      getConversationMessages(username, conversationId) {
+        return safeParse(storage.getItem(buildKey(['conversation-messages', username, conversationId])), []);
+      },
+      saveConversationMessages(username, conversationId, messages) {
+        storage.setItem(buildKey(['conversation-messages', username, conversationId]), JSON.stringify(messages || []));
       }
     };
   }
@@ -371,6 +402,45 @@
         });
         const data = await parseResponse(response);
         return data.user || null;
+      },
+
+      async getConversations() {
+        const response = await fetchImpl('/api/conversations', { credentials: 'same-origin' });
+        const data = await parseResponse(response);
+        return data.conversations || [];
+      },
+
+      async createConversation(payload = {}) {
+        const response = await fetchImpl('/api/conversations', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await parseResponse(response);
+        return {
+          conversation: data.conversation || null,
+          messages: data.messages || []
+        };
+      },
+
+      async getConversation(conversationId) {
+        const response = await fetchImpl(`/api/conversations/${conversationId}`, { credentials: 'same-origin' });
+        const data = await parseResponse(response);
+        return {
+          conversation: data.conversation || null,
+          messages: data.messages || []
+        };
+      },
+
+      async sendChatMessage(payload) {
+        const response = await fetchImpl('/api/chat', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        return parseResponse(response);
       }
     };
   }

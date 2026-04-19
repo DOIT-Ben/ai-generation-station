@@ -624,7 +624,26 @@
 
       <div class="card chat-card">
         <div class="chat-container">
-          <div class="chat-messages" id="chat-messages">
+          <aside class="chat-sidebar">
+            <div class="chat-sidebar-header">
+              <div>
+                <h2>Conversations</h2>
+                <p>Continue a saved context or start a fresh thread.</p>
+              </div>
+              <button class="btn btn-secondary btn-chat-new" id="btn-chat-new-conversation" type="button">New Chat</button>
+            </div>
+            <div class="chat-conversation-empty" id="chat-conversation-empty">No conversations yet.</div>
+            <div class="chat-conversation-list" id="chat-conversation-list"></div>
+          </aside>
+
+          <div class="chat-main">
+            <div class="chat-main-header">
+              <div class="chat-main-meta">
+                <h2 id="chat-conversation-title">No active conversation</h2>
+                <p id="chat-conversation-subtitle">Create a conversation to start chatting.</p>
+              </div>
+            </div>
+            <div class="chat-messages" id="chat-messages">
             <div class="chat-message chatbot">
               <div class="message-avatar">🤖</div>
               <div class="message-content">
@@ -655,6 +674,7 @@
                   <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
                 </svg>
               </button>
+            </div>
             </div>
           </div>
         </div>
