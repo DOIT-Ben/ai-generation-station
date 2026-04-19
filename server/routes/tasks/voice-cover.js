@@ -31,6 +31,47 @@ function createVoiceCoverRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, coverTas
         return parts.filter(Boolean).join('\n');
     }
 
+    function looksLikeRemoteUrl(value) {
+        const text = String(value || '').trim();
+        return /^https?:\/\//i.test(text);
+    }
+
+    async function materializeCoverOutput(task, responseData = {}) {
+        const directAudioUrl = looksLikeRemoteUrl(responseData.audio_url)
+            ? String(responseData.audio_url).trim()
+            : looksLikeRemoteUrl(responseData.audio)
+                ? String(responseData.audio).trim()
+                : '';
+        const audioHex = !directAudioUrl && typeof responseData.audio === 'string'
+            ? String(responseData.audio).trim()
+            : '';
+
+        if (directAudioUrl) {
+            await downloadFromUrl(https, directAudioUrl, task.outputFile);
+        } else if (audioHex) {
+            if (!/^[0-9a-f]+$/i.test(audioHex) || audioHex.length % 2 !== 0) {
+                throw new Error('Invalid cover audio payload');
+            }
+
+            const buffer = Buffer.from(audioHex, 'hex');
+            if (!buffer.length) {
+                throw new Error('Empty cover audio payload');
+            }
+
+            fs.writeFileSync(task.outputFile, buffer);
+        } else {
+            return false;
+        }
+
+        const size = fs.existsSync(task.outputFile) ? fs.statSync(task.outputFile).size : 0;
+        if (!size) {
+            throw new Error('Cover output file is empty');
+        }
+
+        task.size = size;
+        return true;
+    }
+
     async function processCoverTask(task) {
         const { outputFile, audio_url, prompt, timbre, pitch } = task;
 
@@ -110,16 +151,13 @@ function createVoiceCoverRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, coverTas
                                 task.progress = 100;
                                 task.status = 'completed';
 
-                                if (response.data?.audio) {
-                                    const buffer = Buffer.from(response.data.audio, 'hex');
-                                    fs.writeFileSync(outputFile, buffer);
-                                } else if (response.data?.audio_url) {
-                                    await downloadFromUrl(https, response.data.audio_url, outputFile);
+                                const wroteOutput = await materializeCoverOutput(task, response.data);
+                                if (!wroteOutput) {
+                                    throw new Error('Cover response did not include audio output');
                                 }
 
                                 task.url = `/output/${path.basename(outputFile)}`;
                                 task.duration = response.extra_info?.music_duration || 0;
-                                task.size = fs.statSync(task.outputFile).size;
                                 persistTask(task);
                                 trackUsage?.(task.userId, 'cover');
                                 resolve(task);
@@ -185,17 +223,14 @@ function createVoiceCoverRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, coverTas
                                 task.progress = 90;
                                 task.status = 'completed';
 
-                                if (response.data.audio) {
-                                    const buffer = Buffer.from(response.data.audio, 'hex');
-                                    fs.writeFileSync(task.outputFile, buffer);
-                                } else {
-                                    await downloadFromUrl(https, response.data.audio_url, task.outputFile);
+                                const wroteOutput = await materializeCoverOutput(task, response.data);
+                                if (!wroteOutput) {
+                                    throw new Error('Cover response did not include audio output');
                                 }
 
                                 task.progress = 100;
                                 task.url = `/output/${path.basename(task.outputFile)}`;
                                 task.duration = response.extra_info?.music_duration || 0;
-                                task.size = fs.statSync(task.outputFile).size;
                                 persistTask(task);
                                 trackUsage?.(task.userId, 'cover');
                                 resolve(task);

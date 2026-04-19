@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { assertServerReady, makeRequest } = require('./test-live-utils');
+const { assertServerReady, makeRequest, pollTaskStatus } = require('./test-live-utils');
 
 const TEST_FILE = path.join(__dirname, 'resources', 'ai-music.mp3');
 
@@ -44,31 +44,32 @@ async function test() {
   }
   console.log('   TaskID:', coverRes.taskId);
 
-  console.log('\n3. Poll task status...');
-  let completed = false;
-  for (let i = 0; i < 30 && !completed; i++) {
-    await new Promise(r => setTimeout(r, 3000));
-    const status = await requestJson('/api/music-cover/status', 'POST', { taskId: coverRes.taskId });
+  const status = await pollTaskStatus({
+    path: '/api/music-cover/status',
+    taskId: coverRes.taskId,
+    maxAttempts: 50,
+    intervalMs: 3000,
+    label: 'Voice cover'
+  });
 
-    console.log(`   [${i + 1}] status: ${status.status}, progress: ${status.progress}%${status.error ? `, error: ${status.error}` : ''}`);
+  console.log('\n   Final result:');
+  console.log('   - status:', status.status);
+  console.log('   - URL:', status.url || 'none');
+  console.log('   - duration:', status.duration || 'none');
+  if (status.error) console.log('   - error:', status.error);
 
-    if (status.status === 'completed' || status.status === 'error') {
-      completed = true;
-      console.log('\n   Final result:');
-      console.log('   - status:', status.status);
-      console.log('   - URL:', status.url || 'none');
-      console.log('   - duration:', status.duration || 'none');
-      if (status.error) console.log('   - error:', status.error);
-      if (status.status === 'completed') {
-        return { passed: true, url: status.url, duration: status.duration };
-      }
-      throw new Error(status.error || 'Voice cover task failed');
-    }
+  const outputPath = path.join(__dirname, 'output', path.basename(status.url || ''));
+  if (!fs.existsSync(outputPath)) {
+    throw new Error(`Voice cover output file not found: ${outputPath}`);
   }
 
-  if (!completed) {
-    throw new Error('Voice cover task polling timed out');
+  const size = fs.statSync(outputPath).size;
+  console.log('   - size:', size);
+  if (!size) {
+    throw new Error('Voice cover output file is empty');
   }
+
+  return { passed: true, url: status.url, duration: status.duration };
 }
 
 async function main() {

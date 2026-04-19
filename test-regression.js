@@ -9,6 +9,8 @@ const authHistoryTest = require('./test-auth-history');
 const taskPersistenceTest = require('./test-task-persistence');
 const frontendStateTest = require('./test-frontend-state');
 const pageMarkupTest = require('./test-page-markup');
+const musicRouteTest = require('./test-music-route');
+const voiceCoverRouteTest = require('./test-voice-cover-route');
 const lyricsTest = require('./test-lyrics');
 const musicTest = require('./test-music');
 const imageTest = require('./test-image');
@@ -120,6 +122,8 @@ async function main() {
     await runCase(results, 'PageMarkup', () => pageMarkupTest.main());
     await runCase(results, 'AuthHistory', () => authHistoryTest.main());
     await runCase(results, 'TaskPersistence', () => taskPersistenceTest.main());
+    await runCase(results, 'MusicRoute', () => musicRouteTest.main());
+    await runCase(results, 'VoiceCoverRoute', () => voiceCoverRouteTest.main());
 
     await withServer(port, async () => {
         await runCase(results, 'Smoke', () => smokeTest.main());

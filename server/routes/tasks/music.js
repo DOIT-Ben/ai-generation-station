@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { downloadFromUrl } = require('./shared');
 
 function createMusicRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, musicTasks, trackUsage, stateStore }) {
     function persistTask(task, patch = {}) {
@@ -144,6 +145,55 @@ function createMusicRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, musicTasks, t
         return requestBody;
     }
 
+    function getProviderStatus(response) {
+        return response?.status ?? response?.data?.status ?? null;
+    }
+
+    function isCompletedStatus(status) {
+        const value = typeof status === 'string' ? status.trim().toLowerCase() : status;
+        return value === 2 || value === '2' || value === 'completed' || value === 'complete' || value === 'success' || value === 'done';
+    }
+
+    function isPendingStatus(status) {
+        const value = typeof status === 'string' ? status.trim().toLowerCase() : status;
+        return value === 0 || value === '0' || value === 1 || value === '1' || value === 'pending' || value === 'processing' || value === 'queued' || value === 'running' || value === 'submitted' || value === 'in_progress';
+    }
+
+    function getProviderTaskId(response) {
+        return response?.task_id || response?.taskId || response?.data?.task_id || response?.data?.taskId || null;
+    }
+
+    function getProviderError(response) {
+        if (response?.base_resp?.status_code != null && response.base_resp.status_code !== 0) {
+            return response.base_resp.status_msg || 'Music generation failed';
+        }
+
+        return response?.error || response?.message || response?.msg || response?.data?.error || response?.data?.message || null;
+    }
+
+    async function writeMusicOutput(task, response) {
+        const audioHex = response?.data?.audio || response?.audio || null;
+        const audioUrl = response?.data?.audio_url || response?.audio_url || null;
+
+        if (audioHex) {
+            const buffer = Buffer.from(audioHex, 'hex');
+            fs.writeFileSync(task.outputFile, buffer);
+        } else if (audioUrl) {
+            await downloadFromUrl(https, audioUrl, task.outputFile);
+        } else {
+            return false;
+        }
+
+        task.status = 'completed';
+        task.progress = 100;
+        task.url = `/output/${path.basename(task.outputFile)}`;
+        task.duration = response?.extra_info?.music_duration || task.duration || 0;
+        task.size = fs.existsSync(task.outputFile) ? fs.statSync(task.outputFile).size : 0;
+        persistTask(task);
+        trackUsage?.(task.userId, 'music');
+        return true;
+    }
+
     function pollMusicTask(task, maxAttempts = 120) {
         return new Promise((resolve, reject) => {
             let attempts = 0;
@@ -161,22 +211,14 @@ function createMusicRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, musicTasks, t
                 const req = https.request(options, (res) => {
                     let data = '';
                     res.on('data', chunk => data += chunk);
-                    res.on('end', () => {
+                    res.on('end', async () => {
                         try {
                             const response = JSON.parse(data);
-                            if (response.status === 2 && response.data?.audio) {
-                                task.progress = 90;
-                                const buffer = Buffer.from(response.data.audio, 'hex');
-                                fs.writeFileSync(task.outputFile, buffer);
-                                task.status = 'completed';
-                                task.progress = 100;
-                                task.url = `/output/${path.basename(task.outputFile)}`;
-                                task.duration = response.extra_info?.music_duration || 0;
-                                task.size = fs.statSync(task.outputFile).size;
-                                persistTask(task);
-                                trackUsage?.(task.userId, 'music');
+
+                            if (await writeMusicOutput(task, response)) {
                                 resolve(task);
-                            } else if (response.status === 1 || response.status === 0) {
+                            } else if (isPendingStatus(getProviderStatus(response))) {
+                                task.status = 'processing';
                                 task.progress = 30 + Math.min(50, attempts * 5);
                                 persistTask(task);
                                 if (attempts < maxAttempts) {
@@ -187,11 +229,17 @@ function createMusicRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, musicTasks, t
                                     persistTask(task);
                                     reject(new Error('Music generation timeout'));
                                 }
-                            } else {
+                            } else if (isCompletedStatus(getProviderStatus(response))) {
                                 task.status = 'error';
-                                task.error = 'Failed';
+                                task.error = 'Music generation completed without audio output';
                                 persistTask(task);
-                                reject(new Error('Music generation failed'));
+                                reject(new Error(task.error));
+                            } else {
+                                const providerError = getProviderError(response) || 'Music generation failed';
+                                task.status = 'error';
+                                task.error = providerError;
+                                persistTask(task);
+                                reject(new Error(providerError));
                             }
                         } catch (error) {
                             task.status = 'error';
@@ -248,23 +296,15 @@ function createMusicRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, musicTasks, t
                 res.on('end', async () => {
                     try {
                         const response = JSON.parse(data);
-                        if (response.data?.audio) {
-                            task.progress = 80;
-                            const buffer = Buffer.from(response.data.audio, 'hex');
-                            fs.writeFileSync(task.outputFile, buffer);
-                            task.status = 'completed';
-                            task.progress = 100;
-                            task.url = `/output/${path.basename(task.outputFile)}`;
-                            task.duration = response.extra_info?.music_duration || 0;
-                            task.size = fs.statSync(task.outputFile).size;
-                            persistTask(task);
-                            trackUsage?.(task.userId, 'music');
+
+                        if (await writeMusicOutput(task, response)) {
                             resolve(task);
                             return;
                         }
 
-                        if (response.task_id) {
-                            task.providerTaskId = response.task_id;
+                        const providerTaskId = getProviderTaskId(response);
+                        if (providerTaskId) {
+                            task.providerTaskId = providerTaskId;
                             task.progress = 30;
                             persistTask(task);
                             await pollMusicTask(task);
@@ -272,10 +312,19 @@ function createMusicRoutes({ https, API_HOST, API_KEY, OUTPUT_DIR, musicTasks, t
                             return;
                         }
 
+                        if (isCompletedStatus(getProviderStatus(response))) {
+                            task.status = 'error';
+                            task.error = 'Music generation completed without audio output';
+                            persistTask(task);
+                            reject(new Error(task.error));
+                            return;
+                        }
+
+                        const providerError = getProviderError(response);
                         task.status = 'error';
-                        task.error = 'Music generation failed';
+                        task.error = providerError || 'Music generation failed';
                         persistTask(task);
-                        reject(new Error('Music generation failed'));
+                        reject(new Error(task.error));
                     } catch (error) {
                         task.status = 'error';
                         task.error = error.message;

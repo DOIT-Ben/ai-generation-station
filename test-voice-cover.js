@@ -61,7 +61,7 @@ async function testVoiceCover(audioUrl) {
     return null;
 }
 
-async function pollTaskStatus(taskId, maxAttempts = 30) {
+async function pollTaskStatus(taskId, maxAttempts = 50) {
     console.log('\nPoll task status...');
 
     for (let i = 0; i < maxAttempts; i++) {
@@ -110,6 +110,16 @@ async function main() {
     const result = await pollTaskStatus(taskId);
     if (!result) {
         throw new Error('Voice cover task did not complete');
+    }
+
+    const outputPath = path.join(__dirname, 'output', path.basename(result.url || ''));
+    if (!fs.existsSync(outputPath)) {
+        throw new Error(`Voice cover output file not found: ${outputPath}`);
+    }
+    const size = fs.statSync(outputPath).size;
+    console.log(`   Output size: ${size}`);
+    if (!size) {
+        throw new Error('Voice cover output file is empty');
     }
 
     console.log('\nVoice cover integration test passed');
