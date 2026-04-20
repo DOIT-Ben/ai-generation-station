@@ -54,6 +54,7 @@ function createServer(options = {}) {
         HEALTHCHECK_PATH,
         CONTENT_SECURITY_POLICY,
         NOTIFICATION_DELIVERY_MODE,
+        NOTIFICATION_FAILOVER_MODE,
         NOTIFICATION_FROM_EMAIL,
         RESEND_API_KEY,
         MIME_TYPES
@@ -87,6 +88,7 @@ function createServer(options = {}) {
     };
     const notificationService = options.notificationService || createNotificationService({
         mode: NOTIFICATION_DELIVERY_MODE,
+        failoverMode: NOTIFICATION_FAILOVER_MODE,
         appBaseUrl: APP_BASE_URL,
         fromEmail: NOTIFICATION_FROM_EMAIL,
         resendApiKey: RESEND_API_KEY,

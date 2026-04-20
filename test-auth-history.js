@@ -1723,6 +1723,83 @@ async function main() {
     });
   }
 
+  {
+    const fallbackNotificationStub = createNotificationFetchStub([
+      { ok: false, status: 503, body: { message: 'provider down' } },
+      { ok: false, status: 503, body: { message: 'provider down' } }
+    ]);
+
+    await withServer(async (_stateDb, server) => {
+      const adminLogin = await request(server, '/api/auth/login', 'POST', {
+        username: 'studio',
+        password: 'AIGS2026!'
+      });
+      if (adminLogin.status !== 200) {
+        throw new Error('Expected admin login to succeed before notification failover testing');
+      }
+      const adminCookieHeaderRaw = adminLogin.headers['set-cookie'];
+      const adminCookieHeader = Array.isArray(adminCookieHeaderRaw) ? adminCookieHeaderRaw[0] : adminCookieHeaderRaw;
+      if (!adminCookieHeader) {
+        throw new Error('Expected notification failover admin login to receive a session cookie');
+      }
+      const adminCookie = String(adminCookieHeader).split(';')[0];
+
+      const emailedTarget = await request(server, '/api/admin/users', 'POST', {
+        username: 'fallback-email-user',
+        email: 'fallback-email-user@example.com',
+        password: 'FallbackInvite2026!'
+      }, { Cookie: adminCookie });
+      if (emailedTarget.status !== 200) {
+        throw new Error('Expected notification failover test to create an email-enabled user');
+      }
+
+      const failedInvitation = await request(server, `/api/admin/users/${emailedTarget.data.user.id}/invite`, 'POST', {}, { Cookie: adminCookie });
+      if (
+        failedInvitation.status !== 502 ||
+        failedInvitation.data.reason !== 'notification_delivery_failed' ||
+        failedInvitation.data.error !== 'provider down' ||
+        failedInvitation.data.fallbackMode !== 'local_preview' ||
+        !failedInvitation.data.previewUrl
+      ) {
+        throw new Error('Expected invitation failure to expose an explicit local-preview operator fallback when failover mode is enabled');
+      }
+      const fallbackInvitationToken = new URL(failedInvitation.data.previewUrl, 'http://localhost').searchParams.get('invite');
+      if (!fallbackInvitationToken) {
+        throw new Error('Expected notification failover invitation fallback to include a usable invitation token');
+      }
+      const fallbackInvitationPreview = await request(server, `/api/auth/invitation?token=${encodeURIComponent(fallbackInvitationToken)}`, 'GET');
+      if (
+        fallbackInvitationPreview.status !== 200 ||
+        fallbackInvitationPreview.data.valid !== true ||
+        fallbackInvitationPreview.data.user?.username !== 'fallback-email-user'
+      ) {
+        throw new Error('Expected invitation tokens exposed by the operator fallback to validate successfully');
+      }
+
+      const failedForgotPassword = await request(server, '/api/auth/forgot-password', 'POST', {
+        username: 'fallback-email-user'
+      });
+      if (
+        failedForgotPassword.status !== 200 ||
+        failedForgotPassword.data.success !== true ||
+        failedForgotPassword.data.deliveryMode !== 'resend' ||
+        failedForgotPassword.data.previewUrl
+      ) {
+        throw new Error('Expected forgot-password to remain generic even when notification failover mode is enabled');
+      }
+    }, {
+      notificationFetch: fallbackNotificationStub.fetch,
+      env: {
+        PORT: '18808',
+        NOTIFICATION_DELIVERY_MODE: 'resend',
+        NOTIFICATION_FAILOVER_MODE: 'local_preview',
+        NOTIFICATION_FROM_EMAIL: 'noreply@example.com',
+        RESEND_API_KEY: 'resend_test_key',
+        APP_BASE_URL: 'https://app.example.com'
+      }
+    });
+  }
+
   console.log('Auth/history tests passed');
 }
 

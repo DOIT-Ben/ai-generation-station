@@ -34,11 +34,13 @@ Read these first for the latest round:
 14. `2026-04-20-visual-regression-multipage-alignment-execution.md`
 15. `2026-04-20-p21-auth-write-scaling-plan.md`
 16. `2026-04-20-p21-auth-write-scaling-execution.md`
-17. `2026-04-20-git-write-blocker-note.md`
-18. `2026-04-19-user-facing-auth-rules.md`
-19. `2026-04-19-production-env-matrix.md`
-20. `2026-04-19-local-service-runbook.md`
-21. `2026-04-19-release-readiness-checklist.md`
+17. `2026-04-20-p22-notification-failover-plan.md`
+18. `2026-04-20-p22-notification-failover-execution.md`
+19. `2026-04-20-git-write-blocker-note.md`
+20. `2026-04-19-user-facing-auth-rules.md`
+21. `2026-04-19-production-env-matrix.md`
+22. `2026-04-19-local-service-runbook.md`
+23. `2026-04-19-release-readiness-checklist.md`
 
 ## Active Read Order
 
@@ -130,6 +132,8 @@ Read these first for the latest round:
 - moved password-sensitive auth/admin write paths onto async `crypto.scrypt(...)`
 - raised auth/admin write throughput well above the previous `~17 req/s` plateau while keeping the SQLite model unchanged
 - documented the git metadata write blocker that prevented final staging/commit in this session
+- fully refreshed the multi-page visual regression baseline and removed the retired baseline artifacts
+- added a bounded notification failover baseline for manual admin invitation fallback during provider outage
 
 ## Historical Context Still Relevant
 

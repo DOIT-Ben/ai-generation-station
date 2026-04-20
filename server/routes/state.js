@@ -228,7 +228,11 @@ function createStateRoutes({ stateStore, sessionCookieName, authConfig, notifica
         if (!delivery?.ok) {
             sendJson(res, Number(delivery?.status || 503), {
                 error: delivery?.error || '邀请发送失败',
-                reason: 'notification_delivery_failed'
+                reason: 'notification_delivery_failed',
+                fallbackMode: delivery?.fallbackMode || null,
+                previewUrl: delivery?.previewUrl || null,
+                recipientEmail: delivery?.recipientEmail || targetUser.email || null,
+                expiresAt: invitation.expiresAt
             });
             return null;
         }
@@ -720,7 +724,9 @@ function createStateRoutes({ stateStore, sessionCookieName, authConfig, notifica
                 }
             }
             const previewToken = issuedToken?.token || createPreviewToken();
-            const previewUrl = delivery?.previewUrl || (deliveryMode === 'local_preview' ? buildPreviewPath('reset', previewToken) : null);
+            const previewUrl = delivery?.ok
+                ? (delivery?.previewUrl || null)
+                : (deliveryMode === 'local_preview' ? buildPreviewPath('reset', previewToken) : null);
 
             return {
                 success: true,

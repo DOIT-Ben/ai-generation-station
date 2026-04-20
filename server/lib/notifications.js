@@ -8,6 +8,14 @@ function normalizeDeliveryMode(mode) {
     return 'local_preview';
 }
 
+function normalizeFailoverMode(mode) {
+    const normalized = String(mode || '').trim().toLowerCase();
+    if (['none', 'local_preview'].includes(normalized)) {
+        return normalized;
+    }
+    return 'none';
+}
+
 function buildPreviewPath(kind, token) {
     const param = kind === 'invite' ? 'invite' : 'reset';
     return `/?${param}=${encodeURIComponent(String(token || '').trim())}`;
@@ -19,6 +27,7 @@ function buildAbsoluteActionUrl(appBaseUrl, relativePath) {
 
 function createNotificationService(options = {}) {
     const mode = normalizeDeliveryMode(options.mode);
+    const failoverMode = normalizeFailoverMode(options.failoverMode);
     const appBaseUrl = String(options.appBaseUrl || 'http://localhost:18791').trim() || 'http://localhost:18791';
     const fromEmail = String(options.fromEmail || '').trim();
     const resendApiKey = String(options.resendApiKey || '').trim();
@@ -139,6 +148,14 @@ function createNotificationService(options = {}) {
             html: email.html,
             text: email.text
         });
+        if (!sent.ok && failoverMode === 'local_preview') {
+            return {
+                ...sent,
+                fallbackMode: 'local_preview',
+                previewUrl,
+                recipientEmail: payload.user.email
+            };
+        }
         if (!sent.ok) return sent;
         return {
             ...sent,
@@ -185,6 +202,13 @@ function createNotificationService(options = {}) {
             html: email.html,
             text: email.text
         });
+        if (!sent.ok && failoverMode === 'local_preview') {
+            return {
+                ...sent,
+                fallbackMode: 'local_preview',
+                previewUrl
+            };
+        }
         if (!sent.ok) return sent;
         return sent;
     }
@@ -192,6 +216,9 @@ function createNotificationService(options = {}) {
     return {
         getDeliveryMode() {
             return mode;
+        },
+        getFailoverMode() {
+            return failoverMode;
         },
         async sendInvitation(payload) {
             return sendInvitation(payload);

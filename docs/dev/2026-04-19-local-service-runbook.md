@@ -116,6 +116,13 @@ The local service currently supports three notification modes for invitation and
   - invite sends fail closed
   - forgot-password stays generic but does not deliver a usable link
 
+The notification layer also supports one bounded failover flag:
+
+- `NOTIFICATION_FAILOVER_MODE`
+  - `none`
+  - `local_preview`
+  - `local_preview` is intended only for operator-controlled invitation recovery when the real provider is down
+
 Local recommendation:
 
 - keep `NOTIFICATION_DELIVERY_MODE=local_preview` when running the repo-owned start scripts unless you are explicitly testing provider delivery
@@ -123,10 +130,17 @@ Local recommendation:
 If testing real delivery locally:
 
 1. set `NOTIFICATION_DELIVERY_MODE=resend`
-2. set `NOTIFICATION_FROM_EMAIL`
-3. set `RESEND_API_KEY`
-4. restart the local service
-5. verify the health endpoint again before testing auth flows
+2. optionally set `NOTIFICATION_FAILOVER_MODE=local_preview` if admin invitation fallback should remain available during provider outage
+3. set `NOTIFICATION_FROM_EMAIL`
+4. set `RESEND_API_KEY`
+5. restart the local service
+6. verify the health endpoint again before testing auth flows
+
+Provider-failure reminder:
+
+- invitation issuance still returns a failure response when the provider is down
+- with `NOTIFICATION_FAILOVER_MODE=local_preview`, the failed admin invitation response can include a manual preview URL for operator handoff
+- forgot-password must remain generic and must not expose that preview fallback publicly
 
 ## Expected Healthy State
 

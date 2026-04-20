@@ -27,6 +27,7 @@ List the backend environment variables that matter for the current release candi
 | `OUTPUT_DIR` | generated output path | stable mounted path |
 | `HEALTHCHECK_PATH` | readiness endpoint | `/api/health` |
 | `NOTIFICATION_DELIVERY_MODE` | invitation/recovery delivery mode | `resend` in real operator environments, `local_preview` only for local/dev |
+| `NOTIFICATION_FAILOVER_MODE` | provider-failure fallback policy | `none` by default, `local_preview` only where manual operator handoff is acceptable |
 | `STATE_BACKUP_DIR` | backup storage root for app-state maintenance scripts | stable absolute path or repo-local data path with enough disk space |
 | `AUDIT_LOG_RETENTION_DAYS` | default audit-log retention for prune operations | `90` |
 | `STATE_BACKUP_RETENTION_DAYS` | default backup-folder retention for prune operations | `14` |
@@ -47,6 +48,7 @@ List the backend environment variables that matter for the current release candi
 | Variable | Meaning | Recommended Value |
 |---|---|---|
 | `NOTIFICATION_DELIVERY_MODE` | delivery mode for invitation and password-reset flows | `resend` for real delivery, `local_preview` for local verification, `disabled` only for controlled fallback |
+| `NOTIFICATION_FAILOVER_MODE` | bounded failover mode after provider delivery failure | `none` for strict environments, `local_preview` for admin-operated manual fallback environments |
 | `NOTIFICATION_FROM_EMAIL` | sender address used by the mail transport | stable product sender, e.g. `noreply@example.com` |
 | `RESEND_API_KEY` | API key for the first real email provider | real provider key in production secrets |
 
@@ -55,6 +57,7 @@ List the backend environment variables that matter for the current release candi
 1. use `local_preview` for local debugging and browser automation
 2. use `resend` for real operator and user-testing environments
 3. avoid `disabled` except when email delivery is intentionally unavailable and operators understand the limitation
+4. keep `NOTIFICATION_FAILOVER_MODE=none` unless the environment explicitly allows manual admin handoff through preview links during provider outage
 
 ## Current CSP Baseline
 

@@ -69,6 +69,14 @@ function getPositiveNumberConfig(env, localConfig, key, fallback) {
     return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
+function normalizeNotificationFailoverMode(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (['none', 'local_preview'].includes(normalized)) {
+        return normalized;
+    }
+    return 'none';
+}
+
 function createConfig(options = {}) {
     const env = options.env || process.env;
     const localConfig = loadLocalConfig();
@@ -125,6 +133,9 @@ function createConfig(options = {}) {
         getConfigValue(env, localConfig, 'CONTENT_SECURITY_POLICY', buildDefaultContentSecurityPolicy())
     ).trim() || buildDefaultContentSecurityPolicy();
     const NOTIFICATION_DELIVERY_MODE = String(getConfigValue(env, localConfig, 'NOTIFICATION_DELIVERY_MODE', 'local_preview') || 'local_preview').trim().toLowerCase() || 'local_preview';
+    const NOTIFICATION_FAILOVER_MODE = normalizeNotificationFailoverMode(
+        getConfigValue(env, localConfig, 'NOTIFICATION_FAILOVER_MODE', 'none')
+    );
     const NOTIFICATION_FROM_EMAIL = String(getConfigValue(env, localConfig, 'NOTIFICATION_FROM_EMAIL', '') || '').trim();
     const RESEND_API_KEY = String(getConfigValue(env, localConfig, 'RESEND_API_KEY', '') || '').trim();
     const STATE_BACKUP_DIR = resolveDataDirPath(getConfigValue(env, localConfig, 'STATE_BACKUP_DIR', ''), 'backups');
@@ -178,6 +189,7 @@ function createConfig(options = {}) {
         HEALTHCHECK_PATH,
         CONTENT_SECURITY_POLICY,
         NOTIFICATION_DELIVERY_MODE,
+        NOTIFICATION_FAILOVER_MODE,
         NOTIFICATION_FROM_EMAIL,
         RESEND_API_KEY,
         STATE_BACKUP_DIR,

@@ -50,17 +50,24 @@ Notes:
 ### Phase 3: Baseline Refresh
 
 Status:
-- blocked
+- completed
 
 Notes:
-- direct visual execution remains blocked in the current environment:
+- refreshed the baseline set successfully with:
+  - `node test-ui-visual.js --port 18797 --launch-server --update-baseline`
+- validated the refreshed set successfully with:
   - `node test-ui-visual.js --port 18797 --launch-server`
-  - failure: `browserType.launch: spawn EPERM`
-- browser CDP startup is inconsistent in the same session:
-  - Chrome often fails to expose `http://127.0.0.1:9223/json/version`
-  - Edge can expose `/json/version`, but `chromium.connectOverCDP(...)` still times out after websocket connect
-- a raw-CDP fallback experiment was attempted and then reverted because the page websocket never produced stable protocol responses in this sandbox
-- because of that, no new baseline images were safely refreshed and the retired baseline files were intentionally left untouched for now
+- current tracked baseline set is now:
+  - `auth-portal-card.png`
+  - `utility-cluster-authenticated.png`
+  - `account-center-security.png`
+  - `admin-console.png`
+  - `chat-card-dark.png`
+  - `chat-card-light.png`
+  - `lyrics-card-light.png`
+- removed the retired baseline files:
+  - `auth-gate-card.png`
+  - `admin-panel.png`
 
 ### Phase 4: Docs
 
@@ -72,21 +79,21 @@ Notes:
   - selector drift problems
   - sandbox/browser-launch problems
   - CDP attach instability
-- baseline refresh remains a carry-forward item for a less restricted local session
+- after a later session regained full browser-launch capability, the baseline refresh carry-forward item was closed
 
 ## Single-Task Closeout Review
 
 ### New Problems Found
 
-- the current sandbox blocks Node-based browser launch with `spawn EPERM`
-- Chrome remote-debugging readiness is flaky in this Windows session even when the browser process is started externally
-- Edge remote-debugging can become reachable, but Playwright CDP attach still does not complete reliably here
+- the original baseline directory still contained retired image names even after the capture plan had been updated
+- the earlier browser-launch/CDP failures were session-specific environment limits, not a permanent repo-level blocker
 
 ### Missed Edge Cases
 
 - the original visual harness assumed the auth/admin UI still lived inside the workspace page
 - the original execution path assumed Node child-process browser launch would remain available
 - the original CDP wrapper assumed “CDP endpoint reachable” was enough, but this session shows endpoint readiness and stable browser attach are separate concerns
+- refreshing baselines is not enough on its own; retired PNGs need an explicit cleanup step
 
 ### Fixes Applied
 
@@ -95,3 +102,5 @@ Notes:
 - added a dedicated CDP wrapper script for externally started browsers
 - changed the wrapper browser resolution order to prefer Edge before Chrome in `auto` mode on this Windows environment
 - made the auth login helper tolerant to existing-session redirects so future shared-session visual runs do not fail immediately
+- refreshed and revalidated the active baseline set successfully
+- removed obsolete baseline files so the artifact directory now matches the live capture plan exactly
