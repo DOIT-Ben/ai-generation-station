@@ -25,12 +25,14 @@ function main() {
   assert.ok(html.includes('id="chat-conversation-title"'), 'index should contain active conversation title');
   assert.ok(html.includes('id="workspace-resume-card"'), 'index should contain the workspace resume card');
   assert.ok(html.includes('id="workspace-clear-draft"'), 'index should contain the workspace clear-draft action');
+  assert.ok(html.includes('id="chat-scroll-to-latest"'), 'index should contain the chat scroll-to-latest action');
   assert.ok(html.includes('id="btn-chat-new-conversation"'), 'index should contain new conversation button');
   assert.ok(html.includes('id="btn-chat-rename-conversation"'), 'index should contain rename conversation button');
   assert.ok(html.includes('id="btn-chat-archive-conversation"'), 'index should contain archive conversation button');
   assert.ok(html.includes('id="covervoice-result"'), 'voice result id should be aligned with app logic');
   assert.ok(html.includes('会话列表'), 'chat conversation sidebar title should be localized to Chinese');
   assert.ok(html.includes('继续上次工作'), 'workspace should surface the personal resume card copy');
+  assert.ok(html.indexOf('id="workspace-resume-card"') > html.indexOf('id="tab-chat"'), 'workspace resume strip should render near the bottom of the main content');
   assert.ok(html.includes('新建对话'), 'chat new conversation button should be localized to Chinese');
   assert.ok(html.includes('搜索会话'), 'conversation search should be localized to Chinese');
   assert.ok(html.includes('已归档'), 'archived conversation section should be localized to Chinese');
@@ -63,6 +65,9 @@ function main() {
   assert.ok(html.includes('class="message-body"'), 'chat welcome message should use structured message-body markup');
   assert.ok(appJs.includes('正在思考'), 'workspace should surface a visible thinking state before chat replies stream in');
   assert.ok(appJs.includes('formatChatMessageHtml'), 'workspace should format chat replies with structured rich text rendering');
+  assert.ok(appJs.includes('conversation_state'), 'workspace should handle streamed conversation state events');
+  assert.ok(appJs.includes('rewriteAssistantMessage'), 'workspace should expose assistant rewrite actions');
+  assert.ok(appJs.includes('copyAssistantMessage'), 'workspace should expose assistant copy actions');
   assert.ok(authPageJs.includes('注册成功，正在进入工作台'), 'auth page should contain a register success flow');
   assert.ok(authPageJs.includes('账号激活成功'), 'auth page should contain an invite-activation success flow');
   assert.ok(accountPageJs.includes('密码已更新，当前会话已保留。'), 'account page should surface password update success feedback');

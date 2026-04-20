@@ -15,6 +15,9 @@
   let chatQueue = [];
   let isChatGenerating = false;
   let pendingChatInput = null; // 保存排队时用户输入的内容
+  const chatScrollState = {
+    autoFollow: true
+  };
 
   // ---- DOM helpers ----
   const $ = id => document.getElementById(id);
@@ -916,12 +919,11 @@
     }
     conversationState.messages = Array.isArray(messages) ? messages.slice() : [];
     chatHistory = conversationState.messages.map(item => ({
-      role: item.role,
-      content: item.content
+      ...item
     }));
 
     if (options.restoreMessages !== false) {
-      restoreChatMessages(chatHistory);
+      restoreChatMessages(conversationState.messages, options.chatRestoreOptions || {});
     }
     renderConversationList();
     renderWorkspaceResumeCard();
@@ -1050,8 +1052,8 @@
       conversationState.activeId = result.conversation.id;
       conversationState.messages = result.messages || [];
       conversationState.list = conversationState.list.map(item => item.id === result.conversation.id ? result.conversation : item);
-      chatHistory = conversationState.messages.map(item => ({ role: item.role, content: item.content }));
-      restoreChatMessages(chatHistory);
+      chatHistory = conversationState.messages.map(item => ({ ...item }));
+      restoreChatMessages(conversationState.messages);
       renderConversationList();
     } catch (error) {
       showToast(error.message || '会话加载失败', 'error', 1800);
@@ -1412,7 +1414,47 @@
       });
   }
 
-  function restoreChatMessages(messages) {
+  function isChatNearBottom(container) {
+    if (!container) return true;
+    return (container.scrollHeight - container.scrollTop - container.clientHeight) <= 72;
+  }
+
+  function updateChatScrollButton() {
+    const button = $('chat-scroll-to-latest');
+    const container = $('chat-messages');
+    if (!button || !container) return;
+    if (chatScrollState.autoFollow || container.scrollHeight <= container.clientHeight + 12) {
+      button.setAttribute('hidden', '');
+      return;
+    }
+    button.removeAttribute('hidden');
+  }
+
+  function setChatAutoFollow(shouldFollow) {
+    chatScrollState.autoFollow = Boolean(shouldFollow);
+    updateChatScrollButton();
+  }
+
+  function followChatToBottom(force = false) {
+    const container = $('chat-messages');
+    if (!container) return;
+    if (!force && !chatScrollState.autoFollow) {
+      updateChatScrollButton();
+      return;
+    }
+    container.scrollTop = container.scrollHeight;
+    if (force) {
+      setChatAutoFollow(true);
+    } else {
+      updateChatScrollButton();
+    }
+  }
+
+  function getConversationMessageById(messageId) {
+    return (conversationState.messages || []).find(item => item.id === messageId) || null;
+  }
+
+  function restoreChatMessages(messages, options = {}) {
     const container = $('chat-messages');
     const chatContainer = document.querySelector('.chat-container');
     const tabChat = $('tab-chat');
@@ -1423,12 +1465,32 @@
     if (!Array.isArray(messages) || messages.length === 0) {
       addChatMessage('chatbot', '你好！我是 AI 对话助手，有什么我可以帮你的吗？');
       chatHistory = [];
+      if (options.forceFollow === false) {
+        setChatAutoFollow(false);
+        updateChatScrollButton();
+      } else {
+        setChatAutoFollow(true);
+        followChatToBottom(true);
+      }
       return;
     }
     chatHistory = messages.slice();
     messages.forEach(message => {
-      addChatMessage(message.role === 'assistant' ? 'chatbot' : 'user', message.content || '');
+      addChatMessage(message.role === 'assistant' ? 'chatbot' : 'user', message.content || '', {
+        message
+      });
     });
+    if (options.forceFollow === false) {
+      const anchorMessageId = String(options.anchorMessageId || '').trim();
+      if (anchorMessageId) {
+        const anchor = container.querySelector(`.chat-message[data-chat-message-id="${CSS.escape(anchorMessageId)}"]`);
+        anchor?.scrollIntoView({ block: 'nearest' });
+      }
+      setChatAutoFollow(false);
+      updateChatScrollButton();
+      return;
+    }
+    followChatToBottom(true);
   }
 
   function restoreLatestChat() {
@@ -1559,6 +1621,32 @@
       const archiveConversationButton = event.target.closest('#btn-chat-archive-conversation');
       if (archiveConversationButton) {
         archiveActiveConversation();
+        return;
+      }
+      const copyMessageButton = event.target.closest('[data-chat-copy-id]');
+      if (copyMessageButton) {
+        copyAssistantMessage(copyMessageButton.dataset.chatCopyId).catch(error => {
+          showToast(error.message || '复制失败，请重试。', 'error', 1600);
+        });
+        return;
+      }
+      const rewriteMessageButton = event.target.closest('[data-chat-rewrite-id]');
+      if (rewriteMessageButton) {
+        rewriteAssistantMessage(rewriteMessageButton.dataset.chatRewriteId);
+        return;
+      }
+      const versionNavButton = event.target.closest('[data-chat-version-nav]');
+      if (versionNavButton) {
+        switchAssistantVersion(versionNavButton.dataset.chatMessageId, versionNavButton.dataset.chatVersionNav)
+          .catch(error => {
+            showToast(error.message || '切换版本失败，请重试。', 'error', 1600);
+          });
+        return;
+      }
+      const scrollToLatestButton = event.target.closest('#chat-scroll-to-latest');
+      if (scrollToLatestButton) {
+        setChatAutoFollow(true);
+        followChatToBottom(true);
         return;
       }
       const clearDraftButton = event.target.closest('#workspace-clear-draft');
@@ -2554,7 +2642,28 @@
     return html || '<p></p>';
   }
 
-  function createThinkingMessage() {
+  function buildChatAssistantActions(message) {
+    if (!message?.id) return '';
+    const versions = Array.isArray(message.versions) ? message.versions : [];
+    const versionCount = Math.max(Number(message.versionCount || 0), versions.length || 0);
+    const activeVersionIndex = Math.max(1, Number(message.activeVersionIndex || versions.findIndex(item => item.active) + 1 || 1));
+
+    return `
+      <div class="message-actions">
+        <button class="message-action-btn" type="button" data-chat-copy-id="${escapeHtml(message.id)}">复制</button>
+        <button class="message-action-btn" type="button" data-chat-rewrite-id="${escapeHtml(message.id)}">重写</button>
+        ${versionCount > 1 ? `
+          <div class="message-version-switcher">
+            <button class="message-action-btn" type="button" data-chat-version-nav="prev" data-chat-message-id="${escapeHtml(message.id)}" ${activeVersionIndex <= 1 ? 'disabled' : ''}>上一版</button>
+            <span class="message-version-label">版本 ${activeVersionIndex}/${versionCount}</span>
+            <button class="message-action-btn" type="button" data-chat-version-nav="next" data-chat-message-id="${escapeHtml(message.id)}" ${activeVersionIndex >= versionCount ? 'disabled' : ''}>下一版</button>
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  function createThinkingMessage(options = {}) {
     const container = $('chat-messages');
     if (!container) return null;
 
@@ -2569,45 +2678,95 @@
         </div>
       </div>
     `;
-    container.appendChild(msgDiv);
-    container.scrollTop = container.scrollHeight;
+
+    const anchorMessageId = String(options.afterMessageId || '').trim();
+    const anchor = anchorMessageId ? document.querySelector(`.chat-message[data-chat-message-id="${CSS.escape(anchorMessageId)}"]`) : null;
+    if (anchor?.parentNode === container) {
+      anchor.insertAdjacentElement('afterend', msgDiv);
+      followChatToBottom(false);
+    } else {
+      container.appendChild(msgDiv);
+      followChatToBottom(true);
+    }
     return {
       msgDiv,
       contentWrap: msgDiv.querySelector('.message-content')
     };
   }
 
-  function addChatMessage(role, content, isStreaming = false) {
+  function addChatMessage(role, content, options = {}) {
+    const settings = typeof options === 'boolean' ? { isStreaming: options } : (options || {});
     const container = $('chat-messages');
     const chatContainer = document.querySelector('.chat-container');
     const avatar = role === 'user' ? '😀' : '🤖';
     const msgDiv = document.createElement('div');
+    const messageData = settings.message && typeof settings.message === 'object' ? settings.message : null;
+    const messageId = String(messageData?.id || settings.messageId || '').trim();
 
-    // Expand chat container when user sends first message
     if (role === 'user' && chatContainer && !chatContainer.classList.contains('has-messages')) {
       chatContainer.classList.add('has-messages');
-      // Also update parent section layout
-      const tabChat = document.getElementById('tab-chat');
-      if (tabChat) tabChat.classList.add('has-messages');
+      document.getElementById('tab-chat')?.classList.add('has-messages');
     }
-    msgDiv.className = `chat-message ${role}`;
 
-    if (role === 'chatbot' && isStreaming) {
+    msgDiv.className = `chat-message ${role}`;
+    if (messageId) {
+      msgDiv.dataset.chatMessageId = messageId;
+    }
+
+    if (role === 'chatbot' && settings.isStreaming) {
       msgDiv.innerHTML = `<div class="message-avatar">${avatar}</div><div class="message-content"><div class="message-body streaming-content"></div></div>`;
       container.appendChild(msgDiv);
-      container.scrollTop = container.scrollHeight;
+      followChatToBottom(settings.forceFollow !== false);
       return { msgDiv, contentEl: msgDiv.querySelector('.streaming-content') };
     }
 
     const formattedContent = formatChatMessageHtml(content);
-    msgDiv.innerHTML = `<div class="message-avatar">${avatar}</div><div class="message-content"><div class="message-body">${formattedContent}</div></div>`;
+    const actionsHtml = role === 'chatbot' ? buildChatAssistantActions(messageData) : '';
+    msgDiv.innerHTML = `<div class="message-avatar">${avatar}</div><div class="message-content"><div class="message-body">${formattedContent}</div>${actionsHtml}</div>`;
     container.appendChild(msgDiv);
-    container.scrollTop = container.scrollHeight;
+    followChatToBottom(settings.forceFollow !== false);
     return null;
   }
 
-  // Stream text with typing effect
-  async function streamChatMessage(content, onComplete, pendingMessage = null) {
+  function parseSseBlock(block) {
+    const lines = String(block || '').split(/\r?\n/);
+    let eventName = 'message';
+    const dataLines = [];
+    lines.forEach(line => {
+      if (!line) return;
+      if (line.startsWith('event:')) {
+        eventName = line.slice('event:'.length).trim() || 'message';
+        return;
+      }
+      if (line.startsWith('data:')) {
+        dataLines.push(line.slice('data:'.length).trimStart());
+      }
+    });
+    return {
+      eventName,
+      dataText: dataLines.join('\n')
+    };
+  }
+
+  async function streamChatMessage(response, pendingMessage = null) {
+    if (!response?.ok) {
+      let failurePayload = null;
+      if (typeof response?.json === 'function') {
+        failurePayload = await response.json().catch(() => null);
+      }
+      throw new Error(failurePayload?.error || `对话失败（${response?.status || 500}）`);
+    }
+
+    if (!response.body || typeof response.body.getReader !== 'function') {
+      const data = await response.json();
+      return {
+        reply: String(data.reply || ''),
+        conversation: data.conversation || null,
+        messages: Array.isArray(data.messages) ? data.messages : null,
+        usage: data.usage || null
+      };
+    }
+
     let contentEl = null;
     let msgDiv = null;
     if (pendingMessage?.contentWrap) {
@@ -2616,45 +2775,108 @@
       contentEl = pendingMessage.contentWrap.querySelector('.streaming-content');
       msgDiv.classList.remove('is-thinking');
     } else {
-      ({ contentEl, msgDiv } = addChatMessage('chatbot', '', true));
+      ({ contentEl, msgDiv } = addChatMessage('chatbot', '', { isStreaming: true }));
     }
-    const container = $('chat-messages');
 
-    const chars = content.split('');
-    let currentText = '';
-    const batchSize = 3; // Characters per frame
-    const delay = 15; // ms between frames
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let reply = '';
+    let conversation = null;
+    let messages = null;
+    let usage = null;
 
-    return new Promise((resolve) => {
-      let index = 0;
+    const applyStreamingText = () => {
+      if (!contentEl) return;
+      contentEl.textContent = reply;
+      followChatToBottom(false);
+    };
 
-      function typeNext() {
-        if (index >= chars.length) {
-          // Streaming complete - finalize content
-          const finalContent = formatChatMessageHtml(content);
-          contentEl.innerHTML = finalContent;
-          contentEl.classList.remove('streaming-content');
-          container.scrollTop = container.scrollHeight;
-          if (onComplete) onComplete(content);
-          resolve(content);
-          return;
-        }
+    const consumeBlock = (block) => {
+      const { eventName, dataText } = parseSseBlock(block);
+      if (!dataText || dataText === '[DONE]') return;
 
-        // Add next batch of characters
-        const batch = chars.slice(index, index + batchSize);
-        currentText += batch.join('');
-
-        // Show raw text during streaming (no markdown parsing for performance)
-        contentEl.textContent = currentText;
-
-        index += batchSize;
-        container.scrollTop = container.scrollHeight;
-
-        setTimeout(typeNext, delay);
+      let payload = null;
+      try {
+        payload = JSON.parse(dataText);
+      } catch {
+        payload = null;
       }
 
-      typeNext();
-    });
+      if (eventName === 'error') {
+        throw new Error(payload?.error || '对话流中断，请重试。');
+      }
+
+      if (eventName === 'conversation_state') {
+        conversation = payload?.conversation || null;
+        messages = Array.isArray(payload?.messages) ? payload.messages : null;
+        usage = payload?.usage || null;
+        if (payload?.reply != null) {
+          reply = String(payload.reply || '');
+          applyStreamingText();
+        }
+        return;
+      }
+
+      if (eventName === 'content_block_start') {
+        const initialText = payload?.content_block?.type === 'text'
+          ? String(payload.content_block?.text || '')
+          : '';
+        if (initialText) {
+          reply += initialText;
+          applyStreamingText();
+        }
+        return;
+      }
+
+      if (eventName === 'content_block_delta' && payload?.delta?.type === 'text_delta') {
+        reply += String(payload.delta?.text || '');
+        applyStreamingText();
+        return;
+      }
+
+      if (eventName === 'done' && payload?.reply != null) {
+        reply = String(payload.reply || '');
+        applyStreamingText();
+        return;
+      }
+
+      if (payload?.usage) {
+        usage = payload.usage;
+      }
+    };
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      buffer = buffer.replace(/\r\n/g, '\n');
+      let boundaryIndex = buffer.indexOf('\n\n');
+      while (boundaryIndex !== -1) {
+        const block = buffer.slice(0, boundaryIndex);
+        buffer = buffer.slice(boundaryIndex + 2);
+        consumeBlock(block);
+        boundaryIndex = buffer.indexOf('\n\n');
+      }
+    }
+
+    buffer += decoder.decode();
+    if (buffer.trim()) {
+      consumeBlock(buffer);
+    }
+
+    if (contentEl) {
+      contentEl.innerHTML = formatChatMessageHtml(reply || '');
+      contentEl.classList.remove('streaming-content');
+    }
+    followChatToBottom(false);
+
+    return {
+      reply,
+      conversation,
+      messages,
+      usage
+    };
   }
 
   function setChatLoading(loading) {
@@ -2662,7 +2884,6 @@
     const input = $('chat-input');
     if (btn) btn.disabled = loading;
     btn?.classList.toggle('is-loading', Boolean(loading));
-    // 输入框始终保持可输入，支持排队发送
     if (input) input.disabled = false;
   }
 
@@ -2679,141 +2900,58 @@
     }
   }
 
-  async function _legacySendChatMessageOld(forcedMessage) {
-    const input = $('chat-input');
-    const message = String(forcedMessage != null ? forcedMessage : input?.value || '').trim();
-    if (!message) return;
-
-    // 如果正在生成，把消息加入队列
-    if (isChatGenerating) {
-      chatQueue.push(message);
-      updateQueueIndicator();
-      showToast(`消息已加入队列（${chatQueue.length}条等待）`, 'info', 2000);
-      if (input) input.value = '';
-      return;
-    }
-
-    isChatGenerating = true;
-    if (input) input.value = '';
-
-    addChatMessage('user', message);
-    chatHistory.push({ role: 'user', content: message });
-    setChatLoading(true);
-
-    try {
-      const model = $('chat-model')?.value || 'MiniMax-M2.7';
-      const res = await apiFetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: chatHistory, model }),
-      });
-      const data = await res.json();
-
-      if (data.error) {
-        addChatMessage('chatbot', '抱歉，发生了错误：' + data.error);
-      } else {
-        // Stream the response with typing effect
-        await streamChatMessage(data.reply, (finalContent) => {
-          chatHistory.push({ role: 'assistant', content: finalContent });
-          recordChatHistory(message, finalContent);
-          loadQuota();
-          refreshUsageToday();
-        });
-      }
-    } catch {
-      addChatMessage('chatbot', '网络错误，请稍后重试。');
-    }
-    setChatLoading(false);
-
-    // 队列非空，继续处理下一条
-    if (chatQueue.length > 0) {
-      const next = chatQueue.shift();
-      updateQueueIndicator();
-      // 清空 input 后再递归发送，保持 isChatGenerating 为 true
-      if (input) input.value = '';
-      await sendChatMessageFromQueue(next);
-    } else {
-      isChatGenerating = false;
-    }
-  }
-
-  // 仅供队列内部调用，不做队列检查
-  async function _legacySendChatMessageFromQueueOld(message) {
-    addChatMessage('user', message);
-    chatHistory.push({ role: 'user', content: message });
-    setChatLoading(true);
-
-    try {
-      const model = $('chat-model')?.value || 'MiniMax-M2.7';
-      const res = await apiFetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: chatHistory, model }),
-      });
-      const data = await res.json();
-
-      if (data.error) {
-        addChatMessage('chatbot', '抱歉，发生了错误：' + data.error);
-      } else {
-        // Stream the response with typing effect
-        await streamChatMessage(data.reply, (finalContent) => {
-          chatHistory.push({ role: 'assistant', content: finalContent });
-          recordChatHistory(message, finalContent);
-          loadQuota();
-          refreshUsageToday();
-        });
-      }
-    } catch {
-      addChatMessage('chatbot', '网络错误，请稍后重试。');
-    }
-    setChatLoading(false);
-
-    // 继续处理队列
-    if (chatQueue.length > 0) {
-      const next = chatQueue.shift();
-      updateQueueIndicator();
-      await sendChatMessageFromQueue(next);
-    } else {
-      isChatGenerating = false;
-    }
-  }
-
-  async function performChatSend(message) {
+  async function performChatSend(message, options = {}) {
+    const previousHistory = chatHistory.slice();
     const conversationId = await ensureActiveConversation();
     if (!conversationId) {
       throw new Error('会话创建失败');
     }
 
     const model = $('chat-model')?.value || 'MiniMax-M2.7';
-    addChatMessage('user', message);
-    const thinkingMessage = createThinkingMessage();
+    const rewriteMessageId = String(options.rewriteMessageId || '').trim();
+    const rewriteTarget = rewriteMessageId ? getConversationMessageById(rewriteMessageId) : null;
+    const rewriteTurnId = String(rewriteTarget?.metadata?.turnId || '').trim();
+    if (!rewriteMessageId) {
+      addChatMessage('user', message, { forceFollow: true });
+    }
+
+    const thinkingMessage = createThinkingMessage(rewriteMessageId ? { afterMessageId: rewriteMessageId } : {});
     setChatLoading(true);
 
     try {
-      const res = await apiFetch('/api/chat', {
+      const response = await apiFetch('/api/chat', {
         method: 'POST',
-        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           conversationId,
           message,
-          model
+          rewriteMessageId,
+          model,
+          stream: true
         }),
       });
-      const data = await res.json();
 
-      if (data.error) {
-        restoreChatMessages(chatHistory);
-        throw new Error(data.error);
+      const data = await streamChatMessage(response, thinkingMessage);
+      if (!data.reply && !data.conversation && !Array.isArray(data.messages)) {
+        restoreChatMessages(previousHistory);
+        throw new Error('对话结果为空，请重试。');
       }
 
-      await streamChatMessage(data.reply || '', () => {
-        loadQuota();
-        refreshUsageToday();
-      }, thinkingMessage);
-      applyConversationPayload(data.conversation, data.messages, { restoreMessages: false });
+      loadQuota();
+      refreshUsageToday();
+      if (data.conversation && Array.isArray(data.messages)) {
+        const rewriteAnchorId = rewriteTurnId
+          ? (data.messages.find(item => item.role === 'assistant' && String(item.metadata?.turnId || '') === rewriteTurnId)?.id || rewriteMessageId)
+          : '';
+        applyConversationPayload(data.conversation, data.messages, {
+          chatRestoreOptions: rewriteMessageId
+            ? { forceFollow: false, anchorMessageId: rewriteAnchorId }
+            : { forceFollow: true }
+        });
+      }
+      return data;
     } catch (error) {
-      restoreChatMessages(chatHistory);
+      restoreChatMessages(previousHistory);
       throw error;
     } finally {
       setChatLoading(false);
@@ -2866,6 +3004,71 @@
   async function sendChatMessageFromQueue(message) {
     if (!message) return;
     await performChatSend(message);
+  }
+
+  async function activateAssistantVersion(messageId) {
+    const conversationId = conversationState.activeId;
+    if (!conversationId || !messageId) return;
+
+    const res = await apiFetch(`/api/conversations/${conversationId}/messages/${messageId}/activate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const data = await res.json();
+    if (data.error) {
+      throw new Error(data.error);
+    }
+    applyConversationPayload(data.conversation, data.messages, {
+      chatRestoreOptions: {
+        forceFollow: false,
+        anchorMessageId: messageId
+      }
+    });
+  }
+
+  async function rewriteAssistantMessage(messageId) {
+    if (!messageId) return;
+    if (isChatGenerating) {
+      showToast('请等待当前回复完成后再重写。', 'info', 1800);
+      return;
+    }
+
+    isChatGenerating = true;
+    renderConversationMeta();
+    renderArchivedConversationList();
+
+    try {
+      await performChatSend(undefined, { rewriteMessageId: messageId });
+      showToast('已生成新的回复版本', 'success', 1400);
+    } catch (error) {
+      showToast(error.message || '重写失败，请重试。', 'error', 2200);
+    } finally {
+      isChatGenerating = false;
+      updateQueueIndicator();
+      renderConversationMeta();
+      renderArchivedConversationList();
+    }
+  }
+
+  async function copyAssistantMessage(messageId) {
+    const message = getConversationMessageById(messageId);
+    if (!message?.content) return;
+    await navigator.clipboard.writeText(message.content);
+    showToast('已复制回复内容', 'success', 1200);
+  }
+
+  async function switchAssistantVersion(messageId, direction) {
+    const message = getConversationMessageById(messageId);
+    const versions = Array.isArray(message?.versions) ? message.versions : [];
+    if (!versions.length) return;
+
+    const activeIndex = Math.max(0, versions.findIndex(item => item.active));
+    const nextIndex = direction === 'prev' ? activeIndex - 1 : activeIndex + 1;
+    const nextVersion = versions[nextIndex];
+    if (!nextVersion?.id) return;
+
+    await activateAssistantVersion(nextVersion.id);
   }
 
   // ============================================
@@ -3053,6 +3256,10 @@
     initTheme();
     captureInitialFieldValues();
     bootstrapAuth();
+    $('chat-messages')?.addEventListener('scroll', () => {
+      setChatAutoFollow(isChatNearBottom($('chat-messages')));
+    });
+    updateChatScrollButton();
 
     // Char counters
     [['music-prompt', 'music-char'], ['lyrics-prompt', 'lyrics-char'],

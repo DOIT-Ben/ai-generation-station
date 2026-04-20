@@ -938,6 +938,32 @@ function createStateRoutes({ stateStore, sessionCookieName, authConfig, notifica
                 };
             }
 
+            if (action === 'messages') {
+                const messageId = parts[4];
+                const messageAction = parts[5];
+                if (messageAction !== 'activate' || !messageId) {
+                    sendJson(res, 404, { error: 'conversation message action not found' });
+                    return null;
+                }
+
+                const conversation = stateStore.getConversation(session.userId, conversationId);
+                if (!conversation) {
+                    sendJson(res, 404, { error: 'conversation not found' });
+                    return null;
+                }
+
+                const messages = stateStore.setConversationTurnActiveAssistant(session.userId, conversationId, messageId);
+                if (!messages) {
+                    sendJson(res, 404, { error: 'conversation message not found' });
+                    return null;
+                }
+
+                return {
+                    conversation,
+                    messages
+                };
+            }
+
             if (action) {
                 sendJson(res, 404, { error: 'conversation action not found' });
                 return null;

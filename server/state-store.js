@@ -174,6 +174,7 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
             role TEXT NOT NULL,
             content TEXT NOT NULL,
             tokens_json TEXT,
+            metadata_json TEXT,
             created_at INTEGER NOT NULL,
             FOREIGN KEY (conversation_id) REFERENCES conversations (id) ON DELETE CASCADE
         );
@@ -259,6 +260,12 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         CREATE INDEX IF NOT EXISTS idx_audit_logs_action_created_at ON audit_logs (action, created_at DESC, id DESC);
         CREATE INDEX IF NOT EXISTS idx_audit_logs_target_created_at ON audit_logs (target_user_id, created_at DESC, id DESC);
     `);
+
+    try {
+        db.exec(`ALTER TABLE conversation_messages ADD COLUMN metadata_json TEXT;`);
+    } catch {
+        // Column already exists on current workspace databases.
+    }
 
     const findUserByUsernameStmt = db.prepare(`
         SELECT id, username, email, display_name AS displayName, status, role, plan_code AS planCode,
@@ -564,15 +571,28 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         WHERE id = ? AND user_id = ? AND archived_at IS NOT NULL
     `);
     const listConversationMessagesStmt = db.prepare(`
-        SELECT id, conversation_id AS conversationId, role, content, tokens_json AS tokensJson, created_at AS createdAt
+        SELECT id, conversation_id AS conversationId, role, content, tokens_json AS tokensJson,
+               metadata_json AS metadataJson, created_at AS createdAt
         FROM conversation_messages
         WHERE conversation_id = ?
         ORDER BY created_at ASC, id ASC
         LIMIT ?
     `);
+    const selectConversationMessageByIdStmt = db.prepare(`
+        SELECT id, conversation_id AS conversationId, role, content, tokens_json AS tokensJson,
+               metadata_json AS metadataJson, created_at AS createdAt
+        FROM conversation_messages
+        WHERE id = ? AND conversation_id = ?
+        LIMIT 1
+    `);
     const insertConversationMessageStmt = db.prepare(`
-        INSERT INTO conversation_messages (id, conversation_id, role, content, tokens_json, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO conversation_messages (id, conversation_id, role, content, tokens_json, metadata_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    const updateConversationMessageMetadataStmt = db.prepare(`
+        UPDATE conversation_messages
+        SET metadata_json = ?
+        WHERE id = ? AND conversation_id = ?
     `);
     const countSystemTemplatesStmt = db.prepare(`SELECT COUNT(*) AS count FROM system_templates`);
     const insertSystemTemplateStmt = db.prepare(`
@@ -749,8 +769,105 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
             role: row.role,
             content: row.content,
             createdAt: row.createdAt,
-            tokens: safeParseJson(row.tokensJson, null)
+            tokens: safeParseJson(row.tokensJson, null),
+            metadata: safeParseJson(row.metadataJson, {}) || {}
         };
+    }
+
+    function buildConversationTimeline(messages) {
+        const timeline = [];
+        let currentTurnId = null;
+
+        messages.forEach(message => {
+            if (!message) return;
+            const baseMetadata = message.metadata && typeof message.metadata === 'object' ? { ...message.metadata } : {};
+            let turnId = baseMetadata.turnId ? String(baseMetadata.turnId) : '';
+
+            if (message.role === 'user') {
+                turnId = turnId || `legacy-turn-${message.id}`;
+                currentTurnId = turnId;
+            } else if (message.role === 'assistant') {
+                turnId = turnId || currentTurnId || `legacy-turn-${message.id}`;
+            }
+
+            timeline.push({
+                ...message,
+                metadata: {
+                    ...baseMetadata,
+                    turnId
+                }
+            });
+        });
+
+        return timeline;
+    }
+
+    function buildDisplayedConversationMessages(messages) {
+        const timeline = buildConversationTimeline(messages);
+        const assistantGroups = new Map();
+        const emittedTurnIds = new Set();
+        const displayed = [];
+
+        timeline.forEach(message => {
+            if (message.role !== 'assistant') return;
+            const turnId = String(message.metadata?.turnId || `legacy-turn-${message.id}`);
+            const existing = assistantGroups.get(turnId) || [];
+            existing.push(message);
+            assistantGroups.set(turnId, existing);
+        });
+
+        const getActiveAssistantForTurn = (turnId, userMessage) => {
+            const versions = assistantGroups.get(turnId) || [];
+            if (!versions.length) return null;
+
+            const activeAssistantId = String(userMessage?.metadata?.activeAssistantMessageId || '').trim();
+            const activeVersion = versions.find(item => item.id === activeAssistantId) || versions[versions.length - 1];
+            const activeVersionIndex = Math.max(1, versions.findIndex(item => item.id === activeVersion.id) + 1);
+
+            return {
+                ...activeVersion,
+                metadata: {
+                    ...(activeVersion.metadata || {}),
+                    turnId
+                },
+                versionCount: versions.length,
+                activeVersionIndex,
+                versions: versions.map((item, index) => ({
+                    id: item.id,
+                    createdAt: item.createdAt,
+                    active: item.id === activeVersion.id,
+                    versionIndex: index + 1
+                }))
+            };
+        };
+
+        timeline.forEach(message => {
+            if (message.role === 'user') {
+                displayed.push(message);
+                const turnId = String(message.metadata?.turnId || '');
+                if (turnId && !emittedTurnIds.has(turnId)) {
+                    const activeAssistant = getActiveAssistantForTurn(turnId, message);
+                    if (activeAssistant) {
+                        displayed.push(activeAssistant);
+                        emittedTurnIds.add(turnId);
+                    }
+                }
+                return;
+            }
+
+            const turnId = String(message.metadata?.turnId || '');
+            if (!turnId || emittedTurnIds.has(turnId)) {
+                return;
+            }
+
+            const activeAssistant = getActiveAssistantForTurn(turnId, null);
+            if (activeAssistant) {
+                displayed.push(activeAssistant);
+                emittedTurnIds.add(turnId);
+            }
+        });
+
+        return displayed;
     }
 
     function getUsageDate(date = new Date()) {
@@ -1757,12 +1874,78 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
             return conversation;
         },
 
-        getConversationMessages(userId, conversationId, limit = 200) {
+        getConversationMessageTimeline(userId, conversationId, limit = 400) {
             const conversation = this.getConversation(userId, conversationId);
             if (!conversation) return null;
-            return listConversationMessagesStmt.all(conversationId, Number(limit || 200))
-                .map(row => normalizeConversationMessage(row))
-                .filter(Boolean);
+            return buildConversationTimeline(
+                listConversationMessagesStmt.all(conversationId, Number(limit || 400))
+                    .map(row => normalizeConversationMessage(row))
+                    .filter(Boolean)
+            );
+        },
+
+        getConversationMessages(userId, conversationId, limit = 200) {
+            const timeline = this.getConversationMessageTimeline(userId, conversationId, limit);
+            if (!timeline) return null;
+            return buildDisplayedConversationMessages(timeline);
+        },
+
+        getConversationMessage(userId, conversationId, messageId) {
+            const conversation = this.getConversation(userId, conversationId);
+            if (!conversation || !messageId) return null;
+
+            const row = selectConversationMessageByIdStmt.get(messageId, conversationId);
+            if (!row) return null;
+
+            const message = normalizeConversationMessage(row);
+            if (!message) return null;
+
+            const timeline = this.getConversationMessageTimeline(userId, conversationId, 400) || [];
+            return timeline.find(item => item.id === message.id) || message;
+        },
+
+        getConversationPromptMessages(userId, conversationId, options = {}) {
+            const displayedMessages = this.getConversationMessages(userId, conversationId, 400);
+            if (!displayedMessages) return null;
+
+            const targetTurnId = options.untilTurnId ? String(options.untilTurnId) : '';
+            const promptMessages = [];
+
+            for (const message of displayedMessages) {
+                promptMessages.push({
+                    role: message.role,
+                    content: message.content
+                });
+
+                if (targetTurnId && message.role === 'user' && String(message.metadata?.turnId || '') === targetTurnId) {
+                    break;
+                }
+            }
+
+            return promptMessages;
+        },
+
+        setConversationTurnActiveAssistant(userId, conversationId, assistantMessageId) {
+            const timeline = this.getConversationMessageTimeline(userId, conversationId, 400);
+            if (!timeline || !assistantMessageId) return null;
+
+            const assistantMessage = timeline.find(item => item.id === assistantMessageId && item.role === 'assistant');
+            if (!assistantMessage) return null;
+
+            const turnId = String(assistantMessage.metadata?.turnId || '');
+            if (!turnId) return null;
+
+            const userMessage = timeline.find(item => item.role === 'user' && String(item.metadata?.turnId || '') === turnId);
+            if (!userMessage) return null;
+
+            const nextMetadata = {
+                ...(userMessage.metadata || {}),
+                turnId,
+                activeAssistantMessageId: assistantMessageId
+            };
+
+            updateConversationMessageMetadataStmt.run(JSON.stringify(nextMetadata), userMessage.id, conversationId);
+            return this.getConversationMessages(userId, conversationId, 400);
         },
 
         appendConversationMessage(userId, conversationId, message = {}) {
@@ -1775,21 +1958,26 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
                 throw new Error('invalid conversation message');
             }
 
+            const metadata = message.metadata && typeof message.metadata === 'object'
+                ? { ...message.metadata }
+                : {};
             const now = Number(message.createdAt || Date.now());
             const nextMessageCount = conversation.messageCount + 1;
             const nextTitle = conversation.messageCount === 0 && role === 'user'
                 ? buildConversationTitle(content)
                 : conversation.title;
             const nextModel = message.model || conversation.model || 'MiniMax-M2.7';
+            const messageId = crypto.randomUUID();
 
             db.exec('BEGIN');
             try {
                 insertConversationMessageStmt.run(
-                    crypto.randomUUID(),
+                    messageId,
                     conversationId,
                     role,
                     content,
                     JSON.stringify(message.tokens || null),
+                    JSON.stringify(metadata),
                     now
                 );
                 updateConversationStmt.run(
@@ -1807,7 +1995,10 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
                 throw error;
             }
 
-            return this.getConversation(userId, conversationId);
+            return {
+                conversation: this.getConversation(userId, conversationId),
+                message: this.getConversationMessage(userId, conversationId, messageId)
+            };
         },
 
         getHistory(userId, feature) {

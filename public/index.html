@@ -90,16 +90,6 @@
 
   <!-- Main Content -->
   <main class="main">
-    <section class="workspace-resume-strip" id="workspace-resume-card" hidden>
-      <div class="workspace-resume-copy">
-        <span class="workspace-resume-kicker">继续上次工作</span>
-        <strong id="workspace-resume-feature">当前页：AI 对话</strong>
-        <p id="workspace-resume-context">当前页没有未完成草稿</p>
-      </div>
-      <span class="workspace-resume-meta" id="workspace-resume-meta">尚未自动保存</span>
-      <button class="workspace-resume-action" id="workspace-clear-draft" type="button">清空当前草稿</button>
-    </section>
-
     <!-- Music Tab -->
     <section id="tab-music" class="tab-content">
       <div class="section-header">
@@ -669,6 +659,7 @@
               </div>
             </div>
           </div>
+          <button class="chat-scroll-to-latest" id="chat-scroll-to-latest" type="button" hidden>回到最新回复</button>
 
           <div class="chat-input-area">
             <div id="chat-queue-indicator" hidden></div>
@@ -697,6 +688,16 @@
           </div>
         </div>
       </div>
+    </section>
+
+    <section class="workspace-resume-strip workspace-resume-strip--footer" id="workspace-resume-card" hidden>
+      <div class="workspace-resume-copy">
+        <span class="workspace-resume-kicker">继续上次工作</span>
+        <strong id="workspace-resume-feature">当前页：AI 对话</strong>
+        <p id="workspace-resume-context">当前页没有未完成草稿</p>
+      </div>
+      <span class="workspace-resume-meta" id="workspace-resume-meta">尚未自动保存</span>
+      <button class="workspace-resume-action" id="workspace-clear-draft" type="button">清空当前草稿</button>
     </section>
 
   </main>
