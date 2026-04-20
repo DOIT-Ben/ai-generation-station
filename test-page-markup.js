@@ -42,7 +42,9 @@ function main() {
   assert.ok(authHtml.includes('id="token-form"'), 'auth page should expose token-based activation/reset form');
   assert.ok(accountHtml.includes('/js/account-page.js'), 'account page should load the account page controller');
   assert.ok(accountHtml.includes('name="aigs-api-base-url"'), 'account page should expose the optional API base-url meta tag');
+  assert.ok(accountHtml.includes('class="account-dashboard"'), 'account page should expose the account dashboard layout');
   assert.ok(accountHtml.includes('id="account-password-form"'), 'account page should contain the account password form');
+  assert.ok(accountHtml.includes('id="account-password-status-heading"'), 'account page should expose the security status summary');
   assert.ok(accountHtml.includes('id="account-admin-link"'), 'account page should expose the admin shortcut link placeholder');
   assert.ok(adminHtml.includes('/js/admin-page.js'), 'admin page should load the admin page controller');
   assert.ok(adminHtml.includes('name="aigs-api-base-url"'), 'admin page should expose the optional API base-url meta tag');

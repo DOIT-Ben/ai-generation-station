@@ -6,6 +6,12 @@
   const $ = SiteShell.$;
   let session = null;
 
+  function setText(id, value) {
+    const element = $(id);
+    if (!element) return;
+    element.textContent = value;
+  }
+
   function setFeedback(message, state = 'error') {
     const element = $('account-password-feedback');
     if (!element) return;
@@ -22,12 +28,37 @@
 
   function renderSessionProfile() {
     if (!session) return;
-    $('account-display-name').textContent = session.displayName || session.username || '-';
-    $('account-username-line').textContent = `账号：${session.username || '-'}`;
-    $('account-email-line').textContent = `邮箱：${session.email || '未设置'}`;
-    $('account-role-pill').textContent = `角色：${SiteShell.getRoleDisplayName(session.role)}`;
-    $('account-plan-pill').textContent = `套餐：${SiteShell.getPlanDisplayName(session.planCode)}`;
-    $('account-password-pill').textContent = `密码状态：${session.mustResetPassword ? '需立即修改' : '正常'}`;
+    const displayName = session.displayName || session.username || '-';
+    const username = session.username || '-';
+    const email = session.email || '未设置';
+    const roleLabel = SiteShell.getRoleDisplayName(session.role);
+    const planLabel = SiteShell.getPlanDisplayName(session.planCode);
+    const mustResetPassword = Boolean(session.mustResetPassword);
+    const securityHeading = mustResetPassword ? '需立即修改' : '保护中';
+    const identitySeed = String(displayName === '-' ? username : displayName || username || '?').trim();
+    const avatarCharacter = identitySeed ? identitySeed.charAt(0).toUpperCase() : '?';
+
+    setText('account-display-name', displayName);
+    setText('account-username-line', `账号：${username}`);
+    setText('account-email-line', `邮箱：${email}`);
+    setText('account-role-pill', `角色：${roleLabel}`);
+    setText('account-plan-pill', `套餐：${planLabel}`);
+    setText('account-password-pill', `密码状态：${mustResetPassword ? '需立即修改' : '正常'}`);
+    setText('account-avatar-badge', avatarCharacter);
+    setText('account-password-status-heading', securityHeading);
+    setText(
+      'account-password-status-note',
+      mustResetPassword
+        ? '当前账号仍在使用临时密码。完成改密后，再返回工作台继续使用。'
+        : '建议定期更换密码，并避免在公共设备上长期保留登录状态。'
+    );
+    setText('account-role-heading', roleLabel);
+    setText(
+      'account-security-entry-note',
+      session.role === 'admin'
+        ? '你当前拥有管理员权限，可从左侧快捷入口继续进入管理后台。'
+        : '当前账号为普通成员，这里只展示你本人相关的设置与安全操作。'
+    );
     $('account-admin-link')?.toggleAttribute('hidden', session.role !== 'admin');
   }
 

@@ -373,11 +373,17 @@
   async function logout() {
     try {
       await persistence?.logout();
-    } catch {
-      // Ignore logout failures and still lock UI locally.
+      const remainingSession = await persistence?.loadSession?.().catch(() => null);
+      if (remainingSession?.username) {
+        throw new Error('退出未完成，请稍后重试');
+      }
+    } catch (error) {
+      showToast(error?.message || '退出失败，请稍后重试', 'error', 2400);
+      renderUserPanel();
+      return;
     }
     resetAuthenticatedWorkspaceState();
-    window.location.href = buildAuthPagePath('/');
+    window.location.replace(buildAuthPagePath('/'));
   }
 
   async function bootstrapAuth() {

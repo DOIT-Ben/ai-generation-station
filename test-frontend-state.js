@@ -1,5 +1,6 @@
 const assert = require('assert');
 const AppShell = require('./public/js/app-shell.js');
+const SiteShell = require('./public/js/site-shell.js');
 
 function createMockResponse(payload, options = {}) {
   const status = Number(options.status || 200);
@@ -112,6 +113,24 @@ async function testRemotePersistencePublicAuthRoutes() {
   assert.equal(requestCalls[7].options.method, 'POST', 'admin invitation resend should use POST');
   assert.equal(requestCalls[8].url, '/api/admin/users/user-123/invite-revoke', 'admin invitation revoke should hit the revoke route');
   assert.equal(requestCalls[8].options.method, 'POST', 'admin invitation revoke should use POST');
+}
+
+async function testRemotePersistenceLoadSessionNoStore() {
+  const calls = [];
+  const remote = AppShell.createRemotePersistence(createCsrfAwareFetch(calls, async () => createMockResponse({
+    authenticated: true,
+    user: {
+      username: 'studio'
+    }
+  })));
+
+  const session = await remote.loadSession();
+  assert.equal(session?.username, 'studio', 'loadSession should return the authenticated user');
+  assert.equal(calls.length, 1, 'loadSession should issue exactly one request');
+  assert.equal(calls[0].url, '/api/auth/session', 'loadSession should hit the auth session endpoint');
+  assert.equal(calls[0].options.cache, 'no-store', 'loadSession should bypass browser caches');
+  assert.equal(calls[0].options.headers['Cache-Control'], 'no-store', 'loadSession should send a no-store cache hint');
+  assert.equal(calls[0].options.headers.Pragma, 'no-cache', 'loadSession should send a legacy no-cache hint');
 }
 
 async function testRemotePersistenceAdminUserPayloads() {
@@ -346,6 +365,92 @@ async function testRemotePersistencePasswordResetEvent() {
   }
 }
 
+async function testPortalLogoutRedirectsAfterSessionClears() {
+  const previousWindow = global.window;
+  const previousDocument = global.document;
+  let redirectedTo = null;
+
+  global.window = {
+    location: {
+      origin: 'http://localhost',
+      replace(url) {
+        redirectedTo = url;
+      }
+    },
+    setTimeout,
+    clearTimeout
+  };
+  global.document = {
+    getElementById() {
+      return null;
+    },
+    createElement() {
+      return {
+        textContent: '',
+        innerHTML: ''
+      };
+    }
+  };
+
+  try {
+    const result = await SiteShell.logoutAndRedirect({
+      async logout() {},
+      async loadSession() {
+        return null;
+      }
+    }, '/auth/');
+
+    assert.equal(result, true, 'portal logout should resolve true after the session clears');
+    assert.equal(redirectedTo, '/auth/', 'portal logout should replace the page with the auth URL');
+  } finally {
+    global.window = previousWindow;
+    global.document = previousDocument;
+  }
+}
+
+async function testPortalLogoutDoesNotRedirectWhenSessionRemainsActive() {
+  const previousWindow = global.window;
+  const previousDocument = global.document;
+  let redirectedTo = null;
+
+  global.window = {
+    location: {
+      origin: 'http://localhost',
+      replace(url) {
+        redirectedTo = url;
+      }
+    },
+    setTimeout,
+    clearTimeout
+  };
+  global.document = {
+    getElementById() {
+      return null;
+    },
+    createElement() {
+      return {
+        textContent: '',
+        innerHTML: ''
+      };
+    }
+  };
+
+  try {
+    const result = await SiteShell.logoutAndRedirect({
+      async logout() {},
+      async loadSession() {
+        return { username: 'studio' };
+      }
+    }, '/auth/');
+
+    assert.equal(result, false, 'portal logout should resolve false when the session remains active');
+    assert.equal(redirectedTo, null, 'portal logout should not redirect if the session still exists');
+  } finally {
+    global.window = previousWindow;
+    global.document = previousDocument;
+  }
+}
+
 function testConversationFilter() {
   const items = [
     { title: 'Roadmap Review', model: 'MiniMax-M2.7' },
@@ -417,11 +522,14 @@ async function main() {
   testRemotePersistenceShape();
   await testApiClientConfiguredBaseUrlAndAssetResolution();
   await testApiClientRetriesCsrfOnce();
+  await testRemotePersistenceLoadSessionNoStore();
   await testRemotePersistenceAdminAuditQuery();
   await testRemotePersistencePublicAuthRoutes();
   await testRemotePersistenceAdminUserPayloads();
   await testRemotePersistenceAuthExpiryEvent();
   await testRemotePersistencePasswordResetEvent();
+  await testPortalLogoutRedirectsAfterSessionClears();
+  await testPortalLogoutDoesNotRedirectWhenSessionRemainsActive();
   testConversationFilter();
   testPersistence();
   console.log('✅ Frontend state tests passed');

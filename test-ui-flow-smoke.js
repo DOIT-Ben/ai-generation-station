@@ -207,6 +207,7 @@ async function assertPortalPageLoaded(page, pathname) {
 async function assertAccountPage(page, { username, roleLabel, adminLinkVisible }) {
   await assertPortalPageLoaded(page, '/account/');
   await page.locator('#account-password-form').waitFor({ state: 'visible' });
+  await page.locator('#account-password-status-heading').waitFor({ state: 'visible' });
   const usernameLine = await page.locator('#account-username-line').innerText();
   const roleText = await page.locator('#account-role-pill').innerText();
   assert.ok(usernameLine.includes(username), `account page should render username ${username}`);
@@ -247,6 +248,13 @@ async function logoutFromPortalPage(page, expectedPath = '/auth/') {
   ]);
 
   assert.equal(response.status(), 200, 'portal logout should succeed');
+  if (expectedPath === '/auth/') {
+    await assertAuthPage(page);
+    await page.waitForTimeout(600);
+    assert.equal(parsePageUrl(page).pathname, '/auth/', 'portal logout should remain on the auth page after the session check');
+    return;
+  }
+
   await waitForPath(page, expectedPath);
 }
 

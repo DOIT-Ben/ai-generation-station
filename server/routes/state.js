@@ -403,6 +403,7 @@ function createStateRoutes({ stateStore, sessionCookieName, authConfig, notifica
         },
 
         '/api/auth/session': async (req, res) => {
+            res.setHeader('Cache-Control', 'no-store');
             const { token, session, reason } = getCurrentSession(req);
             if (!session) {
                 if (token) {
@@ -540,6 +541,7 @@ function createStateRoutes({ stateStore, sessionCookieName, authConfig, notifica
         },
 
         '/api/auth/logout': async (req, res) => {
+            res.setHeader('Cache-Control', 'no-store');
             const { token } = getCurrentSession(req);
             stateStore.clearSession(token);
             clearCookie(res, sessionCookieName, { path: '/' });

@@ -629,7 +629,14 @@
 
     return {
       async loadSession() {
-        const response = await apiClient.fetch('/api/auth/session', { credentials: 'same-origin' });
+        const response = await apiClient.fetch('/api/auth/session', {
+          credentials: 'same-origin',
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-store',
+            Pragma: 'no-cache'
+          }
+        });
         if (response.status === 401) {
           return null;
         }

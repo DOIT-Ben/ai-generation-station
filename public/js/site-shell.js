@@ -143,12 +143,19 @@
   }
 
   async function logoutAndRedirect(persistence, targetPath = '/auth/') {
+    const safeTargetPath = sanitizeNextPath(targetPath, '/auth/');
     try {
       await persistence?.logout?.();
-    } catch {
-      // Ignore logout failures during redirect.
+      const remainingSession = await persistence?.loadSession?.().catch(() => null);
+      if (remainingSession?.username) {
+        throw new Error('退出未完成，请稍后重试');
+      }
+    } catch (error) {
+      showToast(error?.message || '退出失败，请稍后重试', 'error', 2400);
+      return false;
     }
-    redirect(targetPath);
+    window.location.replace(buildUrl(safeTargetPath));
+    return true;
   }
 
   function renderPortalUserNav(containerId, session, options = {}) {

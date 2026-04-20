@@ -77,6 +77,8 @@ Read these first for the latest round:
 38. `2026-04-19-next-user-facing-mainline-granular-todo.md`
 39. `2026-04-19-email-identity-baseline-plan.md`
 40. `2026-04-19-email-identity-baseline-execution.md`
+41. `2026-04-20-account-center-logout-fix-plan.md`
+42. `2026-04-20-account-center-logout-fix-execution.md`
 
 ## What This Archive Closes
 
@@ -113,6 +115,8 @@ Read these first for the latest round:
 - promoted a `release-core` non-browser regression lane for sessions where browser automation is intentionally deferred or environment-blocked
 - re-established `docs/dev` as the sole active write target for the current round
 - added a separate-site browser CSRF baseline with configurable frontend API origin support
+- repaired the account center information hierarchy and removed the old overloaded card stack
+- hardened logout/session behavior so portal logout reliably remains on the auth page after the next session check
 
 ## Historical Context Still Relevant
 

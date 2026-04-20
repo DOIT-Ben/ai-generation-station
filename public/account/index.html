@@ -21,81 +21,97 @@
   </div>
 
   <div class="portal-page-shell">
-    <main class="portal-layout portal-layout--stacked">
-      <section class="portal-surface-card">
-        <div class="portal-copy-stack">
-          <div class="portal-eyebrow">Account Center</div>
-          <h1>把用户信息和安全操作移出工作台。</h1>
-          <p class="portal-lead">这里专门负责账号状态、基础信息和密码安全。创作页不再承载修改密码和账号状态提示，只保留内容工作流。</p>
-          <div id="account-reset-banner" class="portal-banner" hidden></div>
+    <main class="portal-layout portal-layout--stacked account-page-layout">
+      <section class="portal-surface-card account-hero-panel">
+        <div class="account-hero-grid">
+          <div class="portal-copy-stack">
+            <div class="portal-eyebrow">My Account</div>
+            <h1>账户设置与安全中心</h1>
+            <p class="portal-lead">这里专门处理你的账号资料、安全动作和常用入口。创作流程回到工作台，后台管理保留在管理员页面。</p>
+            <div id="account-reset-banner" class="portal-banner" hidden></div>
+          </div>
+
+          <div class="account-profile-summary">
+            <div class="account-profile-top">
+              <div id="account-avatar-badge" class="account-avatar-badge">A</div>
+              <div class="account-profile-copy">
+                <span class="account-profile-label">当前登录账号</span>
+                <strong id="account-display-name">-</strong>
+                <p id="account-username-line">账号：-</p>
+                <p id="account-email-line">邮箱：-</p>
+              </div>
+            </div>
+            <div class="portal-metric-row account-summary-pills">
+              <span class="portal-pill" id="account-role-pill">角色：-</span>
+              <span class="portal-pill" id="account-plan-pill">套餐：-</span>
+              <span class="portal-pill" id="account-password-pill">密码状态：-</span>
+            </div>
+          </div>
         </div>
       </section>
 
-      <section class="portal-grid-main">
-        <article class="feature-card">
-          <div class="section-header">
-            <h1><span class="icon">👤</span> 用户信息</h1>
-            <p>展示当前登录账号的基础身份、角色与套餐信息。</p>
+      <section class="account-dashboard">
+        <aside class="account-side-stack">
+          <article class="portal-surface-card account-sidebar-card">
+            <div class="account-section-heading">
+              <span class="account-section-kicker">Overview</span>
+              <h2>常用入口</h2>
+              <p>账户页只保留和你本人相关的动作，创作与用户批量管理不再混在一起。</p>
+            </div>
+            <div class="account-action-list">
+              <a class="btn btn-secondary" href="/">返回工作台</a>
+              <a class="btn btn-secondary" id="account-admin-link" href="/admin/" hidden>进入管理后台</a>
+            </div>
+            <p class="account-inline-copy">对话、歌词、音乐、图片和翻唱继续在工作台完成；管理员批量管理继续在后台处理。</p>
+          </article>
+
+          <article class="portal-surface-card account-sidebar-card">
+            <div class="account-section-heading">
+              <span class="account-section-kicker">Scope</span>
+              <h2>本页负责什么</h2>
+              <p>这不是后台，也不是创作页，而是标准的个人账户中心。</p>
+            </div>
+            <ul class="account-scope-list">
+              <li>查看当前登录账号的身份、角色与套餐信息</li>
+              <li>修改自己的登录密码并处理临时密码状态</li>
+              <li>快速回到工作台或管理后台</li>
+            </ul>
+          </article>
+        </aside>
+
+        <section class="portal-surface-card account-security-card">
+          <div class="account-section-heading">
+            <span class="account-section-kicker">Security</span>
+            <h2>密码与安全</h2>
+            <p>把高频查看信息和高风险操作分开，密码修改放在一个独立、清晰的区域里。</p>
           </div>
-          <div class="history-list">
-            <article class="history-item">
-              <div class="history-item-header">
-                <strong>显示名</strong>
-                <time id="account-display-name">-</time>
-              </div>
-              <p id="account-username-line">账号：-</p>
-              <p id="account-email-line">邮箱：-</p>
-              <div class="portal-metric-row">
-                <span class="portal-pill" id="account-role-pill">角色：-</span>
-                <span class="portal-pill" id="account-plan-pill">套餐：-</span>
-                <span class="portal-pill" id="account-password-pill">密码状态：-</span>
-              </div>
+
+          <div class="account-security-overview">
+            <article class="account-status-tile">
+              <span>当前密码状态</span>
+              <strong id="account-password-status-heading">-</strong>
+              <p id="account-password-status-note">-</p>
+            </article>
+            <article class="account-status-tile">
+              <span>当前访问级别</span>
+              <strong id="account-role-heading">-</strong>
+              <p id="account-security-entry-note">-</p>
             </article>
           </div>
-        </article>
 
-        <article class="feature-card">
-          <div class="section-header">
-            <h1><span class="icon">🔐</span> 修改密码</h1>
-            <p>修改后当前会话会保留，账号的其他旧会话会按规则失效。</p>
-          </div>
-          <form id="account-password-form" class="admin-form">
+          <form id="account-password-form" class="admin-form account-security-form">
             <div class="admin-form-grid">
               <label>当前密码<input id="account-current-password" type="password" autocomplete="current-password" placeholder="请输入当前密码" /></label>
               <label>新密码<input id="account-new-password" type="password" autocomplete="new-password" placeholder="至少 8 位" /></label>
               <label>确认新密码<input id="account-confirm-password" type="password" autocomplete="new-password" placeholder="请再次输入新密码" /></label>
             </div>
+            <p class="account-form-note">更新后当前会话会保留，账号的其他旧会话会按规则失效。</p>
             <div id="account-password-feedback" class="admin-form-feedback" hidden></div>
             <div class="admin-form-actions">
               <button class="btn btn-primary" type="submit">更新密码</button>
             </div>
           </form>
-        </article>
-      </section>
-
-      <section class="portal-grid-main">
-        <article class="feature-card">
-          <div class="section-header">
-            <h1><span class="icon">🧭</span> 快速入口</h1>
-            <p>账号和创作分离后，统一从这里跳到工作台或后台，不再挤在一个页面壳里。</p>
-          </div>
-          <div class="history-actions">
-            <a class="btn btn-secondary" href="/">返回工作台</a>
-            <a class="btn btn-secondary" id="account-admin-link" href="/admin/" hidden>进入管理后台</a>
-          </div>
-        </article>
-
-        <article class="feature-card">
-          <div class="section-header">
-            <h1><span class="icon">📌</span> 当前原则</h1>
-            <p>个人中心只处理账号自身信息与安全动作，不承载创作功能，也不承载管理员批量操作。</p>
-          </div>
-          <div class="portal-metric-row">
-            <span class="portal-pill">工作台负责创作</span>
-            <span class="portal-pill">个人中心负责本人账号</span>
-            <span class="portal-pill">管理后台负责多用户管理</span>
-          </div>
-        </article>
+        </section>
       </section>
     </main>
   </div>
