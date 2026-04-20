@@ -82,8 +82,23 @@
     </nav>
 
     <div class="sidebar-footer">
-      <div id="quota-info" class="quota-card">
-        <div class="quota-loading">加载中...</div>
+      <div id="quota-info" class="quota-card" data-collapsed="false">
+        <div class="quota-card-header">
+          <div class="quota-card-copy">
+            <span class="quota-card-kicker">模型额度</span>
+            <strong class="quota-card-title">今日配额</strong>
+            <span class="quota-summary" id="quota-summary">加载中...</span>
+          </div>
+          <button class="quota-toggle" id="btn-quota-toggle" type="button" aria-expanded="true" aria-controls="quota-body" title="收起额度详情">
+            <span class="quota-toggle-label">收起</span>
+            <svg class="quota-toggle-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
+        </div>
+        <div class="quota-card-body" id="quota-body">
+          <div class="quota-loading">加载中...</div>
+        </div>
       </div>
     </div>
   </aside>

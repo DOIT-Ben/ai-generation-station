@@ -2021,6 +2021,8 @@
   //  Quota
   // ============================================
   let quotaLoading = false;
+  const QUOTA_COLLAPSED_KEY = 'aigs.quota.collapsed';
+  let quotaCollapsed = false;
   const MODEL_LABELS = {
     'MiniMax-M*': '通用对话', 'speech-hd': '语音合成',
     'music-2.5': '音乐生成', 'music-2.6': '音乐生成',
@@ -2032,6 +2034,85 @@
 
   function getModelLabel(name) { return MODEL_LABELS[name] || name || '其他'; }
 
+  function readQuotaCollapsedPreference() {
+    try {
+      return window.localStorage.getItem(QUOTA_COLLAPSED_KEY) === '1';
+    } catch {
+      return false;
+    }
+  }
+
+  function persistQuotaCollapsedPreference(value) {
+    try {
+      window.localStorage.setItem(QUOTA_COLLAPSED_KEY, value ? '1' : '0');
+    } catch {
+      // noop
+    }
+  }
+
+  function buildQuotaSummary(items = [], stateText = '') {
+    if (stateText) return stateText;
+    if (!Array.isArray(items) || items.length === 0) return '暂无可用额度数据';
+
+    const totalModels = items.length;
+    const highestUsageItem = items.reduce((selected, current) => {
+      const selectedPct = selected?.current_interval_total_count > 0
+        ? selected.current_interval_usage_count / selected.current_interval_total_count
+        : -1;
+      const currentPct = current?.current_interval_total_count > 0
+        ? current.current_interval_usage_count / current.current_interval_total_count
+        : -1;
+      return currentPct > selectedPct ? current : selected;
+    }, null);
+
+    if (!highestUsageItem) {
+      return `${totalModels} 项额度可用`;
+    }
+
+    const used = Number(highestUsageItem.current_interval_usage_count || 0);
+    const total = Number(highestUsageItem.current_interval_total_count || 0);
+    const pct = total > 0 ? Math.round((used / total) * 100) : 0;
+    return `${totalModels} 项额度 · ${getModelLabel(highestUsageItem.model_name)} 已用 ${pct}%`;
+  }
+
+  function syncQuotaCardState() {
+    const card = $('quota-info');
+    const toggle = $('btn-quota-toggle');
+    const label = toggle?.querySelector('.quota-toggle-label');
+    if (!card || !toggle || !label) return;
+    card.dataset.collapsed = quotaCollapsed ? 'true' : 'false';
+    toggle.setAttribute('aria-expanded', quotaCollapsed ? 'false' : 'true');
+    toggle.setAttribute('title', quotaCollapsed ? '展开额度详情' : '收起额度详情');
+    label.textContent = quotaCollapsed ? '展开' : '收起';
+  }
+
+  function setQuotaCollapsed(nextValue) {
+    quotaCollapsed = Boolean(nextValue);
+    persistQuotaCollapsedPreference(quotaCollapsed);
+    syncQuotaCardState();
+  }
+
+  function renderQuotaContent({ items = [], summaryText = '', bodyHtml = '' } = {}) {
+    const summary = $('quota-summary');
+    const body = $('quota-body');
+    if (summary) {
+      summary.textContent = buildQuotaSummary(items, summaryText);
+    }
+    if (body) {
+      body.innerHTML = bodyHtml || '<div class="quota-loading">暂无可用额度数据</div>';
+    }
+    $('btn-quota-refresh')?.addEventListener('click', e => {
+      e.stopPropagation();
+      loadQuota();
+    });
+  }
+
+  function bindQuotaToggle() {
+    $('btn-quota-toggle')?.addEventListener('click', () => {
+      setQuotaCollapsed(!quotaCollapsed);
+    });
+  }
+
   function escapeHtml(str) {
     const div = document.createElement('div');
     div.textContent = str;
@@ -2041,7 +2122,6 @@
   window.loadQuota = async function loadQuota() {
     if (quotaLoading) return;
     quotaLoading = true;
-    const el = $('quota-info');
 
     try {
       const res = await apiFetch('/api/quota');
@@ -2050,7 +2130,11 @@
       const models = data.model_remains || [];
 
       if (models.length === 0) {
-        el.innerHTML = '<div class="quota-loading">无可用配额数据</div>';
+        renderQuotaContent({
+          items: [],
+          summaryText: '暂无可用额度数据',
+          bodyHtml: '<div class="quota-loading">无可用配额数据</div>'
+        });
         return;
       }
 
@@ -2066,7 +2150,9 @@
         })
         .slice(0, 8);
 
-      el.innerHTML = `
+      renderQuotaContent({
+        items: unique,
+        bodyHtml: `
         <div class="quota-list">${unique.map(m => {
           const total = m.current_interval_total_count;
           const used = m.current_interval_usage_count;
@@ -2080,11 +2166,15 @@
             <div class="quota-bar-track"><div class="quota-bar-fill ${pctClass}" style="--fill-width:${pct}%"></div></div>
           </div>`;
         }).join('')}</div>
-        <button class="quota-refresh" id="btn-quota-refresh" title="刷新配额">↻ 刷新</button>`;
-      $('btn-quota-refresh')?.addEventListener('click', e => { e.stopPropagation(); loadQuota(); });
+        <button class="quota-refresh" id="btn-quota-refresh" type="button" title="刷新配额">↻ 刷新</button>`
+      });
 
     } catch {
-      el.innerHTML = '<div class="quota-loading">无法加载配额</div>';
+      renderQuotaContent({
+        items: [],
+        summaryText: '额度加载失败',
+        bodyHtml: '<div class="quota-loading">无法加载配额</div>'
+      });
     } finally {
       quotaLoading = false;
     }
@@ -3843,6 +3933,9 @@
     document.addEventListener('keydown', e => { if (e.key === 'Escape') closeImageModal(); });
 
     // Quota
+    quotaCollapsed = readQuotaCollapsedPreference();
+    syncQuotaCardState();
+    bindQuotaToggle();
     loadQuota();
     setInterval(loadQuota, 30000);
 

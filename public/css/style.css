@@ -579,6 +579,94 @@
   overflow: hidden;
 }
 
+.quota-card-header {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.quota-card-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.quota-card-kicker {
+  color: var(--fg-muted);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.quota-card-title {
+  color: var(--fg-primary);
+  font-size: 0.88rem;
+  line-height: 1.2;
+}
+
+.quota-summary {
+  color: var(--fg-secondary);
+  font-size: 0.72rem;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.quota-toggle {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--fg-secondary);
+  font-size: 0.68rem;
+  font-family: var(--font-body);
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.quota-toggle:hover {
+  color: var(--fg-primary);
+  border-color: rgba(0, 212, 255, 0.24);
+  background: rgba(0, 212, 255, 0.08);
+}
+
+.quota-toggle-icon {
+  transition: transform 0.28s ease;
+}
+
+.quota-card-body {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 10px;
+  max-height: 420px;
+  opacity: 1;
+  transform: translateY(0);
+  margin-top: 12px;
+  overflow: hidden;
+  transition: max-height 0.34s ease, opacity 0.24s ease, transform 0.28s ease, margin-top 0.28s ease;
+}
+
+.quota-card[data-collapsed="true"] .quota-card-body {
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-8px);
+  margin-top: 0;
+}
+
+.quota-card[data-collapsed="true"] .quota-toggle-icon {
+  transform: rotate(180deg);
+}
+
 .quota-card::before {
   content: '';
   position: absolute;
@@ -592,6 +680,11 @@
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(247, 241, 232, 0.94));
   border-color: rgba(24, 32, 51, 0.06);
   box-shadow: var(--shadow-sm);
+}
+
+[data-theme="light"] .quota-toggle {
+  border-color: rgba(24, 32, 51, 0.08);
+  background: rgba(255, 255, 255, 0.74);
 }
 
 .quota-list {
@@ -668,7 +761,7 @@
 .quota-loading {
   color: var(--fg-muted);
   font-size: 0.72rem;
-  text-align: center;
+  text-align: left;
   padding: 4px 0;
 }
 
@@ -1951,6 +2044,9 @@ input[type="range"]::-webkit-slider-thumb:active {
 
   .sidebar-footer { padding: 12px 4px; }
   .quota-card { padding: 10px; }
+  .quota-card-header { gap: 8px; }
+  .quota-toggle { padding: 0 8px; }
+  .quota-summary { font-size: 0.68rem; }
   .quota-label { font-size: 0.65rem; }
 
   .main { margin-left: 68px; padding: 84px 20px 24px; }
@@ -3940,6 +4036,14 @@ input[type="range"]::-webkit-slider-thumb:active {
   
   .quota-card {
     padding: 8px 10px;
+  }
+
+  .quota-card-header {
+    align-items: center;
+  }
+
+  .quota-toggle-label {
+    display: none;
   }
 
   .auth-gate {
