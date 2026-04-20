@@ -20,7 +20,8 @@ function parseArgs(argv) {
     baseUrl: process.env.UI_VISUAL_BASE_URL || 'http://127.0.0.1:18791',
     port: Number(process.env.UI_VISUAL_PORT || 18791),
     launchServer: process.env.UI_VISUAL_LAUNCH_SERVER === '1',
-    updateBaseline: process.env.UI_VISUAL_UPDATE_BASELINE === '1'
+    updateBaseline: process.env.UI_VISUAL_UPDATE_BASELINE === '1',
+    cdpUrl: process.env.UI_VISUAL_CDP_URL || ''
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -35,6 +36,9 @@ function parseArgs(argv) {
       args.launchServer = true;
     } else if (arg === '--update-baseline') {
       args.updateBaseline = true;
+    } else if (arg === '--cdp-url' && argv[i + 1]) {
+      args.cdpUrl = argv[i + 1];
+      i += 1;
     }
   }
 
@@ -110,29 +114,55 @@ function resetArtifactDir(dirPath) {
   fs.mkdirSync(dirPath, { recursive: true });
 }
 
-async function waitForAuthGate(page) {
+async function waitForAuthPage(page) {
+  await page.locator('#portal-user-nav').waitFor({ state: 'visible' });
   await page.locator('#theme-toggle').waitFor({ state: 'visible' });
-  await page.locator('#auth-gate').waitFor({ state: 'visible' });
-  await page.locator('#auth-gate .auth-card').waitFor({ state: 'visible' });
+  await page.locator('#login-form').waitFor({ state: 'visible' });
+  await page.locator('#login-username').waitFor({ state: 'visible' });
+  await page.locator('#login-password').waitFor({ state: 'visible' });
 }
 
-async function loginAsBootstrapAdmin(page) {
-  await waitForAuthGate(page);
-  await page.fill('#auth-username', 'studio');
-  await page.fill('#auth-password', 'AIGS2026!');
+async function waitForWorkspace(page) {
+  await page.waitForURL(url => new URL(String(url)).pathname === '/');
+  await page.locator('#sidebar').waitFor({ state: 'visible' });
+  await page.locator('#theme-toggle-fixed').waitFor({ state: 'visible' });
+  await page.locator('#btn-logout').waitFor({ state: 'visible' });
+}
+
+async function gotoAuthPage(page, baseUrl) {
+  await page.goto(`${baseUrl}/auth/`, { waitUntil: 'domcontentloaded' });
+  await waitForAuthPage(page);
+  await stabilizePage(page);
+}
+
+async function gotoPortalPage(page, baseUrl, pathname, selector) {
+  await page.goto(`${baseUrl}${pathname}`, { waitUntil: 'domcontentloaded' });
+  await page.waitForURL(url => new URL(String(url)).pathname === pathname);
+  await page.locator('#portal-user-nav').waitFor({ state: 'visible' });
+  await page.locator('#theme-toggle').waitFor({ state: 'visible' });
+  await page.locator(selector).waitFor({ state: 'visible' });
+  await stabilizePage(page);
+}
+
+async function loginAsBootstrapAdmin(page, baseUrl) {
+  await page.goto(`${baseUrl}/auth/`, { waitUntil: 'domcontentloaded' });
+  const currentPath = await page.evaluate(() => window.location.pathname);
+  if (currentPath !== '/auth/') {
+    await waitForWorkspace(page);
+    await stabilizePage(page);
+    return;
+  }
+
+  await waitForAuthPage(page);
+  await stabilizePage(page);
+  await page.fill('#login-username', 'studio');
+  await page.fill('#login-password', 'AIGS2026!');
   await Promise.all([
     page.waitForResponse(response => response.url().includes('/api/auth/login') && response.request().method() === 'POST'),
-    page.locator('#auth-form button[type="submit"]').click()
+    page.locator('#login-form button[type="submit"]').click()
   ]);
-  await page.locator('#btn-logout').waitFor({ state: 'visible' });
-  await page.waitForFunction(() => {
-    const gate = document.getElementById('auth-gate');
-    return Boolean(gate) && gate.hasAttribute('hidden');
-  });
-  await page.waitForFunction(() => {
-    const panel = document.getElementById('admin-panel');
-    return Boolean(panel) && !panel.hasAttribute('hidden');
-  });
+  await waitForWorkspace(page);
+  await stabilizePage(page);
 }
 
 async function stabilizePage(page) {
@@ -169,8 +199,7 @@ async function stabilizePage(page) {
 
 async function gotoApp(page, baseUrl) {
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
-  await page.locator('#sidebar').waitFor({ state: 'visible' });
-  await page.locator('#theme-toggle-fixed').waitFor({ state: 'visible' });
+  await waitForWorkspace(page);
   await stabilizePage(page);
 }
 
@@ -201,10 +230,18 @@ async function normalizeAdminPanel(page) {
     return Boolean(summary?.textContent) && !summary.textContent.includes('正在');
   });
   await page.evaluate(() => {
-    document.querySelectorAll('#admin-panel time').forEach(node => {
+    document.querySelectorAll('#admin-user-list time').forEach(node => {
       node.textContent = '';
       node.style.display = 'inline-block';
       node.style.width = '72px';
+      node.style.height = '12px';
+      node.style.borderRadius = '999px';
+      node.style.background = 'rgba(160, 160, 192, 0.28)';
+    });
+    document.querySelectorAll('#admin-audit-table-body tr td:first-child .audit-log-copy strong').forEach(node => {
+      node.textContent = '';
+      node.style.display = 'inline-block';
+      node.style.width = '76px';
       node.style.height = '12px';
       node.style.borderRadius = '999px';
       node.style.background = 'rgba(160, 160, 192, 0.28)';
@@ -246,13 +283,12 @@ async function setStableBackdrop(page, enabled) {
 function getCapturePlan(baseUrl) {
   return [
     {
-      name: 'auth-gate-card',
-      selector: '#auth-gate .auth-card',
+      name: 'auth-portal-card',
+      selector: '.portal-layout > .portal-surface-card',
       showFixedUtility: false,
       stableBackdrop: false,
       prepare: async page => {
-        await gotoApp(page, baseUrl);
-        await waitForAuthGate(page);
+        await gotoAuthPage(page, baseUrl);
       }
     },
     {
@@ -261,19 +297,29 @@ function getCapturePlan(baseUrl) {
       showFixedUtility: true,
       stableBackdrop: false,
       prepare: async page => {
-        await gotoApp(page, baseUrl);
-        await loginAsBootstrapAdmin(page);
+        await loginAsBootstrapAdmin(page, baseUrl);
         await ensureTheme(page, 'dark');
       }
     },
     {
-      name: 'admin-panel',
-      selector: '#admin-panel',
+      name: 'account-center-security',
+      selector: '.account-security-card',
       showFixedUtility: false,
       stableBackdrop: true,
       prepare: async page => {
-        await gotoApp(page, baseUrl);
-        await loginAsBootstrapAdmin(page);
+        await loginAsBootstrapAdmin(page, baseUrl);
+        await gotoPortalPage(page, baseUrl, '/account/', '.account-security-card');
+        await ensureTheme(page, 'light');
+      }
+    },
+    {
+      name: 'admin-console',
+      selector: '.portal-layout',
+      showFixedUtility: false,
+      stableBackdrop: true,
+      prepare: async page => {
+        await loginAsBootstrapAdmin(page, baseUrl);
+        await gotoPortalPage(page, baseUrl, '/admin/', '#admin-audit-form');
         await ensureTheme(page, 'dark');
         await normalizeAdminPanel(page);
       }
@@ -284,8 +330,7 @@ function getCapturePlan(baseUrl) {
       showFixedUtility: false,
       stableBackdrop: true,
       prepare: async page => {
-        await gotoApp(page, baseUrl);
-        await loginAsBootstrapAdmin(page);
+        await loginAsBootstrapAdmin(page, baseUrl);
         await switchTab(page, 'chat');
         await ensureTheme(page, 'dark');
       }
@@ -296,8 +341,7 @@ function getCapturePlan(baseUrl) {
       showFixedUtility: false,
       stableBackdrop: true,
       prepare: async page => {
-        await gotoApp(page, baseUrl);
-        await loginAsBootstrapAdmin(page);
+        await loginAsBootstrapAdmin(page, baseUrl);
         await switchTab(page, 'chat');
         await ensureTheme(page, 'light');
       }
@@ -308,8 +352,7 @@ function getCapturePlan(baseUrl) {
       showFixedUtility: false,
       stableBackdrop: true,
       prepare: async page => {
-        await gotoApp(page, baseUrl);
-        await loginAsBootstrapAdmin(page);
+        await loginAsBootstrapAdmin(page, baseUrl);
         await switchTab(page, 'lyrics');
         await ensureTheme(page, 'light');
       }
@@ -386,13 +429,20 @@ async function compareCapture({ name, buffer, updateBaseline, pixelmatch }) {
   };
 }
 
-async function runVisualRegression({ baseUrl, updateBaseline, headless = process.env.PLAYWRIGHT_HEADLESS !== '0' }) {
+async function openBrowser({ headless = process.env.PLAYWRIGHT_HEADLESS !== '0', cdpUrl = '' } = {}) {
+  if (cdpUrl) {
+    return chromium.connectOverCDP(cdpUrl, { timeout: 120000 });
+  }
+  return chromium.launch({ headless });
+}
+
+async function runVisualRegression({ baseUrl, updateBaseline, headless = process.env.PLAYWRIGHT_HEADLESS !== '0', cdpUrl = '' }) {
   resetArtifactDir(CURRENT_DIR);
   resetArtifactDir(DIFF_DIR);
   ensureDir(BASELINE_DIR);
 
   const pixelmatch = (await import('pixelmatch')).default;
-  const browser = await chromium.launch({ headless });
+  const browser = await openBrowser({ headless, cdpUrl });
   const plan = getCapturePlan(baseUrl);
   const results = [];
 
@@ -447,15 +497,16 @@ async function main(options = {}) {
   const port = Number(options.port || args.port || 18791);
   const launchServer = options.launchServer != null ? options.launchServer : args.launchServer;
   const updateBaseline = options.updateBaseline != null ? options.updateBaseline : args.updateBaseline;
+  const cdpUrl = options.cdpUrl != null ? options.cdpUrl : args.cdpUrl;
 
   if (launchServer) {
     await withListeningServer({ port }, async serverBaseUrl => {
       await waitForServer(serverBaseUrl);
-      await runVisualRegression({ baseUrl: serverBaseUrl, updateBaseline });
+      await runVisualRegression({ baseUrl: serverBaseUrl, updateBaseline, cdpUrl });
     });
   } else {
     await waitForServer(baseUrl);
-    await runVisualRegression({ baseUrl, updateBaseline });
+    await runVisualRegression({ baseUrl, updateBaseline, cdpUrl });
   }
 }
 
