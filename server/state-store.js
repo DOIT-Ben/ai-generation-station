@@ -2,6 +2,12 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { DatabaseSync } = require('node:sqlite');
 const AppShell = require('../public/js/app-shell.js');
+const {
+    hashPassword,
+    hashPasswordAsync,
+    verifyPassword,
+    verifyPasswordAsync
+} = require('./lib/passwords');
 
 function safeParseJson(value, fallback) {
     if (!value) return fallback;
@@ -12,18 +18,6 @@ function safeParseJson(value, fallback) {
     }
 }
 
-function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
-    const hash = crypto.scryptSync(password, salt, 64).toString('hex');
-    return `${salt}:${hash}`;
-}
-
-function verifyPassword(password, storedHash) {
-    const [salt, expected] = String(storedHash || '').split(':');
-    if (!salt || !expected) return false;
-    const actual = crypto.scryptSync(password, salt, 64).toString('hex');
-    return crypto.timingSafeEqual(Buffer.from(actual, 'hex'), Buffer.from(expected, 'hex'));
-}
-
 function hashOpaqueToken(token) {
     return crypto.createHash('sha256').update(String(token || '')).digest('hex');
 }
@@ -31,6 +25,9 @@ function hashOpaqueToken(token) {
 function createOpaqueToken() {
     return crypto.randomBytes(24).toString('hex');
 }
+
+const LOGIN_FAILURE_LOCK_THRESHOLD = 5;
+const LOGIN_FAILURE_LOCK_MS = 15 * 60 * 1000;
 
 function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItems, seedUser }) {
     const db = new DatabaseSync(dbPath);
@@ -325,9 +322,18 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
             failed_login_count = 0,
             locked_until = NULL
     `);
-    const setFailedLoginStmt = db.prepare(`
+    const resetFailedLoginStmt = db.prepare(`
         UPDATE user_credentials
-        SET failed_login_count = ?, locked_until = ?
+        SET failed_login_count = 0, locked_until = NULL
+        WHERE user_id = ?
+    `);
+    const incrementFailedLoginStmt = db.prepare(`
+        UPDATE user_credentials
+        SET failed_login_count = failed_login_count + 1,
+            locked_until = CASE
+                WHEN failed_login_count + 1 >= ? THEN ?
+                ELSE NULL
+            END
         WHERE user_id = ?
     `);
     const getPreferencesStmt = db.prepare(`
@@ -1174,6 +1180,46 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
             });
         },
 
+        async createUserAsync(user = {}, options = {}) {
+            const username = String(user.username || '').trim();
+            const password = String(user.password || '').trim();
+            if (!username || !password) {
+                throw new Error('username and password are required');
+            }
+            const existing = this.getUserByUsername(username);
+            if (existing) return existing;
+
+            const passwordHash = await hashPasswordAsync(password);
+            const now = Date.now();
+            const userId = crypto.randomUUID();
+            return runInTransaction(() => {
+                insertUserStmt.run(
+                    userId,
+                    username,
+                    user.email || null,
+                    user.displayName || username,
+                    user.status || 'active',
+                    user.role || 'user',
+                    user.planCode || 'free',
+                    user.timezone || 'Asia/Shanghai',
+                    user.locale || 'zh-CN',
+                    now,
+                    now
+                );
+                upsertCredentialStmt.run(userId, passwordHash, now, user.mustResetPassword ? 1 : 0);
+                const createdUser = this.getUserById(userId);
+                if (options.auditLog && createdUser) {
+                    appendAuditLogRecord({
+                        ...options.auditLog,
+                        targetUserId: options.auditLog.targetUserId || createdUser.id,
+                        targetUsername: options.auditLog.targetUsername || createdUser.username,
+                        targetRole: options.auditLog.targetRole || createdUser.role
+                    });
+                }
+                return createdUser;
+            });
+        },
+
         updateUser(userId, patch = {}, options = {}) {
             const current = this.getUserById(userId);
             if (!current) return null;
@@ -1236,8 +1282,8 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
             }
             if (!verifyPassword(password, credential.passwordHash)) {
                 const failedCount = Number(credential.failedLoginCount || 0) + 1;
-                const lockedUntil = failedCount >= 5 ? now + 15 * 60 * 1000 : null;
-                setFailedLoginStmt.run(failedCount, lockedUntil, user.id);
+                const lockedUntil = failedCount >= LOGIN_FAILURE_LOCK_THRESHOLD ? now + LOGIN_FAILURE_LOCK_MS : null;
+                incrementFailedLoginStmt.run(LOGIN_FAILURE_LOCK_THRESHOLD, lockedUntil, user.id);
                 if (lockedUntil) {
                     return {
                         errorCode: 'login_locked',
@@ -1247,7 +1293,47 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
                 }
                 return null;
             }
-            setFailedLoginStmt.run(0, null, user.id);
+            resetFailedLoginStmt.run(user.id);
+            updateUserLoginStmt.run(now, now, user.id);
+            user.lastLoginAt = now;
+            user.mustResetPassword = Boolean(credential.mustResetPassword);
+            return user;
+        },
+
+        async authenticateUserAsync(username, password) {
+            const user = normalizeUserRecord(findUserByUsernameStmt.get(username));
+            if (!user) return null;
+            if (user.status !== 'active') {
+                return {
+                    errorCode: 'user_disabled',
+                    error: '账号已被禁用，请联系管理员',
+                    status: 403
+                };
+            }
+            const credential = normalizeCredentialRecord(getCredentialStmt.get(user.id));
+            const now = Date.now();
+            if (!credential) return null;
+            if (credential.lockedUntil && credential.lockedUntil > now) {
+                return {
+                    errorCode: 'login_locked',
+                    error: '账号已被临时锁定，请 15 分钟后重试',
+                    status: 423
+                };
+            }
+            const verified = await verifyPasswordAsync(password, credential.passwordHash);
+            if (!verified) {
+                incrementFailedLoginStmt.run(LOGIN_FAILURE_LOCK_THRESHOLD, now + LOGIN_FAILURE_LOCK_MS, user.id);
+                const updatedCredential = normalizeCredentialRecord(getCredentialStmt.get(user.id));
+                if (updatedCredential?.lockedUntil && updatedCredential.lockedUntil > now) {
+                    return {
+                        errorCode: 'login_locked',
+                        error: '账号已被临时锁定，请 15 分钟后重试',
+                        status: 423
+                    };
+                }
+                return null;
+            }
+            resetFailedLoginStmt.run(user.id);
             updateUserLoginStmt.run(now, now, user.id);
             user.lastLoginAt = now;
             user.mustResetPassword = Boolean(credential.mustResetPassword);
@@ -1482,6 +1568,46 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
             return this.getUserById(userId);
         },
 
+        async changeCurrentUserPasswordAsync(userId, currentPassword, nextPassword, options = {}) {
+            const user = this.getUserById(userId);
+            if (!user) return null;
+
+            const credential = normalizeCredentialRecord(getCredentialStmt.get(userId));
+            if (!credential) {
+                return {
+                    errorCode: 'credential_missing',
+                    error: '当前账号暂时无法修改密码',
+                    status: 409
+                };
+            }
+
+            if (!await verifyPasswordAsync(currentPassword, credential.passwordHash)) {
+                return {
+                    errorCode: 'current_password_incorrect',
+                    error: '当前密码不正确',
+                    status: 400
+                };
+            }
+
+            if (await verifyPasswordAsync(nextPassword, credential.passwordHash)) {
+                return {
+                    errorCode: 'password_unchanged',
+                    error: '新密码不能与当前密码相同',
+                    status: 400
+                };
+            }
+
+            const now = Date.now();
+            const nextPasswordHash = await hashPasswordAsync(nextPassword);
+            upsertCredentialStmt.run(userId, nextPasswordHash, now, 0);
+            if (options.keepSessionId) {
+                deleteUserSessionsExceptStmt.run(userId, options.keepSessionId);
+            } else {
+                deleteUserSessionsStmt.run(userId);
+            }
+            return this.getUserById(userId);
+        },
+
         resetUserPassword(userId, password, options = {}) {
             const user = this.getUserById(userId);
             if (!user) return null;
@@ -1494,6 +1620,37 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
             return runInTransaction(() => {
                 const now = Date.now();
                 upsertCredentialStmt.run(userId, hashPassword(nextPassword), now, options.requirePasswordChange ? 1 : 0);
+                if (options.keepSessionId) {
+                    deleteUserSessionsExceptStmt.run(userId, options.keepSessionId);
+                } else {
+                    deleteUserSessionsStmt.run(userId);
+                }
+                const updatedUser = this.getUserById(userId);
+                if (options.auditLog && updatedUser) {
+                    appendAuditLogRecord({
+                        ...options.auditLog,
+                        targetUserId: options.auditLog.targetUserId || updatedUser.id,
+                        targetUsername: options.auditLog.targetUsername || updatedUser.username,
+                        targetRole: options.auditLog.targetRole || updatedUser.role
+                    });
+                }
+                return updatedUser;
+            });
+        },
+
+        async resetUserPasswordAsync(userId, password, options = {}) {
+            const user = this.getUserById(userId);
+            if (!user) return null;
+
+            const nextPassword = String(password || '');
+            if (!nextPassword.trim()) {
+                throw new Error('password is required');
+            }
+
+            const nextPasswordHash = await hashPasswordAsync(nextPassword);
+            return runInTransaction(() => {
+                const now = Date.now();
+                upsertCredentialStmt.run(userId, nextPasswordHash, now, options.requirePasswordChange ? 1 : 0);
                 if (options.keepSessionId) {
                     deleteUserSessionsExceptStmt.run(userId, options.keepSessionId);
                 } else {

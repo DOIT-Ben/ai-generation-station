@@ -433,7 +433,7 @@ function createStateRoutes({ stateStore, sessionCookieName, authConfig, notifica
                 return null;
             }
 
-            const user = stateStore.authenticateUser(username, password);
+            const user = await stateStore.authenticateUserAsync(username, password);
             if (user?.error) {
                 sendJson(res, Number(user.status || 423), {
                     error: user.error,
@@ -512,7 +512,7 @@ function createStateRoutes({ stateStore, sessionCookieName, authConfig, notifica
                 return null;
             }
 
-            const user = stateStore.createUser({
+            const user = await stateStore.createUserAsync({
                 username,
                 email,
                 password,
@@ -570,7 +570,7 @@ function createStateRoutes({ stateStore, sessionCookieName, authConfig, notifica
                 return null;
             }
 
-            const user = stateStore.changeCurrentUserPassword(session.userId, currentPassword, newPassword, {
+            const user = await stateStore.changeCurrentUserPasswordAsync(session.userId, currentPassword, newPassword, {
                 keepSessionId: session.id
             });
             if (user?.error) {
@@ -654,7 +654,7 @@ function createStateRoutes({ stateStore, sessionCookieName, authConfig, notifica
                 return null;
             }
 
-            const user = stateStore.resetUserPassword(invite.user.id, body.password, {
+            const user = await stateStore.resetUserPasswordAsync(invite.user.id, body.password, {
                 requirePasswordChange: false
             });
             if (!user) {
@@ -789,7 +789,7 @@ function createStateRoutes({ stateStore, sessionCookieName, authConfig, notifica
                 return null;
             }
 
-            const user = stateStore.resetUserPassword(reset.user.id, body.password, {
+            const user = await stateStore.resetUserPasswordAsync(reset.user.id, body.password, {
                 requirePasswordChange: false
             });
             if (!user) {
@@ -1074,7 +1074,7 @@ function createStateRoutes({ stateStore, sessionCookieName, authConfig, notifica
                     return null;
                 }
 
-                const user = stateStore.createUser({
+                const user = await stateStore.createUserAsync({
                     username,
                     email,
                     password,
@@ -1235,7 +1235,7 @@ function createStateRoutes({ stateStore, sessionCookieName, authConfig, notifica
                 }
 
                 const keepSessionId = session.userId === userId ? session.id : null;
-                const user = stateStore.resetUserPassword(userId, body.password, {
+                const user = await stateStore.resetUserPasswordAsync(userId, body.password, {
                     keepSessionId,
                     requirePasswordChange: session.userId !== userId,
                     auditLog: {

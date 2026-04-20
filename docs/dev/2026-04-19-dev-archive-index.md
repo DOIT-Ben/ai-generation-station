@@ -30,10 +30,15 @@ Read these first for the latest round:
 10. `2026-04-20-state-durability-retention-execution.md`
 11. `2026-04-20-separate-site-browser-security-plan.md`
 12. `2026-04-20-separate-site-browser-security-execution.md`
-13. `2026-04-19-user-facing-auth-rules.md`
-14. `2026-04-19-production-env-matrix.md`
-15. `2026-04-19-local-service-runbook.md`
-16. `2026-04-19-release-readiness-checklist.md`
+13. `2026-04-20-visual-regression-multipage-alignment-plan.md`
+14. `2026-04-20-visual-regression-multipage-alignment-execution.md`
+15. `2026-04-20-p21-auth-write-scaling-plan.md`
+16. `2026-04-20-p21-auth-write-scaling-execution.md`
+17. `2026-04-20-git-write-blocker-note.md`
+18. `2026-04-19-user-facing-auth-rules.md`
+19. `2026-04-19-production-env-matrix.md`
+20. `2026-04-19-local-service-runbook.md`
+21. `2026-04-19-release-readiness-checklist.md`
 
 ## Active Read Order
 
@@ -120,6 +125,11 @@ Read these first for the latest round:
 - repaired the account center information hierarchy and removed the old overloaded card stack
 - hardened logout/session behavior so portal logout reliably remains on the auth page after the next session check
 - strengthened local service tooling so readiness now distinguishes backend health from browser auth-contract availability
+- realigned screenshot visual coverage to the current multi-page auth/account/admin structure
+- documented the current sandbox/browser limitations that block safe visual baseline refresh in this session
+- moved password-sensitive auth/admin write paths onto async `crypto.scrypt(...)`
+- raised auth/admin write throughput well above the previous `~17 req/s` plateau while keeping the SQLite model unchanged
+- documented the git metadata write blocker that prevented final staging/commit in this session
 
 ## Historical Context Still Relevant
 
