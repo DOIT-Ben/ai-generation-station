@@ -61,6 +61,7 @@
   let currentUser = null;
   let currentUserProfile = null;
   let conversationSearchQuery = '';
+  let conversationFilterMode = 'all';
   let userPreferences = {
     theme: 'dark',
     defaultModelChat: 'MiniMax-M2.7',
@@ -1068,6 +1069,17 @@
     scheduleWorkspaceStateSave();
   }
 
+  function clearRecentTemplates(feature) {
+    if (!feature) return;
+    const nextRecentTemplates = {
+      ...(workspaceState.recentTemplates || {})
+    };
+    delete nextRecentTemplates[feature];
+    workspaceState.recentTemplates = nextRecentTemplates;
+    renderTemplateLibraries();
+    scheduleWorkspaceStateSave();
+  }
+
   function filterTemplateGroups(feature, groups = []) {
     const query = getTemplateSearchQuery(feature);
     const terms = query.split(/\s+/).filter(Boolean);
@@ -1120,9 +1132,12 @@
         container.innerHTML = `
           ${recentTemplates.length ? `
             <section class="template-recent-strip">
-              <div class="template-recent-copy">
-                <strong>最近使用</strong>
-                <span>刚用过的模板会优先留在这里，方便你继续复用。</span>
+              <div class="template-recent-header">
+                <div class="template-recent-copy">
+                  <strong>最近使用</strong>
+                  <span>刚用过的模板会优先留在这里，方便你继续复用。</span>
+                </div>
+                <button type="button" class="template-recent-clear" data-template-recent-clear="${feature}">清空</button>
               </div>
               <div class="template-recent-actions">
                 ${recentTemplates.map(item => `
@@ -1146,9 +1161,12 @@
       container.innerHTML = `
         ${recentTemplates.length ? `
           <section class="template-recent-strip">
-            <div class="template-recent-copy">
-              <strong>最近使用</strong>
-              <span>刚用过的模板会优先留在这里，方便你继续复用。</span>
+            <div class="template-recent-header">
+              <div class="template-recent-copy">
+                <strong>最近使用</strong>
+                <span>刚用过的模板会优先留在这里，方便你继续复用。</span>
+              </div>
+              <button type="button" class="template-recent-clear" data-template-recent-clear="${feature}">清空</button>
             </div>
             <div class="template-recent-actions">
               ${recentTemplates.map(item => `
@@ -1382,12 +1400,33 @@
     return String(conversationSearchQuery || '');
   }
 
+  function getConversationFilterMode() {
+    return String(conversationFilterMode || 'all');
+  }
+
+  function matchesConversationFilter(conversation, mode = getConversationFilterMode()) {
+    if (!conversation) return false;
+    if (mode === 'current') {
+      return conversation.id === conversationState.activeId;
+    }
+    if (mode === 'blank') {
+      return Number(conversation?.messageCount || 0) <= 0;
+    }
+    if (mode === 'today') {
+      return getDayBucketLabel(getConversationTimestamp(conversation)) === '今天';
+    }
+    return true;
+  }
+
   function getFilteredActiveConversations() {
-    return filterConversationSummaries(conversationState.list, getConversationSearchQuery());
+    return filterConversationSummaries(conversationState.list, getConversationSearchQuery())
+      .filter(item => matchesConversationFilter(item));
   }
 
   function getFilteredArchivedConversations() {
-    return filterConversationSummaries(conversationState.archived, getConversationSearchQuery());
+    const mode = getConversationFilterMode();
+    return filterConversationSummaries(conversationState.archived, getConversationSearchQuery())
+      .filter(item => mode === 'all' || mode === 'today' ? matchesConversationFilter(item, mode) : false);
   }
 
   function updateConversationSearch(value, options = {}) {
@@ -1397,6 +1436,17 @@
     if (options.syncInput !== false && searchInput) {
       searchInput.value = nextValue;
     }
+    if (options.render !== false) {
+      renderConversationList();
+    }
+  }
+
+  function updateConversationFilterMode(mode, options = {}) {
+    const nextMode = ['all', 'current', 'blank', 'today'].includes(mode) ? mode : 'all';
+    conversationFilterMode = nextMode;
+    document.querySelectorAll('[data-chat-filter]').forEach(button => {
+      button.classList.toggle('is-active', button.dataset.chatFilter === nextMode);
+    });
     if (options.render !== false) {
       renderConversationList();
     }
@@ -1703,12 +1753,19 @@
     if (!feedback) return;
 
     const query = getConversationSearchQuery().trim();
+    const filterMode = getConversationFilterMode();
     const activeConversation = getActiveConversation();
     const filteredActive = getFilteredActiveConversations();
     const filteredArchived = getFilteredArchivedConversations();
     const totalActive = conversationState.list.length;
     const totalArchived = conversationState.archived.length;
     const activeVisible = Boolean(activeConversation && filteredActive.some(item => item.id === activeConversation.id));
+    const filterLabels = {
+      all: '全部会话',
+      current: '仅当前会话',
+      blank: '仅空白会话',
+      today: '仅今日活跃'
+    };
 
     if (!currentUser && totalActive <= 0 && totalArchived <= 0) {
       feedback.setAttribute('hidden', '');
@@ -1718,6 +1775,7 @@
 
     if (!query) {
       feedback.innerHTML = `
+        <span class="chat-search-stat${filterMode !== 'all' ? ' is-active' : ''}">${filterLabels[filterMode] || filterLabels.all}</span>
         <span class="chat-search-stat">进行中 ${totalActive} 条</span>
         <span class="chat-search-stat">已归档 ${totalArchived} 条</span>
         ${activeConversation ? '<button type="button" class="chat-search-action" data-chat-focus-current="true">定位当前对话</button>' : ''}
@@ -1727,6 +1785,7 @@
     }
 
     feedback.innerHTML = `
+      <span class="chat-search-stat${filterMode !== 'all' ? ' is-active' : ''}">${filterLabels[filterMode] || filterLabels.all}</span>
       <span class="chat-search-stat is-active">匹配 ${filteredActive.length} / ${totalActive} 条进行中</span>
       <span class="chat-search-stat">匹配 ${filteredArchived.length} / ${totalArchived} 条已归档</span>
       ${activeConversation && !activeVisible ? '<span class="chat-search-warning">当前对话未命中筛选</span>' : ''}
@@ -2402,12 +2461,23 @@
       const searchResetButton = event.target.closest('[data-chat-search-reset]');
       if (searchResetButton) {
         updateConversationSearch('');
+        updateConversationFilterMode('all', { render: true });
         $('chat-conversation-search')?.focus();
+        return;
+      }
+      const filterButton = event.target.closest('[data-chat-filter]');
+      if (filterButton) {
+        updateConversationFilterMode(filterButton.dataset.chatFilter || 'all');
         return;
       }
       const focusCurrentButton = event.target.closest('[data-chat-focus-current]');
       if (focusCurrentButton) {
-        if (getConversationSearchQuery().trim()) {
+        const shouldResetSearch = Boolean(getConversationSearchQuery().trim());
+        const shouldResetFilter = getConversationFilterMode() !== 'all';
+        if (shouldResetFilter) {
+          updateConversationFilterMode('all', { render: false });
+        }
+        if (shouldResetSearch || shouldResetFilter) {
           updateConversationSearch('');
           window.setTimeout(() => {
             focusCurrentConversationInList();
@@ -2425,6 +2495,11 @@
           setChatAutoFollow(false);
           targetHeading.scrollIntoView({ block: 'center', behavior: 'smooth' });
         }
+        return;
+      }
+      const clearRecentTemplatesButton = event.target.closest('[data-template-recent-clear]');
+      if (clearRecentTemplatesButton) {
+        clearRecentTemplates(clearRecentTemplatesButton.dataset.templateRecentClear);
         return;
       }
       const conversationButton = event.target.closest('[data-conversation-id]');
@@ -3597,6 +3672,34 @@
       </button>
     `).join('');
     outline.removeAttribute('hidden');
+    syncChatReadingOutlineActiveTarget();
+  }
+
+  function syncChatReadingOutlineActiveTarget() {
+    const container = $('chat-messages');
+    if (!container) return;
+    const headings = Array.from(container.querySelectorAll('.message-body h1[id], .message-body h2[id], .message-body h3[id]'));
+    if (!headings.length) {
+      document.querySelectorAll('[data-chat-outline-target]').forEach(button => {
+        button.classList.remove('is-active');
+      });
+      return;
+    }
+
+    const containerRect = container.getBoundingClientRect();
+    let activeHeading = headings[0];
+    const threshold = containerRect.top + 88;
+
+    headings.forEach(heading => {
+      const rect = heading.getBoundingClientRect();
+      if (rect.top <= threshold) {
+        activeHeading = heading;
+      }
+    });
+
+    document.querySelectorAll('[data-chat-outline-target]').forEach(button => {
+      button.classList.toggle('is-active', button.dataset.chatOutlineTarget === activeHeading.id);
+    });
   }
 
   function buildChatAssistantActions(message) {
@@ -4668,6 +4771,9 @@
     });
     $('chat-input')?.addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.ctrlKey && !e.shiftKey && !e.altKey) { e.preventDefault(); sendChatMessage(); }
+    });
+    $('chat-messages')?.addEventListener('scroll', () => {
+      syncChatReadingOutlineActiveTarget();
     });
 
     // Custom dropdown for chat model

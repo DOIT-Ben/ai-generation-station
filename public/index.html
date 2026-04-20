@@ -634,6 +634,12 @@
               <button class="btn btn-secondary btn-chat-new" id="btn-chat-new-conversation" type="button">新建对话</button>
             </div>
             <div class="chat-search-shell">
+              <div class="chat-filter-bar" id="chat-filter-bar">
+                <button type="button" class="chat-filter-chip is-active" data-chat-filter="all">全部</button>
+                <button type="button" class="chat-filter-chip" data-chat-filter="current">当前</button>
+                <button type="button" class="chat-filter-chip" data-chat-filter="blank">空白</button>
+                <button type="button" class="chat-filter-chip" data-chat-filter="today">今日活跃</button>
+              </div>
               <input
                 id="chat-conversation-search"
                 class="chat-search-input"
