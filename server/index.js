@@ -15,7 +15,14 @@ const { createLocalRoutes } = require('./routes/local');
 const { createServiceRoutes } = require('./routes/service');
 const { createTaskRoutes } = require('./routes/tasks');
 const { createStateRoutes } = require('./routes/state');
+const { createSystemRoutes } = require('./routes/system');
 const { createStateStore } = require('./state-store');
+const { createNotificationService } = require('./lib/notifications');
+const {
+    applySecurityHeaders,
+    applyCorsHeaders,
+    getRequestProtocol
+} = require('./lib/request-security');
 
 function createServer(options = {}) {
     const config = options.config || createConfig(options);
@@ -28,13 +35,26 @@ function createServer(options = {}) {
         API_KEY,
         APP_USERNAME,
         APP_PASSWORD,
+        APP_BASE_URL,
         SESSION_COOKIE_NAME,
         SESSION_TTL_MS,
+        SESSION_COOKIE_SECURE,
+        SESSION_COOKIE_SAME_SITE,
+        PUBLIC_REGISTRATION_ENABLED,
         APP_STATE_DB,
         LEGACY_STATE_FILE,
         MAX_HISTORY_ITEMS,
+        SECURITY_RATE_LIMITS,
+        TRUST_PROXY,
+        ALLOWED_ORIGINS,
+        HEALTHCHECK_PATH,
+        CONTENT_SECURITY_POLICY,
+        NOTIFICATION_DELIVERY_MODE,
+        NOTIFICATION_FROM_EMAIL,
+        RESEND_API_KEY,
         MIME_TYPES
     } = config;
+    const startedAt = Date.now();
 
     const musicTasks = new Map();
     const imageTasks = new Map();
@@ -61,14 +81,35 @@ function createServer(options = {}) {
             // Do not fail the user request if usage tracking has issues.
         }
     };
+    const notificationService = options.notificationService || createNotificationService({
+        mode: NOTIFICATION_DELIVERY_MODE,
+        appBaseUrl: APP_BASE_URL,
+        fromEmail: NOTIFICATION_FROM_EMAIL,
+        resendApiKey: RESEND_API_KEY,
+        fetchImpl: options.notificationFetch
+    });
 
     const statefulRoutes = {
+        ...createSystemRoutes({
+            stateStore,
+            healthcheckPath: HEALTHCHECK_PATH,
+            startedAt
+        }),
         ...createStateRoutes({
             stateStore,
             sessionCookieName: SESSION_COOKIE_NAME,
             authConfig: {
                 username: APP_USERNAME,
                 password: APP_PASSWORD
+            },
+            notificationService,
+            securityConfig: {
+                rateLimits: SECURITY_RATE_LIMITS,
+                trustProxy: TRUST_PROXY,
+                allowedOrigins: ALLOWED_ORIGINS,
+                publicRegistrationEnabled: PUBLIC_REGISTRATION_ENABLED,
+                sessionCookieSecure: SESSION_COOKIE_SECURE,
+                sessionCookieSameSite: SESSION_COOKIE_SAME_SITE
             }
         }),
         ...createLocalRoutes({ OUTPUT_DIR, MIME_TYPES, musicTasks, coverTasks, imageTasks, stateStore }),
@@ -77,13 +118,27 @@ function createServer(options = {}) {
     };
 
     const server = http.createServer(async (req, res) => {
-        res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        const parsedUrl = url.parse(req.url, true);
+        const requestProtocol = getRequestProtocol(req, { trustProxy: TRUST_PROXY });
+        applySecurityHeaders(res, {
+            requestProtocol,
+            contentSecurityPolicy: CONTENT_SECURITY_POLICY
+        });
+        const corsDecision = applyCorsHeaders(req, res, {
+            trustProxy: TRUST_PROXY,
+            allowedOrigins: ALLOWED_ORIGINS
+        });
+
+        if (parsedUrl.pathname.startsWith('/api/') && !corsDecision.allowed) {
+            sendJson(res, 403, {
+                error: '当前来源不被允许访问该接口',
+                reason: 'origin_not_allowed'
+            });
+            return;
+        }
 
         if (req.method === 'OPTIONS') {
-            res.writeHead(200);
+            res.writeHead(corsDecision.allowed ? 204 : 403);
             res.end();
             return;
         }
@@ -91,8 +146,6 @@ function createServer(options = {}) {
         const cookies = parseCookies(req.headers.cookie || '');
         const sessionToken = cookies[SESSION_COOKIE_NAME];
         req.authSession = stateStore.getSession(sessionToken);
-
-        const parsedUrl = url.parse(req.url, true);
         const { handler, matchedRoute } = matchRoute(parsedUrl.pathname, statefulRoutes);
 
         if (handler) {

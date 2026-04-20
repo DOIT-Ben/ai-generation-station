@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>管理后台 | AI 内容生成站</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div id="portal-user-nav"></div>
+
+  <div class="theme-toggle-fixed">
+    <button class="theme-btn" id="theme-toggle" type="button" aria-label="切换主题" data-tip="深色模式">
+      <span class="sun-icon">☀️</span>
+      <span class="moon-icon">🌙</span>
+    </button>
+  </div>
+
+  <div class="portal-page-shell">
+    <main class="portal-layout portal-layout--stacked">
+      <section class="portal-surface-card">
+        <div class="portal-copy-stack">
+          <div class="portal-eyebrow">Admin Console</div>
+          <h1>工作台做创作，后台做管理。</h1>
+          <p class="portal-lead">这里专门处理用户创建、密码重置、邀请激活和审计日志。普通成员不进入这个页面，工作台也不再承载这些重操作。</p>
+        </div>
+      </section>
+
+      <section class="portal-grid-main">
+        <article class="feature-card">
+          <div class="section-header">
+            <h1><span class="icon">➕</span> 创建用户</h1>
+            <p>为真实成员创建账号，并决定初始角色与套餐。</p>
+          </div>
+          <form id="admin-create-user-form" class="admin-form">
+            <div class="admin-form-grid">
+              <label>用户名<input id="admin-create-username" type="text" maxlength="32" placeholder="例如：alice" autocomplete="off" /></label>
+              <label>邮箱<input id="admin-create-email" type="email" maxlength="254" placeholder="例如：alice@example.com" autocomplete="off" /></label>
+              <label>显示名<input id="admin-create-display-name" type="text" maxlength="32" placeholder="可选，默认同用户名" autocomplete="off" /></label>
+              <label>初始密码<input id="admin-create-password" type="password" maxlength="64" placeholder="至少 8 位" autocomplete="new-password" /></label>
+              <label>角色
+                <select id="admin-create-role">
+                  <option value="user">普通成员</option>
+                  <option value="admin">管理员</option>
+                </select>
+              </label>
+              <label>套餐
+                <select id="admin-create-plan">
+                  <option value="free">Free</option>
+                  <option value="pro">Pro</option>
+                </select>
+              </label>
+            </div>
+            <div id="admin-create-user-feedback" class="admin-form-feedback" hidden></div>
+            <div class="admin-form-actions">
+              <button class="btn btn-primary" type="submit">创建账号</button>
+            </div>
+          </form>
+        </article>
+
+        <article class="feature-card">
+          <div class="section-header">
+            <h1><span class="icon">🔁</span> 重置密码</h1>
+            <p>为指定账号设置临时密码。目标账号下次登录后需要先改密。</p>
+          </div>
+          <form id="admin-reset-password-form" class="admin-form">
+            <div class="admin-form-grid">
+              <label>目标用户
+                <select id="admin-reset-user-id">
+                  <option value="">请选择用户</option>
+                </select>
+              </label>
+              <label>新密码<input id="admin-reset-password" type="password" maxlength="64" placeholder="至少 8 位" autocomplete="new-password" /></label>
+            </div>
+            <div id="admin-reset-password-feedback" class="admin-form-feedback" hidden></div>
+            <div class="admin-form-actions">
+              <button class="btn btn-secondary" type="submit">重置密码</button>
+            </div>
+          </form>
+        </article>
+      </section>
+
+      <section class="portal-grid-main">
+        <article class="feature-card">
+          <div class="section-header">
+            <h1><span class="icon">👥</span> 用户列表</h1>
+            <p>继续维护状态、角色、套餐、邮箱和邀请状态，并支持一键跳转重置密码。</p>
+          </div>
+          <div id="admin-user-list" class="history-list"></div>
+          <div id="admin-user-empty" class="history-empty">当前没有可管理的用户。</div>
+          <div id="admin-invite-feedback" class="admin-form-feedback" hidden></div>
+        </article>
+
+        <article class="feature-card">
+          <div class="section-header">
+            <h1><span class="icon">📜</span> 审计日志</h1>
+            <p>记录创建用户、禁用、角色变更、密码重置和邀请动作。</p>
+          </div>
+          <form id="admin-audit-form" class="admin-form">
+            <div class="admin-form-grid">
+              <label>动作
+                <select id="admin-audit-action">
+                  <option value="">全部动作</option>
+                  <option value="user_create">创建用户</option>
+                  <option value="user_disable">禁用用户</option>
+                  <option value="user_role_change">角色变更</option>
+                  <option value="user_password_reset">密码重置</option>
+                  <option value="user_invite_issue">签发邀请</option>
+                  <option value="user_invite_resend">重发邀请</option>
+                  <option value="user_invite_revoke">撤销邀请</option>
+                  <option value="user_public_register">公开注册</option>
+                </select>
+              </label>
+              <label>操作者<input id="admin-audit-actor" type="text" maxlength="32" placeholder="按操作者筛选" autocomplete="off" /></label>
+              <label>目标用户<input id="admin-audit-target" type="text" maxlength="32" placeholder="按目标用户筛选" autocomplete="off" /></label>
+              <label>开始日期<input id="admin-audit-from" type="date" /></label>
+              <label>结束日期<input id="admin-audit-to" type="date" /></label>
+            </div>
+            <div class="admin-form-actions">
+              <button class="btn btn-secondary" type="submit">筛选日志</button>
+              <button class="btn btn-reset" id="admin-audit-reset" type="button">重置筛选</button>
+            </div>
+          </form>
+          <div id="admin-audit-summary" class="history-empty">正在准备审计日志…</div>
+          <div class="audit-log-table-wrap">
+            <table class="audit-log-table" aria-label="管理员审计日志">
+              <thead>
+                <tr>
+                  <th>时间</th>
+                  <th>动作</th>
+                  <th>操作者</th>
+                  <th>目标账号</th>
+                  <th>来源</th>
+                  <th>详情</th>
+                </tr>
+              </thead>
+              <tbody id="admin-audit-table-body">
+                <tr>
+                  <td colspan="6" class="audit-log-empty">正在加载审计日志…</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="audit-log-pagination">
+            <button class="btn btn-reset" id="admin-audit-prev" type="button">上一页</button>
+            <span id="admin-audit-page-label">第 1 页</span>
+            <button class="btn btn-reset" id="admin-audit-next" type="button">下一页</button>
+          </div>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="/js/app-shell.js"></script>
+  <script src="/js/site-shell.js"></script>
+  <script src="/js/admin-page.js"></script>
+</body>
+</html>

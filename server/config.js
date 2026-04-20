@@ -1,6 +1,12 @@
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+const {
+    parseBooleanFlag,
+    parseOriginList,
+    normalizeSameSite,
+    buildDefaultContentSecurityPolicy
+} = require('./lib/request-security');
 
 const ROOT_DIR = path.join(__dirname, '..');
 const PUBLIC_DIR = path.join(ROOT_DIR, 'public');
@@ -49,6 +55,12 @@ function getConfigValue(env, localConfig, key, fallback) {
     return fallback;
 }
 
+function getPositiveNumberConfig(env, localConfig, key, fallback) {
+    const raw = getConfigValue(env, localConfig, key, fallback);
+    const value = Number(raw);
+    return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
 function createConfig(options = {}) {
     const env = options.env || process.env;
     const localConfig = loadLocalConfig();
@@ -57,8 +69,12 @@ function createConfig(options = {}) {
     const API_KEY = getConfigValue(env, localConfig, 'MINIMAX_API_KEY', '') || '';
     const APP_USERNAME = getConfigValue(env, localConfig, 'APP_USERNAME', 'studio');
     const APP_PASSWORD = getConfigValue(env, localConfig, 'APP_PASSWORD', 'AIGS2026!');
+    const APP_BASE_URL = String(getConfigValue(env, localConfig, 'APP_BASE_URL', `http://localhost:${PORT}`) || `http://localhost:${PORT}`).trim() || `http://localhost:${PORT}`;
     const SESSION_COOKIE_NAME = getConfigValue(env, localConfig, 'SESSION_COOKIE_NAME', 'aigs_session');
     const SESSION_TTL_MS = Number(getConfigValue(env, localConfig, 'SESSION_TTL_MS', 7 * 24 * 60 * 60 * 1000));
+    const SESSION_COOKIE_SECURE = parseBooleanFlag(getConfigValue(env, localConfig, 'SESSION_COOKIE_SECURE', ''), false);
+    const SESSION_COOKIE_SAME_SITE = normalizeSameSite(getConfigValue(env, localConfig, 'SESSION_COOKIE_SAME_SITE', 'Lax'));
+    const PUBLIC_REGISTRATION_ENABLED = parseBooleanFlag(getConfigValue(env, localConfig, 'PUBLIC_REGISTRATION_ENABLED', 'true'), true);
     const APP_STATE_DB = path.isAbsolute(getConfigValue(env, localConfig, 'APP_STATE_DB', ''))
         ? getConfigValue(env, localConfig, 'APP_STATE_DB', '')
         : path.join(DATA_DIR, getConfigValue(env, localConfig, 'APP_STATE_DB', 'app-state.sqlite'));
@@ -66,6 +82,37 @@ function createConfig(options = {}) {
         ? getConfigValue(env, localConfig, 'APP_STATE_FILE', '')
         : path.join(DATA_DIR, getConfigValue(env, localConfig, 'APP_STATE_FILE', 'app-state.json'));
     const MAX_HISTORY_ITEMS = Number(getConfigValue(env, localConfig, 'MAX_HISTORY_ITEMS', 12));
+    const SECURITY_RATE_LIMITS = {
+        login: {
+            max: getPositiveNumberConfig(env, localConfig, 'LOGIN_RATE_LIMIT_MAX', 30),
+            windowMs: getPositiveNumberConfig(env, localConfig, 'LOGIN_RATE_LIMIT_WINDOW_MS', 5 * 60 * 1000)
+        },
+        forgotPassword: {
+            max: getPositiveNumberConfig(env, localConfig, 'FORGOT_PASSWORD_RATE_LIMIT_MAX', 6),
+            windowMs: getPositiveNumberConfig(env, localConfig, 'FORGOT_PASSWORD_RATE_LIMIT_WINDOW_MS', 10 * 60 * 1000)
+        },
+        publicRegister: {
+            max: getPositiveNumberConfig(env, localConfig, 'PUBLIC_REGISTER_RATE_LIMIT_MAX', 6),
+            windowMs: getPositiveNumberConfig(env, localConfig, 'PUBLIC_REGISTER_RATE_LIMIT_WINDOW_MS', 10 * 60 * 1000)
+        },
+        adminUserCreate: {
+            max: getPositiveNumberConfig(env, localConfig, 'ADMIN_CREATE_USER_RATE_LIMIT_MAX', 6),
+            windowMs: getPositiveNumberConfig(env, localConfig, 'ADMIN_CREATE_USER_RATE_LIMIT_WINDOW_MS', 10 * 60 * 1000)
+        },
+        adminPasswordReset: {
+            max: getPositiveNumberConfig(env, localConfig, 'ADMIN_PASSWORD_RESET_RATE_LIMIT_MAX', 10),
+            windowMs: getPositiveNumberConfig(env, localConfig, 'ADMIN_PASSWORD_RESET_RATE_LIMIT_WINDOW_MS', 10 * 60 * 1000)
+        }
+    };
+    const TRUST_PROXY = parseBooleanFlag(getConfigValue(env, localConfig, 'TRUST_PROXY', ''), false);
+    const ALLOWED_ORIGINS = parseOriginList(getConfigValue(env, localConfig, 'ALLOWED_ORIGINS', ''));
+    const HEALTHCHECK_PATH = String(getConfigValue(env, localConfig, 'HEALTHCHECK_PATH', '/api/health') || '/api/health').trim() || '/api/health';
+    const CONTENT_SECURITY_POLICY = String(
+        getConfigValue(env, localConfig, 'CONTENT_SECURITY_POLICY', buildDefaultContentSecurityPolicy())
+    ).trim() || buildDefaultContentSecurityPolicy();
+    const NOTIFICATION_DELIVERY_MODE = String(getConfigValue(env, localConfig, 'NOTIFICATION_DELIVERY_MODE', 'local_preview') || 'local_preview').trim().toLowerCase() || 'local_preview';
+    const NOTIFICATION_FROM_EMAIL = String(getConfigValue(env, localConfig, 'NOTIFICATION_FROM_EMAIL', '') || '').trim();
+    const RESEND_API_KEY = String(getConfigValue(env, localConfig, 'RESEND_API_KEY', '') || '').trim();
 
     if (!fs.existsSync(DATA_DIR)) {
         fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -78,6 +125,9 @@ function createConfig(options = {}) {
     if (!API_KEY) {
         console.warn('[Config] MINIMAX_API_KEY is not configured. API generation routes will return a configuration error.');
     }
+    if (NOTIFICATION_DELIVERY_MODE === 'resend' && (!NOTIFICATION_FROM_EMAIL || !RESEND_API_KEY)) {
+        console.warn('[Config] Resend email delivery is enabled but NOTIFICATION_FROM_EMAIL or RESEND_API_KEY is missing.');
+    }
 
     return {
         ROOT_DIR,
@@ -89,11 +139,23 @@ function createConfig(options = {}) {
         DATA_DIR,
         APP_USERNAME,
         APP_PASSWORD,
+        APP_BASE_URL,
         SESSION_COOKIE_NAME,
         SESSION_TTL_MS,
+        SESSION_COOKIE_SECURE,
+        SESSION_COOKIE_SAME_SITE,
+        PUBLIC_REGISTRATION_ENABLED,
         APP_STATE_DB,
         LEGACY_STATE_FILE,
         MAX_HISTORY_ITEMS,
+        SECURITY_RATE_LIMITS,
+        TRUST_PROXY,
+        ALLOWED_ORIGINS,
+        HEALTHCHECK_PATH,
+        CONTENT_SECURITY_POLICY,
+        NOTIFICATION_DELIVERY_MODE,
+        NOTIFICATION_FROM_EMAIL,
+        RESEND_API_KEY,
         MIME_TYPES
     };
 }

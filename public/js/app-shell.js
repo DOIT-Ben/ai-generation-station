@@ -224,6 +224,27 @@
     }
   }
 
+  function normalizeConversationTitle(title) {
+    const normalized = String(title || '').replace(/\s+/g, ' ').trim();
+    if (!normalized) return '新对话';
+    return normalized.length > 48 ? `${normalized.slice(0, 48)}...` : normalized;
+  }
+
+  function filterConversationSummaries(items, query) {
+    const collection = Array.isArray(items) ? items.slice() : [];
+    const normalizedQuery = String(query || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (!normalizedQuery) return collection;
+
+    const terms = normalizedQuery.split(' ').filter(Boolean);
+    return collection.filter(item => {
+      const haystack = [
+        item?.title || '',
+        item?.model || ''
+      ].join(' ').toLowerCase();
+      return terms.every(term => haystack.includes(term));
+    });
+  }
+
   function createPersistence(storage) {
     return {
       loadSession() {
@@ -253,12 +274,21 @@
       saveConversations(username, conversations) {
         storage.setItem(buildKey(['conversations', username]), JSON.stringify(conversations || []));
       },
+      getArchivedConversations(username) {
+        return safeParse(storage.getItem(buildKey(['archived-conversations', username])), []);
+      },
+      listArchivedConversations(username) {
+        return this.getArchivedConversations(username);
+      },
+      saveArchivedConversations(username, conversations) {
+        storage.setItem(buildKey(['archived-conversations', username]), JSON.stringify(conversations || []));
+      },
       createConversation(username, payload = {}) {
         const now = Date.now();
         const existing = this.getConversations(username);
         const conversation = {
           id: `conv-${now}`,
-          title: payload.title || 'New Chat',
+          title: normalizeConversationTitle(payload.title || '新对话'),
           model: payload.model || 'MiniMax-M2.7',
           messageCount: 0,
           lastMessageAt: null,
@@ -277,16 +307,152 @@
       },
       saveConversationMessages(username, conversationId, messages) {
         storage.setItem(buildKey(['conversation-messages', username, conversationId]), JSON.stringify(messages || []));
+      },
+      updateConversation(username, conversationId, patch = {}) {
+        const conversations = this.getConversations(username);
+        const existing = conversations.find(item => item.id === conversationId);
+        if (!existing) return { conversation: null };
+
+        const updated = {
+          ...existing,
+          title: Object.prototype.hasOwnProperty.call(patch, 'title')
+            ? normalizeConversationTitle(patch.title)
+            : existing.title,
+          model: Object.prototype.hasOwnProperty.call(patch, 'model') && String(patch.model || '').trim()
+            ? String(patch.model || '').trim()
+            : existing.model,
+          updatedAt: Date.now()
+        };
+
+        this.saveConversations(username, conversations.map(item => item.id === conversationId ? updated : item));
+        return { conversation: updated };
+      },
+      archiveConversation(username, conversationId) {
+        const conversations = this.getConversations(username);
+        const archived = conversations.find(item => item.id === conversationId);
+        const archivedConversations = this.getArchivedConversations(username);
+        const remaining = conversations.filter(item => item.id !== conversationId);
+        const archivedItem = archived
+          ? {
+              ...archived,
+              archivedAt: Date.now(),
+              updatedAt: Date.now()
+            }
+          : null;
+        this.saveConversations(username, remaining);
+        if (archivedItem) {
+          this.saveArchivedConversations(username, [archivedItem].concat(archivedConversations.filter(item => item.id !== archivedItem.id)));
+        }
+        return {
+          archivedConversationId: archived?.id || conversationId,
+          archivedConversation: archivedItem,
+          conversations: remaining,
+          archivedConversations: archivedItem
+            ? [archivedItem].concat(archivedConversations.filter(item => item.id !== archivedItem.id))
+            : archivedConversations
+        };
+      },
+      restoreConversation(username, conversationId) {
+        const conversations = this.getConversations(username);
+        const archivedConversations = this.getArchivedConversations(username);
+        const archived = archivedConversations.find(item => item.id === conversationId);
+        if (!archived) {
+          return { conversation: null, conversations, archivedConversations };
+        }
+
+        const restoredConversation = {
+          ...archived,
+          archivedAt: null,
+          updatedAt: Date.now()
+        };
+        const nextArchivedConversations = archivedConversations.filter(item => item.id !== conversationId);
+        const nextConversations = [restoredConversation].concat(conversations.filter(item => item.id !== conversationId));
+
+        this.saveConversations(username, nextConversations);
+        this.saveArchivedConversations(username, nextArchivedConversations);
+
+        return {
+          conversation: restoredConversation,
+          conversations: nextConversations,
+          archivedConversations: nextArchivedConversations
+        };
+      },
+      deleteArchivedConversation(username, conversationId) {
+        const conversations = this.getConversations(username);
+        const archivedConversations = this.getArchivedConversations(username);
+        const archived = archivedConversations.find(item => item.id === conversationId);
+        if (!archived) {
+          return {
+            deletedConversation: null,
+            deletedConversationId: conversationId,
+            conversations,
+            archivedConversations
+          };
+        }
+
+        const nextArchivedConversations = archivedConversations.filter(item => item.id !== conversationId);
+        this.saveArchivedConversations(username, nextArchivedConversations);
+
+        return {
+          deletedConversation: archived,
+          deletedConversationId: conversationId,
+          conversations,
+          archivedConversations: nextArchivedConversations
+        };
       }
     };
   }
 
   function createRemotePersistence(fetchImpl) {
+    function notifyAuthExpired(detail) {
+      if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
+      const eventDetail = detail || {};
+      if (typeof window.CustomEvent === 'function') {
+        window.dispatchEvent(new window.CustomEvent('app-auth-expired', { detail: eventDetail }));
+        return;
+      }
+      if (typeof CustomEvent === 'function') {
+        window.dispatchEvent(new CustomEvent('app-auth-expired', { detail: eventDetail }));
+        return;
+      }
+      window.dispatchEvent({ type: 'app-auth-expired', detail: eventDetail });
+    }
+
+    function notifyPasswordResetRequired(detail) {
+      if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
+      const eventDetail = detail || {};
+      if (typeof window.CustomEvent === 'function') {
+        window.dispatchEvent(new window.CustomEvent('app-password-reset-required', { detail: eventDetail }));
+        return;
+      }
+      if (typeof CustomEvent === 'function') {
+        window.dispatchEvent(new CustomEvent('app-password-reset-required', { detail: eventDetail }));
+        return;
+      }
+      window.dispatchEvent({ type: 'app-password-reset-required', detail: eventDetail });
+    }
+
     async function parseResponse(response) {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         const error = new Error(data.error || `HTTP ${response.status}`);
         error.status = response.status;
+        error.reason = data.reason || null;
+        error.user = data.user || null;
+        if (response.status === 401) {
+          notifyAuthExpired({
+            status: response.status,
+            reason: data.reason || 'session_expired',
+            message: data.error || '登录状态已失效，请重新登录'
+          });
+        } else if (response.status === 403 && data.reason === 'password_reset_required') {
+          notifyPasswordResetRequired({
+            status: response.status,
+            reason: data.reason,
+            message: data.error || '请先修改临时密码后再继续使用',
+            user: data.user || null
+          });
+        }
         throw error;
       }
       return data;
@@ -313,6 +479,17 @@
         return data.user || null;
       },
 
+      async register(payload) {
+        const response = await fetchImpl('/api/auth/register', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload || {})
+        });
+        const data = await parseResponse(response);
+        return data.user || null;
+      },
+
       async logout() {
         const response = await fetchImpl('/api/auth/logout', {
           method: 'POST',
@@ -320,6 +497,74 @@
           headers: { 'Content-Type': 'application/json' }
         });
         await parseResponse(response);
+      },
+
+      async changePassword(payload) {
+        const response = await fetchImpl('/api/auth/change-password', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await parseResponse(response);
+        return {
+          user: data.user || null,
+          sessionRetained: Boolean(data.sessionRetained)
+        };
+      },
+
+      async getInvitationSession(token) {
+        const params = new URLSearchParams();
+        if (token != null && token !== '') params.set('token', String(token));
+        const response = await fetchImpl(`/api/auth/invitation?${params.toString()}`, {
+          credentials: 'same-origin'
+        });
+        return parseResponse(response);
+      },
+
+      async activateInvitation(token, password) {
+        const response = await fetchImpl('/api/auth/invitation/activate', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token, password })
+        });
+        const data = await parseResponse(response);
+        return {
+          user: data.user || null
+        };
+      },
+
+      async requestPasswordReset(username) {
+        const response = await fetchImpl('/api/auth/forgot-password', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username })
+        });
+        return parseResponse(response);
+      },
+
+      async getPasswordResetSession(token) {
+        const params = new URLSearchParams();
+        if (token != null && token !== '') params.set('token', String(token));
+        const response = await fetchImpl(`/api/auth/password-reset?${params.toString()}`, {
+          credentials: 'same-origin'
+        });
+        return parseResponse(response);
+      },
+
+      async completePasswordReset(token, password) {
+        const response = await fetchImpl('/api/auth/password-reset/complete', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token, password })
+        });
+        const data = await parseResponse(response);
+        return {
+          user: data.user || null
+        };
       },
 
       async getHistory(username, feature) {
@@ -393,6 +638,59 @@
         return data.users || [];
       },
 
+      async getAdminAuditLogs(query = {}) {
+        const params = new URLSearchParams();
+        Object.entries(query || {}).forEach(([key, value]) => {
+          if (value == null || value === '') return;
+          params.set(key, String(value));
+        });
+        const response = await fetchImpl(`/api/admin/audit-logs${params.toString() ? `?${params.toString()}` : ''}`, {
+          credentials: 'same-origin'
+        });
+        return parseResponse(response);
+      },
+
+      async issueAdminInvitation(userId) {
+        const response = await fetchImpl(`/api/admin/users/${userId}/invite`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
+        return parseResponse(response);
+      },
+
+      async resendAdminInvitation(userId) {
+        const response = await fetchImpl(`/api/admin/users/${userId}/invite-resend`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
+        return parseResponse(response);
+      },
+
+      async revokeAdminInvitation(userId) {
+        const response = await fetchImpl(`/api/admin/users/${userId}/invite-revoke`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
+        return parseResponse(response);
+      },
+
+      async createAdminUser(payload) {
+        const response = await fetchImpl('/api/admin/users', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await parseResponse(response);
+        return data.user || null;
+      },
+
       async updateAdminUser(userId, patch) {
         const response = await fetchImpl(`/api/admin/users/${userId}`, {
           method: 'POST',
@@ -404,8 +702,28 @@
         return data.user || null;
       },
 
+      async resetAdminUserPassword(userId, password) {
+        const response = await fetchImpl(`/api/admin/users/${userId}/password`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password })
+        });
+        const data = await parseResponse(response);
+        return {
+          user: data.user || null,
+          sessionRetained: Boolean(data.sessionRetained)
+        };
+      },
+
       async getConversations() {
         const response = await fetchImpl('/api/conversations', { credentials: 'same-origin' });
+        const data = await parseResponse(response);
+        return data.conversations || [];
+      },
+
+      async listArchivedConversations() {
+        const response = await fetchImpl('/api/conversations/archived', { credentials: 'same-origin' });
         const data = await parseResponse(response);
         return data.conversations || [];
       },
@@ -433,6 +751,49 @@
         };
       },
 
+      async updateConversation(conversationId, patch = {}) {
+        const response = await fetchImpl(`/api/conversations/${conversationId}`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(patch)
+        });
+        const data = await parseResponse(response);
+        return {
+          conversation: data.conversation || null
+        };
+      },
+
+      async archiveConversation(conversationId) {
+        const response = await fetchImpl(`/api/conversations/${conversationId}/archive`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
+        return parseResponse(response);
+      },
+
+      async restoreConversation(conversationId) {
+        const response = await fetchImpl(`/api/conversations/${conversationId}/restore`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
+        return parseResponse(response);
+      },
+
+      async deleteArchivedConversation(conversationId) {
+        const response = await fetchImpl(`/api/conversations/${conversationId}/delete`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
+        return parseResponse(response);
+      },
+
       async sendChatMessage(payload) {
         const response = await fetchImpl('/api/chat', {
           method: 'POST',
@@ -452,6 +813,7 @@
     MAX_HISTORY_ITEMS,
     STORAGE_PREFIX,
     authenticate,
+    filterConversationSummaries,
     createMemoryStorage,
     createPersistence,
     createRemotePersistence

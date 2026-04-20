@@ -9,6 +9,10 @@ const authHistoryTest = require('./test-auth-history');
 const taskPersistenceTest = require('./test-task-persistence');
 const frontendStateTest = require('./test-frontend-state');
 const pageMarkupTest = require('./test-page-markup');
+const styleContractTest = require('./test-style-contract');
+const uiFlowSmokeTest = require('./test-ui-flow-smoke');
+const uiVisualTest = require('./test-ui-visual');
+const securityGatewayTest = require('./test-security-gateway');
 const musicRouteTest = require('./test-music-route');
 const voiceCoverRouteTest = require('./test-voice-cover-route');
 const lyricsTest = require('./test-lyrics');
@@ -20,13 +24,16 @@ const voiceCoverTest = require('./test-voice-cover');
 function parseArgs(argv) {
     const args = {
         port: 18797,
-        skipLive: false
+        skipLive: false,
+        skipBrowser: false
     };
 
     for (let i = 0; i < argv.length; i++) {
         const arg = argv[i];
         if (arg === '--skip-live') {
             args.skipLive = true;
+        } else if (arg === '--skip-browser') {
+            args.skipBrowser = true;
         } else if (arg === '--port' && argv[i + 1]) {
             args.port = Number(argv[i + 1]);
             i += 1;
@@ -109,7 +116,7 @@ async function getLivePreflight() {
 }
 
 async function main() {
-    const { port, skipLive } = parseArgs(process.argv.slice(2));
+    const { port, skipLive, skipBrowser } = parseArgs(process.argv.slice(2));
     const results = [];
 
     console.log('=================================');
@@ -117,9 +124,19 @@ async function main() {
     console.log('=================================');
     console.log(`Port: ${port}`);
     console.log(`Live API checks: ${skipLive ? 'skipped' : 'enabled'}`);
+    console.log(`Browser UI checks: ${skipBrowser ? 'skipped' : 'enabled'}`);
 
     await runCase(results, 'FrontendState', () => frontendStateTest.main());
     await runCase(results, 'PageMarkup', () => pageMarkupTest.main());
+    await runCase(results, 'StyleContract', () => styleContractTest.main());
+    if (skipBrowser) {
+        recordSkipped(results, 'UiFlowSmoke', 'Browser UI checks skipped by --skip-browser');
+        recordSkipped(results, 'UiVisualRegression', 'Browser UI checks skipped by --skip-browser');
+    } else {
+        await runCase(results, 'UiFlowSmoke', () => uiFlowSmokeTest.main({ port, launchServer: true }));
+        await runCase(results, 'UiVisualRegression', () => uiVisualTest.main({ port, launchServer: true }));
+    }
+    await runCase(results, 'SecurityGateway', () => securityGatewayTest.main());
     await runCase(results, 'AuthHistory', () => authHistoryTest.main());
     await runCase(results, 'TaskPersistence', () => taskPersistenceTest.main());
     await runCase(results, 'MusicRoute', () => musicRouteTest.main());

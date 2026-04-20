@@ -103,7 +103,7 @@ async function main() {
 
     await withMainServer(async () => {
         console.log('\nChecking main server state...');
-        const health = await makeRequest('/', 'GET');
+        const health = await makeRequest('/api/health', 'GET');
         if (health.status !== 200) {
             throw new Error(`Main server returned HTTP ${health.status}`);
         }

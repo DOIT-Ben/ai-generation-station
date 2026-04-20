@@ -14,3 +14,8 @@ data/*.sqlite
 data/*.sqlite-shm
 data/*.sqlite-wal
 data/config.enc
+test-artifacts/visual-current/
+test-artifacts/visual-diff/
+test-artifacts/performance/
+test-artifacts/
+docs/开发过程文档/

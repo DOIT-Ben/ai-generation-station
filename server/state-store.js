@@ -24,6 +24,14 @@ function verifyPassword(password, storedHash) {
     return crypto.timingSafeEqual(Buffer.from(actual, 'hex'), Buffer.from(expected, 'hex'));
 }
 
+function hashOpaqueToken(token) {
+    return crypto.createHash('sha256').update(String(token || '')).digest('hex');
+}
+
+function createOpaqueToken() {
+    return crypto.randomBytes(24).toString('hex');
+}
+
 function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItems, seedUser }) {
     const db = new DatabaseSync(dbPath);
     db.exec(`
@@ -74,6 +82,38 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
 
         CREATE INDEX IF NOT EXISTS idx_user_sessions_lookup ON user_sessions (session_token_hash);
         CREATE INDEX IF NOT EXISTS idx_user_sessions_expires_at ON user_sessions (expires_at);
+
+        CREATE TABLE IF NOT EXISTS auth_tokens (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            purpose TEXT NOT NULL,
+            token_hash TEXT NOT NULL UNIQUE,
+            requested_identity TEXT,
+            created_by_user_id TEXT,
+            metadata_json TEXT,
+            created_at INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL,
+            used_at INTEGER,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+            FOREIGN KEY (created_by_user_id) REFERENCES users (id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_auth_tokens_lookup ON auth_tokens (purpose, token_hash);
+        CREATE INDEX IF NOT EXISTS idx_auth_tokens_user_purpose ON auth_tokens (user_id, purpose, expires_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_auth_tokens_expiry ON auth_tokens (expires_at);
+
+        CREATE TABLE IF NOT EXISTS rate_limit_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            rule_name TEXT NOT NULL,
+            bucket_key TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_rate_limit_events_lookup
+            ON rate_limit_events (rule_name, bucket_key, created_at ASC);
+        CREATE INDEX IF NOT EXISTS idx_rate_limit_events_expiry
+            ON rate_limit_events (expires_at);
 
         CREATE TABLE IF NOT EXISTS user_preferences (
             user_id TEXT PRIMARY KEY,
@@ -200,6 +240,27 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         );
 
         CREATE INDEX IF NOT EXISTS idx_tasks_feature_status ON tasks (feature, status, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS audit_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            action TEXT NOT NULL,
+            actor_user_id TEXT,
+            target_user_id TEXT,
+            actor_username TEXT,
+            target_username TEXT,
+            actor_role TEXT,
+            target_role TEXT,
+            actor_ip TEXT,
+            actor_user_agent TEXT,
+            details_json TEXT,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (actor_user_id) REFERENCES users (id) ON DELETE SET NULL,
+            FOREIGN KEY (target_user_id) REFERENCES users (id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs (created_at DESC, id DESC);
+        CREATE INDEX IF NOT EXISTS idx_audit_logs_action_created_at ON audit_logs (action, created_at DESC, id DESC);
+        CREATE INDEX IF NOT EXISTS idx_audit_logs_target_created_at ON audit_logs (target_user_id, created_at DESC, id DESC);
     `);
 
     const findUserByUsernameStmt = db.prepare(`
@@ -207,6 +268,12 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
                timezone, locale, last_login_at AS lastLoginAt, created_at AS createdAt, updated_at AS updatedAt
         FROM users
         WHERE username = ? AND deleted_at IS NULL
+    `);
+    const findUserByEmailStmt = db.prepare(`
+        SELECT id, username, email, display_name AS displayName, status, role, plan_code AS planCode,
+               timezone, locale, last_login_at AS lastLoginAt, created_at AS createdAt, updated_at AS updatedAt
+        FROM users
+        WHERE email = ? AND deleted_at IS NULL
     `);
     const findUserByIdStmt = db.prepare(`
         SELECT id, username, email, display_name AS displayName, status, role, plan_code AS planCode,
@@ -221,13 +288,18 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         WHERE deleted_at IS NULL
         ORDER BY created_at DESC, username ASC
     `);
+    const countActiveAdminsStmt = db.prepare(`
+        SELECT COUNT(*) AS count
+        FROM users
+        WHERE role = 'admin' AND status = 'active' AND deleted_at IS NULL
+    `);
     const insertUserStmt = db.prepare(`
         INSERT INTO users (id, username, email, display_name, status, role, plan_code, timezone, locale, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const updateUserAdminStmt = db.prepare(`
         UPDATE users
-        SET status = ?, role = ?, plan_code = ?, updated_at = ?
+        SET email = ?, status = ?, role = ?, plan_code = ?, updated_at = ?
         WHERE id = ? AND deleted_at IS NULL
     `);
     const updateUserLoginStmt = db.prepare(`
@@ -236,17 +308,20 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         WHERE id = ?
     `);
     const getCredentialStmt = db.prepare(`
-        SELECT user_id AS userId, password_hash AS passwordHash, failed_login_count AS failedLoginCount,
+        SELECT user_id AS userId, password_hash AS passwordHash, password_updated_at AS passwordUpdatedAt,
+               must_reset_password AS mustResetPassword, failed_login_count AS failedLoginCount,
                locked_until AS lockedUntil
         FROM user_credentials
         WHERE user_id = ?
     `);
     const upsertCredentialStmt = db.prepare(`
-        INSERT INTO user_credentials (user_id, password_hash, password_updated_at, failed_login_count, locked_until)
-        VALUES (?, ?, ?, 0, NULL)
+        INSERT INTO user_credentials (
+            user_id, password_hash, password_updated_at, must_reset_password, failed_login_count, locked_until
+        ) VALUES (?, ?, ?, ?, 0, NULL)
         ON CONFLICT(user_id) DO UPDATE SET
             password_hash = excluded.password_hash,
             password_updated_at = excluded.password_updated_at,
+            must_reset_password = excluded.must_reset_password,
             failed_login_count = 0,
             locked_until = NULL
     `);
@@ -314,7 +389,67 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         VALUES (?, ?, ?, ?, ?, ?)
     `);
     const deleteSessionStmt = db.prepare(`DELETE FROM user_sessions WHERE session_token_hash = ?`);
+    const deleteUserSessionsStmt = db.prepare(`DELETE FROM user_sessions WHERE user_id = ?`);
+    const deleteUserSessionsExceptStmt = db.prepare(`DELETE FROM user_sessions WHERE user_id = ? AND id <> ?`);
     const deleteExpiredSessionsStmt = db.prepare(`DELETE FROM user_sessions WHERE expires_at <= ? OR revoked_at IS NOT NULL`);
+    const findAuthTokenByHashStmt = db.prepare(`
+        SELECT id, user_id AS userId, purpose, requested_identity AS requestedIdentity,
+               created_by_user_id AS createdByUserId, metadata_json AS metadataJson,
+               created_at AS createdAt, expires_at AS expiresAt, used_at AS usedAt
+        FROM auth_tokens
+        WHERE purpose = ? AND token_hash = ?
+    `);
+    const findLatestAuthTokenByUserPurposeStmt = db.prepare(`
+        SELECT id, user_id AS userId, purpose, requested_identity AS requestedIdentity,
+               created_by_user_id AS createdByUserId, metadata_json AS metadataJson,
+               created_at AS createdAt, expires_at AS expiresAt, used_at AS usedAt
+        FROM auth_tokens
+        WHERE user_id = ? AND purpose = ?
+        ORDER BY created_at DESC
+        LIMIT 1
+    `);
+    const findActiveAuthTokenByUserPurposeStmt = db.prepare(`
+        SELECT id, user_id AS userId, purpose, requested_identity AS requestedIdentity,
+               created_by_user_id AS createdByUserId, metadata_json AS metadataJson,
+               created_at AS createdAt, expires_at AS expiresAt, used_at AS usedAt
+        FROM auth_tokens
+        WHERE user_id = ? AND purpose = ? AND used_at IS NULL AND expires_at > ?
+        ORDER BY created_at DESC
+        LIMIT 1
+    `);
+    const insertAuthTokenStmt = db.prepare(`
+        INSERT INTO auth_tokens (
+            id, user_id, purpose, token_hash, requested_identity, created_by_user_id,
+            metadata_json, created_at, expires_at, used_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+    `);
+    const markUserPurposeTokensUsedStmt = db.prepare(`
+        UPDATE auth_tokens
+        SET used_at = COALESCE(used_at, ?)
+        WHERE user_id = ? AND purpose = ? AND used_at IS NULL
+    `);
+    const markAuthTokenUsedStmt = db.prepare(`
+        UPDATE auth_tokens
+        SET used_at = ?
+        WHERE id = ? AND used_at IS NULL
+    `);
+    const deleteExpiredAuthTokensStmt = db.prepare(`
+        DELETE FROM auth_tokens
+        WHERE expires_at <= ? OR used_at IS NOT NULL
+    `);
+    const cleanupExpiredRateLimitEventsStmt = db.prepare(`
+        DELETE FROM rate_limit_events
+        WHERE expires_at <= ?
+    `);
+    const selectRateLimitWindowStmt = db.prepare(`
+        SELECT COUNT(*) AS count, MIN(created_at) AS oldestCreatedAt
+        FROM rate_limit_events
+        WHERE rule_name = ? AND bucket_key = ? AND created_at > ?
+    `);
+    const insertRateLimitEventStmt = db.prepare(`
+        INSERT INTO rate_limit_events (rule_name, bucket_key, created_at, expires_at)
+        VALUES (?, ?, ?, ?)
+    `);
 
     const selectHistoryStmt = db.prepare(`
         SELECT payload
@@ -342,16 +477,34 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
     const countHistoryStmt = db.prepare(`SELECT COUNT(*) AS count FROM user_history_entries`);
     const selectConversationByIdStmt = db.prepare(`
         SELECT id, user_id AS userId, feature, title, model, message_count AS messageCount,
-               last_message_at AS lastMessageAt, created_at AS createdAt, updated_at AS updatedAt
+               last_message_at AS lastMessageAt, created_at AS createdAt, updated_at AS updatedAt,
+               archived_at AS archivedAt
         FROM conversations
         WHERE id = ? AND user_id = ? AND archived_at IS NULL
     `);
+    const selectArchivedConversationByIdStmt = db.prepare(`
+        SELECT id, user_id AS userId, feature, title, model, message_count AS messageCount,
+               last_message_at AS lastMessageAt, created_at AS createdAt, updated_at AS updatedAt,
+               archived_at AS archivedAt
+        FROM conversations
+        WHERE id = ? AND user_id = ? AND archived_at IS NOT NULL
+    `);
     const listConversationsStmt = db.prepare(`
         SELECT id, user_id AS userId, feature, title, model, message_count AS messageCount,
-               last_message_at AS lastMessageAt, created_at AS createdAt, updated_at AS updatedAt
+               last_message_at AS lastMessageAt, created_at AS createdAt, updated_at AS updatedAt,
+               archived_at AS archivedAt
         FROM conversations
         WHERE user_id = ? AND archived_at IS NULL
         ORDER BY COALESCE(last_message_at, created_at) DESC, updated_at DESC
+        LIMIT ?
+    `);
+    const listArchivedConversationsStmt = db.prepare(`
+        SELECT id, user_id AS userId, feature, title, model, message_count AS messageCount,
+               last_message_at AS lastMessageAt, created_at AS createdAt, updated_at AS updatedAt,
+               archived_at AS archivedAt
+        FROM conversations
+        WHERE user_id = ? AND archived_at IS NOT NULL
+        ORDER BY archived_at DESC, updated_at DESC
         LIMIT ?
     `);
     const insertConversationStmt = db.prepare(`
@@ -363,6 +516,20 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         UPDATE conversations
         SET title = ?, model = ?, message_count = ?, last_message_at = ?, updated_at = ?
         WHERE id = ? AND user_id = ? AND archived_at IS NULL
+    `);
+    const archiveConversationStmt = db.prepare(`
+        UPDATE conversations
+        SET archived_at = ?, updated_at = ?
+        WHERE id = ? AND user_id = ? AND archived_at IS NULL
+    `);
+    const restoreConversationStmt = db.prepare(`
+        UPDATE conversations
+        SET archived_at = NULL, updated_at = ?
+        WHERE id = ? AND user_id = ? AND archived_at IS NOT NULL
+    `);
+    const deleteArchivedConversationStmt = db.prepare(`
+        DELETE FROM conversations
+        WHERE id = ? AND user_id = ? AND archived_at IS NOT NULL
     `);
     const listConversationMessagesStmt = db.prepare(`
         SELECT id, conversation_id AS conversationId, role, content, tokens_json AS tokensJson, created_at AS createdAt
@@ -455,6 +622,22 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
             updated_at = ?
         WHERE status IN ('pending', 'processing')
     `);
+    const insertAuditLogStmt = db.prepare(`
+        INSERT INTO audit_logs (
+            action, actor_user_id, target_user_id, actor_username, target_username,
+            actor_role, target_role, actor_ip, actor_user_agent, details_json, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const listAuditLogsStmt = db.prepare(`
+        SELECT id, action, actor_user_id AS actorUserId, target_user_id AS targetUserId,
+               actor_username AS actorUsername, target_username AS targetUsername,
+               actor_role AS actorRole, target_role AS targetRole, actor_ip AS actorIp,
+               actor_user_agent AS actorUserAgent, details_json AS detailsJson,
+               created_at AS createdAt
+        FROM audit_logs
+        ORDER BY created_at DESC, id DESC
+        LIMIT ?
+    `);
 
     function normalizeUserRecord(row) {
         if (!row) return null;
@@ -485,6 +668,18 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         };
     }
 
+    function normalizeCredentialRecord(row) {
+        if (!row) return null;
+        return {
+            userId: row.userId,
+            passwordHash: row.passwordHash,
+            passwordUpdatedAt: Number(row.passwordUpdatedAt || 0),
+            mustResetPassword: Boolean(row.mustResetPassword),
+            failedLoginCount: Number(row.failedLoginCount || 0),
+            lockedUntil: row.lockedUntil || null
+        };
+    }
+
     function normalizePreferences(row) {
         return {
             ...getDefaultPreferences(),
@@ -494,7 +689,7 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
 
     function buildConversationTitle(text) {
         const normalized = String(text || '').replace(/\s+/g, ' ').trim();
-        if (!normalized) return 'New Chat';
+        if (!normalized) return '新对话';
         return normalized.length > 48 ? `${normalized.slice(0, 48)}...` : normalized;
     }
 
@@ -504,12 +699,13 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
             id: row.id,
             userId: row.userId,
             feature: row.feature || 'chat',
-            title: row.title || 'New Chat',
+            title: row.title || '新对话',
             model: row.model || 'MiniMax-M2.7',
             messageCount: Number(row.messageCount || 0),
             lastMessageAt: row.lastMessageAt || null,
             createdAt: row.createdAt,
-            updatedAt: row.updatedAt
+            updatedAt: row.updatedAt,
+            archivedAt: row.archivedAt || null
         };
     }
 
@@ -546,6 +742,58 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
             updatedAt: row.updatedAt,
             inputPayload: safeParseJson(row.inputPayload, null),
             outputPayload: output
+        };
+    }
+
+    function normalizeAuditLog(row) {
+        if (!row) return null;
+        return {
+            id: Number(row.id),
+            action: row.action,
+            actorUserId: row.actorUserId || null,
+            targetUserId: row.targetUserId || null,
+            actorUsername: row.actorUsername || null,
+            targetUsername: row.targetUsername || null,
+            actorRole: row.actorRole || null,
+            targetRole: row.targetRole || null,
+            actorIp: row.actorIp || null,
+            actorUserAgent: row.actorUserAgent || null,
+            details: safeParseJson(row.detailsJson, {}) || {},
+            createdAt: Number(row.createdAt || 0)
+        };
+    }
+
+    function normalizeAuthTokenRecord(row) {
+        if (!row) return null;
+        return {
+            id: row.id,
+            userId: row.userId,
+            purpose: row.purpose,
+            requestedIdentity: row.requestedIdentity || null,
+            createdByUserId: row.createdByUserId || null,
+            metadata: safeParseJson(row.metadataJson, {}) || {},
+            createdAt: Number(row.createdAt || 0),
+            expiresAt: Number(row.expiresAt || 0),
+            usedAt: row.usedAt ? Number(row.usedAt) : null
+        };
+    }
+
+    function buildAuthTokenSummary(record, options = {}) {
+        if (!record) return null;
+        const now = Number(options.now || Date.now());
+        const status = options.status || (
+            record.usedAt ? 'used' : record.expiresAt > now ? 'active' : 'expired'
+        );
+        return {
+            id: record.id,
+            purpose: record.purpose,
+            requestedIdentity: record.requestedIdentity || null,
+            createdByUserId: record.createdByUserId || null,
+            createdAt: record.createdAt,
+            expiresAt: record.expiresAt,
+            usedAt: record.usedAt || null,
+            active: status === 'active',
+            status
         };
     }
 
@@ -590,6 +838,92 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         return Array.from(groups.values());
     }
 
+    function runInTransaction(work) {
+        db.exec('BEGIN');
+        try {
+            const result = work();
+            db.exec('COMMIT');
+            return result;
+        } catch (error) {
+            db.exec('ROLLBACK');
+            throw error;
+        }
+    }
+
+    function appendAuditLogRecord(event = {}) {
+        const action = String(event.action || '').trim();
+        if (!action) {
+            throw new Error('audit action is required');
+        }
+        const createdAt = Number(event.createdAt || Date.now());
+        insertAuditLogStmt.run(
+            action,
+            event.actorUserId || null,
+            event.targetUserId || null,
+            event.actorUsername || null,
+            event.targetUsername || null,
+            event.actorRole || null,
+            event.targetRole || null,
+            event.actorIp || null,
+            event.actorUserAgent || null,
+            JSON.stringify(event.details || {}),
+            createdAt
+        );
+        return {
+            action,
+            actorUserId: event.actorUserId || null,
+            targetUserId: event.targetUserId || null,
+            actorUsername: event.actorUsername || null,
+            targetUsername: event.targetUsername || null,
+            actorRole: event.actorRole || null,
+            targetRole: event.targetRole || null,
+            actorIp: event.actorIp || null,
+            actorUserAgent: event.actorUserAgent || null,
+            details: event.details || {},
+            createdAt
+        };
+    }
+
+    function buildAuditLogQuery(filters = {}) {
+        const where = [];
+        const params = [];
+
+        const action = String(filters.action || '').trim();
+        if (action) {
+            where.push('action = ?');
+            params.push(action);
+        }
+
+        const actorUsername = String(filters.actorUsername || '').trim().toLowerCase();
+        if (actorUsername) {
+            where.push('LOWER(COALESCE(actor_username, \'\')) LIKE ?');
+            params.push(`%${actorUsername}%`);
+        }
+
+        const targetUsername = String(filters.targetUsername || '').trim().toLowerCase();
+        if (targetUsername) {
+            where.push('LOWER(COALESCE(target_username, \'\')) LIKE ?');
+            params.push(`%${targetUsername}%`);
+        }
+
+        const createdFrom = Number(filters.createdFrom || 0);
+        if (Number.isFinite(createdFrom) && createdFrom > 0) {
+            where.push('created_at >= ?');
+            params.push(createdFrom);
+        }
+
+        const createdTo = Number(filters.createdTo || 0);
+        if (Number.isFinite(createdTo) && createdTo > 0) {
+            where.push('created_at <= ?');
+            params.push(createdTo);
+        }
+
+        return {
+            whereSql: where.length ? `WHERE ${where.join(' AND ')}` : '',
+            params
+        };
+    }
+
     function buildSystemTemplateSeed() {
         const library = AppShell.TEMPLATE_LIBRARY || {};
         const rows = [];
@@ -630,10 +964,13 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
                 now,
                 now
             );
-            upsertCredentialStmt.run(userId, hashPassword(seedUser.password), now);
+            upsertCredentialStmt.run(userId, hashPassword(seedUser.password), now, 0);
             return;
         }
-        upsertCredentialStmt.run(existing.id, hashPassword(seedUser.password), now);
+
+        if (!normalizeCredentialRecord(getCredentialStmt.get(existing.id))) {
+            upsertCredentialStmt.run(existing.id, hashPassword(seedUser.password), now, 0);
+        }
     }
 
     function migrateLegacyJsonIfNeeded() {
@@ -706,6 +1043,14 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         deleteExpiredSessionsStmt.run(Date.now());
     }
 
+    function cleanupAuthTokens(now = Date.now()) {
+        deleteExpiredAuthTokensStmt.run(now);
+    }
+
+    function cleanupExpiredRateLimitEvents(now = Date.now()) {
+        cleanupExpiredRateLimitEventsStmt.run(now);
+    }
+
     return {
         getUserByUsername(username) {
             return normalizeUserRecord(findUserByUsernameStmt.get(username));
@@ -715,11 +1060,19 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
             return normalizeUserRecord(findUserByIdStmt.get(userId));
         },
 
+        getUserByEmail(email) {
+            return normalizeUserRecord(findUserByEmailStmt.get(email));
+        },
+
         listUsers() {
             return listUsersStmt.all().map(row => normalizeUserRecord(row));
         },
 
-        createUser(user = {}) {
+        countActiveAdmins() {
+            return Number(countActiveAdminsStmt.get()?.count || 0);
+        },
+
+        createUser(user = {}, options = {}) {
             const username = String(user.username || '').trim();
             const password = String(user.password || '').trim();
             if (!username || !password) {
@@ -730,28 +1083,40 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
 
             const now = Date.now();
             const userId = crypto.randomUUID();
-            insertUserStmt.run(
-                userId,
-                username,
-                user.email || null,
-                user.displayName || username,
-                user.status || 'active',
-                user.role || 'user',
-                user.planCode || 'free',
-                user.timezone || 'Asia/Shanghai',
-                user.locale || 'zh-CN',
-                now,
-                now
-            );
-            upsertCredentialStmt.run(userId, hashPassword(password), now);
-            return this.getUserById(userId);
+            return runInTransaction(() => {
+                insertUserStmt.run(
+                    userId,
+                    username,
+                    user.email || null,
+                    user.displayName || username,
+                    user.status || 'active',
+                    user.role || 'user',
+                    user.planCode || 'free',
+                    user.timezone || 'Asia/Shanghai',
+                    user.locale || 'zh-CN',
+                    now,
+                    now
+                );
+                upsertCredentialStmt.run(userId, hashPassword(password), now, user.mustResetPassword ? 1 : 0);
+                const createdUser = this.getUserById(userId);
+                if (options.auditLog && createdUser) {
+                    appendAuditLogRecord({
+                        ...options.auditLog,
+                        targetUserId: options.auditLog.targetUserId || createdUser.id,
+                        targetUsername: options.auditLog.targetUsername || createdUser.username,
+                        targetRole: options.auditLog.targetRole || createdUser.role
+                    });
+                }
+                return createdUser;
+            });
         },
 
-        updateUser(userId, patch = {}) {
+        updateUser(userId, patch = {}, options = {}) {
             const current = this.getUserById(userId);
             if (!current) return null;
 
             const next = {
+                email: Object.prototype.hasOwnProperty.call(patch, 'email') ? (patch.email || null) : current.email,
                 status: patch.status || current.status,
                 role: patch.role || current.role,
                 planCode: patch.planCode || current.planCode
@@ -764,34 +1129,65 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
                 throw new Error('invalid role');
             }
 
-            updateUserAdminStmt.run(
-                next.status,
-                next.role,
-                next.planCode,
-                Date.now(),
-                userId
-            );
-            return this.getUserById(userId);
+            return runInTransaction(() => {
+                updateUserAdminStmt.run(
+                    next.email,
+                    next.status,
+                    next.role,
+                    next.planCode,
+                    Date.now(),
+                    userId
+                );
+                const updatedUser = this.getUserById(userId);
+                (options.auditLogs || []).filter(Boolean).forEach(event => {
+                    appendAuditLogRecord({
+                        ...event,
+                        targetUserId: event.targetUserId || updatedUser?.id || current.id,
+                        targetUsername: event.targetUsername || updatedUser?.username || current.username,
+                        targetRole: event.targetRole || updatedUser?.role || next.role
+                    });
+                });
+                return updatedUser;
+            });
         },
 
         authenticateUser(username, password) {
             const user = normalizeUserRecord(findUserByUsernameStmt.get(username));
-            if (!user || user.status !== 'active') return null;
-            const credential = getCredentialStmt.get(user.id);
+            if (!user) return null;
+            if (user.status !== 'active') {
+                return {
+                    errorCode: 'user_disabled',
+                    error: '账号已被禁用，请联系管理员',
+                    status: 403
+                };
+            }
+            const credential = normalizeCredentialRecord(getCredentialStmt.get(user.id));
             const now = Date.now();
             if (!credential) return null;
             if (credential.lockedUntil && credential.lockedUntil > now) {
-                return { error: '账号已被临时锁定，请稍后重试' };
+                return {
+                    errorCode: 'login_locked',
+                    error: '账号已被临时锁定，请 15 分钟后重试',
+                    status: 423
+                };
             }
             if (!verifyPassword(password, credential.passwordHash)) {
                 const failedCount = Number(credential.failedLoginCount || 0) + 1;
                 const lockedUntil = failedCount >= 5 ? now + 15 * 60 * 1000 : null;
                 setFailedLoginStmt.run(failedCount, lockedUntil, user.id);
+                if (lockedUntil) {
+                    return {
+                        errorCode: 'login_locked',
+                        error: '账号已被临时锁定，请 15 分钟后重试',
+                        status: 423
+                    };
+                }
                 return null;
             }
             setFailedLoginStmt.run(0, null, user.id);
             updateUserLoginStmt.run(now, now, user.id);
             user.lastLoginAt = now;
+            user.mustResetPassword = Boolean(credential.mustResetPassword);
             return user;
         },
 
@@ -818,8 +1214,249 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
             deleteSessionStmt.run(tokenHash);
         },
 
+        issueUserToken(userId, purpose, options = {}) {
+            const user = this.getUserById(userId);
+            if (!user) return null;
+
+            const ttlMs = Math.max(60 * 1000, Number(options.ttlMs || 60 * 60 * 1000));
+            return runInTransaction(() => {
+                const now = Date.now();
+                cleanupAuthTokens(now);
+                markUserPurposeTokensUsedStmt.run(now, userId, purpose);
+                const token = createOpaqueToken();
+                const expiresAt = now + ttlMs;
+                insertAuthTokenStmt.run(
+                    crypto.randomUUID(),
+                    userId,
+                    purpose,
+                    hashOpaqueToken(token),
+                    options.requestedIdentity || user.username,
+                    options.createdByUserId || null,
+                    JSON.stringify(options.metadata || {}),
+                    now,
+                    expiresAt
+                );
+                return {
+                    token,
+                    userId,
+                    purpose,
+                    requestedIdentity: options.requestedIdentity || user.username,
+                    metadata: options.metadata || {},
+                    createdAt: now,
+                    expiresAt
+                };
+            });
+        },
+
+        getUserToken(purpose, token) {
+            const rawToken = String(token || '').trim();
+            if (!rawToken) return null;
+            const now = Date.now();
+            cleanupAuthTokens(now);
+            const record = normalizeAuthTokenRecord(findAuthTokenByHashStmt.get(purpose, hashOpaqueToken(rawToken)));
+            if (!record || record.usedAt || record.expiresAt < now) {
+                return null;
+            }
+            const user = this.getUserById(record.userId);
+            if (!user) return null;
+            return {
+                ...record,
+                user
+            };
+        },
+
+        consumeUserToken(purpose, token) {
+            const rawToken = String(token || '').trim();
+            if (!rawToken) return null;
+            return runInTransaction(() => {
+                const now = Date.now();
+                cleanupAuthTokens(now);
+                const record = normalizeAuthTokenRecord(findAuthTokenByHashStmt.get(purpose, hashOpaqueToken(rawToken)));
+                if (!record || record.usedAt || record.expiresAt < now) {
+                    return null;
+                }
+                const user = this.getUserById(record.userId);
+                if (!user) return null;
+                const result = markAuthTokenUsedStmt.run(now, record.id);
+                if (Number(result?.changes || 0) < 1) {
+                    return null;
+                }
+                return {
+                    ...record,
+                    usedAt: now,
+                    user
+                };
+            });
+        },
+
+        getLatestUserTokenSummary(userId, purpose) {
+            if (!userId || !purpose) return null;
+            const now = Date.now();
+            cleanupAuthTokens(now);
+            const record = normalizeAuthTokenRecord(findLatestAuthTokenByUserPurposeStmt.get(userId, purpose));
+            return buildAuthTokenSummary(record, { now });
+        },
+
+        getActiveUserTokenSummary(userId, purpose) {
+            if (!userId || !purpose) return null;
+            const now = Date.now();
+            cleanupAuthTokens(now);
+            const record = normalizeAuthTokenRecord(findActiveAuthTokenByUserPurposeStmt.get(userId, purpose, now));
+            return buildAuthTokenSummary(record, { now, status: record ? 'active' : null });
+        },
+
+        revokeUserTokens(userId, purpose) {
+            if (!userId || !purpose) {
+                return {
+                    revoked: false,
+                    count: 0,
+                    summary: null
+                };
+            }
+            return runInTransaction(() => {
+                const now = Date.now();
+                cleanupAuthTokens(now);
+                const record = normalizeAuthTokenRecord(findActiveAuthTokenByUserPurposeStmt.get(userId, purpose, now));
+                if (!record) {
+                    return {
+                        revoked: false,
+                        count: 0,
+                        summary: null
+                    };
+                }
+                const result = markUserPurposeTokensUsedStmt.run(now, userId, purpose);
+                return {
+                    revoked: Number(result?.changes || 0) > 0,
+                    count: Number(result?.changes || 0),
+                    summary: buildAuthTokenSummary({
+                        ...record,
+                        usedAt: now
+                    }, { now, status: 'revoked' })
+                };
+            });
+        },
+
+        consumeRateLimit(ruleName, bucketKey, config = {}) {
+            const max = Math.max(0, Number(config.max || 0));
+            const windowMs = Math.max(0, Number(config.windowMs || 0));
+            if (!max || !windowMs) {
+                return { allowed: true, retryAfterSeconds: 0 };
+            }
+
+            const normalizedRuleName = String(ruleName || '').trim();
+            const normalizedBucketKey = String(bucketKey || '').trim() || 'anonymous';
+            return runInTransaction(() => {
+                const now = Date.now();
+                cleanupExpiredRateLimitEvents(now);
+                const currentWindow = selectRateLimitWindowStmt.get(
+                    normalizedRuleName,
+                    normalizedBucketKey,
+                    now - windowMs
+                ) || {};
+                const eventCount = Number(currentWindow.count || 0);
+                const oldestCreatedAt = Number(currentWindow.oldestCreatedAt || 0);
+
+                if (eventCount >= max) {
+                    return {
+                        allowed: false,
+                        retryAfterSeconds: Math.max(1, Math.ceil((windowMs - (now - oldestCreatedAt)) / 1000))
+                    };
+                }
+
+                insertRateLimitEventStmt.run(
+                    normalizedRuleName,
+                    normalizedBucketKey,
+                    now,
+                    now + windowMs
+                );
+                return {
+                    allowed: true,
+                    retryAfterSeconds: 0
+                };
+            });
+        },
+
+        isPasswordResetRequired(userId) {
+            return Boolean(normalizeCredentialRecord(getCredentialStmt.get(userId))?.mustResetPassword);
+        },
+
+        changeCurrentUserPassword(userId, currentPassword, nextPassword, options = {}) {
+            const user = this.getUserById(userId);
+            if (!user) return null;
+
+            const credential = normalizeCredentialRecord(getCredentialStmt.get(userId));
+            if (!credential) {
+                return {
+                    errorCode: 'credential_missing',
+                    error: '当前账号暂时无法修改密码',
+                    status: 409
+                };
+            }
+
+            if (!verifyPassword(currentPassword, credential.passwordHash)) {
+                return {
+                    errorCode: 'current_password_incorrect',
+                    error: '当前密码不正确',
+                    status: 400
+                };
+            }
+
+            if (verifyPassword(nextPassword, credential.passwordHash)) {
+                return {
+                    errorCode: 'password_unchanged',
+                    error: '新密码不能与当前密码相同',
+                    status: 400
+                };
+            }
+
+            const now = Date.now();
+            upsertCredentialStmt.run(userId, hashPassword(nextPassword), now, 0);
+            if (options.keepSessionId) {
+                deleteUserSessionsExceptStmt.run(userId, options.keepSessionId);
+            } else {
+                deleteUserSessionsStmt.run(userId);
+            }
+            return this.getUserById(userId);
+        },
+
+        resetUserPassword(userId, password, options = {}) {
+            const user = this.getUserById(userId);
+            if (!user) return null;
+
+            const nextPassword = String(password || '');
+            if (!nextPassword.trim()) {
+                throw new Error('password is required');
+            }
+
+            return runInTransaction(() => {
+                const now = Date.now();
+                upsertCredentialStmt.run(userId, hashPassword(nextPassword), now, options.requirePasswordChange ? 1 : 0);
+                if (options.keepSessionId) {
+                    deleteUserSessionsExceptStmt.run(userId, options.keepSessionId);
+                } else {
+                    deleteUserSessionsStmt.run(userId);
+                }
+                const updatedUser = this.getUserById(userId);
+                if (options.auditLog && updatedUser) {
+                    appendAuditLogRecord({
+                        ...options.auditLog,
+                        targetUserId: options.auditLog.targetUserId || updatedUser.id,
+                        targetUsername: options.auditLog.targetUsername || updatedUser.username,
+                        targetRole: options.auditLog.targetRole || updatedUser.role
+                    });
+                }
+                return updatedUser;
+            });
+        },
+
         listConversations(userId, limit = 40) {
             return listConversationsStmt.all(userId, Number(limit || 40))
+                .map(row => normalizeConversation(row))
+                .filter(Boolean);
+        },
+
+        listArchivedConversations(userId, limit = 40) {
+            return listArchivedConversationsStmt.all(userId, Number(limit || 40))
                 .map(row => normalizeConversation(row))
                 .filter(Boolean);
         },
@@ -831,7 +1468,7 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
                 id,
                 userId,
                 'chat',
-                payload.title || 'New Chat',
+                buildConversationTitle(payload.title || '新对话'),
                 payload.model || 'MiniMax-M2.7',
                 0,
                 null,
@@ -843,6 +1480,61 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
 
         getConversation(userId, conversationId) {
             return normalizeConversation(selectConversationByIdStmt.get(conversationId, userId));
+        },
+
+        getArchivedConversation(userId, conversationId) {
+            return normalizeConversation(selectArchivedConversationByIdStmt.get(conversationId, userId));
+        },
+
+        updateConversation(userId, conversationId, payload = {}) {
+            const conversation = this.getConversation(userId, conversationId);
+            if (!conversation) return null;
+
+            const nextTitle = Object.prototype.hasOwnProperty.call(payload, 'title')
+                ? buildConversationTitle(payload.title)
+                : conversation.title;
+            const nextModel = Object.prototype.hasOwnProperty.call(payload, 'model') && String(payload.model || '').trim()
+                ? String(payload.model || '').trim()
+                : conversation.model;
+            const now = Date.now();
+
+            updateConversationStmt.run(
+                nextTitle,
+                nextModel,
+                conversation.messageCount,
+                conversation.lastMessageAt,
+                now,
+                conversationId,
+                userId
+            );
+
+            return this.getConversation(userId, conversationId);
+        },
+
+        archiveConversation(userId, conversationId) {
+            const conversation = this.getConversation(userId, conversationId);
+            if (!conversation) return null;
+
+            const now = Date.now();
+            archiveConversationStmt.run(now, now, conversationId, userId);
+            return this.getArchivedConversation(userId, conversationId);
+        },
+
+        restoreConversation(userId, conversationId) {
+            const conversation = this.getArchivedConversation(userId, conversationId);
+            if (!conversation) return null;
+
+            const now = Date.now();
+            restoreConversationStmt.run(now, conversationId, userId);
+            return this.getConversation(userId, conversationId);
+        },
+
+        deleteArchivedConversation(userId, conversationId) {
+            const conversation = this.getArchivedConversation(userId, conversationId);
+            if (!conversation) return null;
+
+            deleteArchivedConversationStmt.run(conversationId, userId);
+            return conversation;
         },
 
         getConversationMessages(userId, conversationId, limit = 200) {
@@ -1068,6 +1760,56 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
             }
             insertTemplateFavoriteStmt.run(userId, feature, templateKind, templateId, Date.now());
             return { favorite: true, templateId, templateKind };
+        },
+
+        appendAuditLog(event = {}) {
+            const action = String(event.action || '').trim();
+            if (!action) {
+                throw new Error('audit action is required');
+            }
+            return appendAuditLogRecord({ ...event, action });
+        },
+
+        listAuditLogs(limit = 100) {
+            return listAuditLogsStmt.all(Number(limit || 100))
+                .map(row => normalizeAuditLog(row))
+                .filter(Boolean);
+        },
+
+        queryAuditLogs(filters = {}) {
+            const pageSize = Math.min(100, Math.max(1, Number(filters.pageSize || 10)));
+            const page = Math.max(1, Number(filters.page || 1));
+            const offset = (page - 1) * pageSize;
+            const query = buildAuditLogQuery(filters);
+            const countStmt = db.prepare(`
+                SELECT COUNT(*) AS count
+                FROM audit_logs
+                ${query.whereSql}
+            `);
+            const itemsStmt = db.prepare(`
+                SELECT id, action, actor_user_id AS actorUserId, target_user_id AS targetUserId,
+                       actor_username AS actorUsername, target_username AS targetUsername,
+                       actor_role AS actorRole, target_role AS targetRole, actor_ip AS actorIp,
+                       actor_user_agent AS actorUserAgent, details_json AS detailsJson,
+                       created_at AS createdAt
+                FROM audit_logs
+                ${query.whereSql}
+                ORDER BY created_at DESC, id DESC
+                LIMIT ? OFFSET ?
+            `);
+            const total = Number(countStmt.get(...query.params)?.count || 0);
+            const items = itemsStmt.all(...query.params, pageSize, offset)
+                .map(row => normalizeAuditLog(row))
+                .filter(Boolean);
+
+            return {
+                items,
+                page,
+                pageSize,
+                total,
+                totalPages: Math.max(1, Math.ceil(total / pageSize)),
+                hasMore: offset + items.length < total
+            };
         },
 
         close() {

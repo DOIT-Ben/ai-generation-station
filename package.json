@@ -9,7 +9,13 @@
     "test:auth-history": "node test-auth-history.js",
     "test:task-persistence": "node test-task-persistence.js",
     "test:frontend": "node test-frontend-state.js && node test-page-markup.js",
+    "test:ui-flow": "node test-ui-flow-smoke.js",
+    "test:ui-visual": "node test-ui-visual.js",
+    "test:style-contract": "node test-style-contract.js",
+    "test:capacity-baseline": "node test-capacity-baseline.js",
     "test:regression": "node test-regression.js",
+    "test:regression-core": "node test-regression.js --skip-live --skip-browser",
+    "test:release-core": "node test-regression.js --skip-live --skip-browser && node test-capacity-baseline.js",
     "test:failures": "node test-failures.js",
     "test:lyrics": "node test-lyrics.js",
     "test:music": "node test-music.js",
@@ -24,5 +30,10 @@
     "https-proxy-agent": "^9.0.0",
     "node-fetch": "^2.7.0",
     "proxy-agent": "^8.0.1"
+  },
+  "devDependencies": {
+    "pixelmatch": "^7.1.0",
+    "playwright": "^1.59.1",
+    "pngjs": "^7.0.0"
   }
 }

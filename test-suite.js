@@ -23,6 +23,18 @@ async function runTests() {
       fail();
     }
   } catch(e) { console.log('❌ 异常:', e.message); fail(); }
+
+  // 1.5. 健康检查接口
+  console.log('\n1.5. 健康检查接口');
+  try {
+    const res = await request('/api/health', 'GET');
+    if (res.status === 200 && res.data.status === 'ok') {
+      console.log('✅ 健康检查正常');
+    } else {
+      console.log('❌ 健康检查异常');
+      fail();
+    }
+  } catch(e) { console.log('❌ 异常:', e.message); fail(); }
   
   // 2. 本地接口
   console.log('\n2. 音色接口');

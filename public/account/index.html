@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>个人中心 | AI 内容生成站</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div id="portal-user-nav"></div>
+
+  <div class="theme-toggle-fixed">
+    <button class="theme-btn" id="theme-toggle" type="button" aria-label="切换主题" data-tip="深色模式">
+      <span class="sun-icon">☀️</span>
+      <span class="moon-icon">🌙</span>
+    </button>
+  </div>
+
+  <div class="portal-page-shell">
+    <main class="portal-layout portal-layout--stacked">
+      <section class="portal-surface-card">
+        <div class="portal-copy-stack">
+          <div class="portal-eyebrow">Account Center</div>
+          <h1>把用户信息和安全操作移出工作台。</h1>
+          <p class="portal-lead">这里专门负责账号状态、基础信息和密码安全。创作页不再承载修改密码和账号状态提示，只保留内容工作流。</p>
+          <div id="account-reset-banner" class="portal-banner" hidden></div>
+        </div>
+      </section>
+
+      <section class="portal-grid-main">
+        <article class="feature-card">
+          <div class="section-header">
+            <h1><span class="icon">👤</span> 用户信息</h1>
+            <p>展示当前登录账号的基础身份、角色与套餐信息。</p>
+          </div>
+          <div class="history-list">
+            <article class="history-item">
+              <div class="history-item-header">
+                <strong>显示名</strong>
+                <time id="account-display-name">-</time>
+              </div>
+              <p id="account-username-line">账号：-</p>
+              <p id="account-email-line">邮箱：-</p>
+              <div class="portal-metric-row">
+                <span class="portal-pill" id="account-role-pill">角色：-</span>
+                <span class="portal-pill" id="account-plan-pill">套餐：-</span>
+                <span class="portal-pill" id="account-password-pill">密码状态：-</span>
+              </div>
+            </article>
+          </div>
+        </article>
+
+        <article class="feature-card">
+          <div class="section-header">
+            <h1><span class="icon">🔐</span> 修改密码</h1>
+            <p>修改后当前会话会保留，账号的其他旧会话会按规则失效。</p>
+          </div>
+          <form id="account-password-form" class="admin-form">
+            <div class="admin-form-grid">
+              <label>当前密码<input id="account-current-password" type="password" autocomplete="current-password" placeholder="请输入当前密码" /></label>
+              <label>新密码<input id="account-new-password" type="password" autocomplete="new-password" placeholder="至少 8 位" /></label>
+              <label>确认新密码<input id="account-confirm-password" type="password" autocomplete="new-password" placeholder="请再次输入新密码" /></label>
+            </div>
+            <div id="account-password-feedback" class="admin-form-feedback" hidden></div>
+            <div class="admin-form-actions">
+              <button class="btn btn-primary" type="submit">更新密码</button>
+            </div>
+          </form>
+        </article>
+      </section>
+
+      <section class="portal-grid-main">
+        <article class="feature-card">
+          <div class="section-header">
+            <h1><span class="icon">🧭</span> 快速入口</h1>
+            <p>账号和创作分离后，统一从这里跳到工作台或后台，不再挤在一个页面壳里。</p>
+          </div>
+          <div class="history-actions">
+            <a class="btn btn-secondary" href="/">返回工作台</a>
+            <a class="btn btn-secondary" id="account-admin-link" href="/admin/" hidden>进入管理后台</a>
+          </div>
+        </article>
+
+        <article class="feature-card">
+          <div class="section-header">
+            <h1><span class="icon">📌</span> 当前原则</h1>
+            <p>个人中心只处理账号自身信息与安全动作，不承载创作功能，也不承载管理员批量操作。</p>
+          </div>
+          <div class="portal-metric-row">
+            <span class="portal-pill">工作台负责创作</span>
+            <span class="portal-pill">个人中心负责本人账号</span>
+            <span class="portal-pill">管理后台负责多用户管理</span>
+          </div>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="/js/app-shell.js"></script>
+  <script src="/js/site-shell.js"></script>
+  <script src="/js/account-page.js"></script>
+</body>
+</html>

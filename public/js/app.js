@@ -21,17 +21,32 @@
   const $$ = (sel, ctx) => (ctx || document).querySelectorAll(sel);
   const appShell = window.AppShell || null;
   const persistence = appShell && window.fetch ? appShell.createRemotePersistence(window.fetch.bind(window)) : null;
+  const filterConversationSummaries = appShell?.filterConversationSummaries || ((items, query) => {
+    const collection = Array.isArray(items) ? items.slice() : [];
+    const normalizedQuery = String(query || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (!normalizedQuery) return collection;
+
+    const terms = normalizedQuery.split(' ').filter(Boolean);
+    return collection.filter(item => {
+      const haystack = [
+        item?.title || '',
+        item?.model || ''
+      ].join(' ').toLowerCase();
+      return terms.every(term => haystack.includes(term));
+    });
+  });
   let templates = appShell?.TEMPLATE_LIBRARY || {};
   const featureMeta = appShell?.FEATURE_META || {};
   const historyState = {};
   const conversationState = {
     list: [],
+    archived: [],
     activeId: null,
     messages: []
   };
   let currentUser = null;
   let currentUserProfile = null;
-  let adminUsers = [];
+  let conversationSearchQuery = '';
   let userPreferences = {
     theme: 'dark',
     defaultModelChat: 'MiniMax-M2.7',
@@ -41,6 +56,7 @@
   };
   let usageToday = null;
   let preferenceSaveTimer = null;
+  let authRecoveryLocked = false;
 
   const FEATURE_FIELDS = {
     lyrics: { prompt: 'lyrics-prompt', style: 'lyrics-style', structure: 'lyrics-structure' },
@@ -120,6 +136,41 @@
     return `今日日志 Chat ${usage.chatCount || 0} / Lyrics ${usage.lyricsCount || 0} / Music ${usage.musicCount || 0} / Image ${usage.imageCount || 0} / Speech ${usage.speechCount || 0} / Cover ${usage.coverCount || 0}`;
   }
 
+  function getPublicAuthIntentFromUrl() {
+    if (typeof window === 'undefined') return null;
+    const url = new URL(window.location.href);
+    const inviteToken = String(url.searchParams.get('invite') || '').trim();
+    if (inviteToken) {
+      return { mode: 'invite', token: inviteToken };
+    }
+    const resetToken = String(url.searchParams.get('reset') || '').trim();
+    if (resetToken) {
+      return { mode: 'reset', token: resetToken };
+    }
+    return null;
+  }
+
+  function getCurrentAppPath() {
+    const pathname = window.location.pathname || '/';
+    const search = window.location.search || '';
+    return `${pathname}${search}` || '/';
+  }
+
+  function buildAuthPagePath(nextPath = '/') {
+    const url = new URL('/auth/', window.location.origin);
+    if (nextPath) url.searchParams.set('next', nextPath);
+    return `${url.pathname}${url.search}`;
+  }
+
+  function buildAccountPagePath(params = {}) {
+    const url = new URL('/account/', window.location.origin);
+    Object.entries(params || {}).forEach(([key, value]) => {
+      if (value == null || value === '') return;
+      url.searchParams.set(key, String(value));
+    });
+    return `${url.pathname}${url.search}`;
+  }
+
   function applyUserPreferences() {
     setTheme(userPreferences.theme || 'dark');
     setFieldValue('chat-model', userPreferences.defaultModelChat || 'MiniMax-M2.7');
@@ -137,7 +188,8 @@
         ...preferences
       };
       applyUserPreferences();
-    } catch {
+    } catch (error) {
+      if (isProtectedSessionError(error)) return;
       showToast('用户偏好加载失败，已使用默认设置', 'error', 1800);
     }
   }
@@ -153,7 +205,8 @@
       try {
         userPreferences = await persistence.savePreferences(userPreferences);
         renderUserPanel();
-      } catch {
+      } catch (error) {
+        if (isProtectedSessionError(error)) return;
         showToast('偏好保存失败', 'error', 1800);
       }
     }, 300);
@@ -164,7 +217,8 @@
     try {
       usageToday = await persistence.getUsageToday();
       renderUserPanel();
-    } catch {
+    } catch (error) {
+      if (isProtectedSessionError(error)) return;
       usageToday = null;
       renderUserPanel();
     }
@@ -183,213 +237,168 @@
         nextTemplates[features[index]] = response.groups || [];
       });
       templates = nextTemplates;
-    } catch {
+    } catch (error) {
+      if (isProtectedSessionError(error)) return;
       templates = appShell?.TEMPLATE_LIBRARY || {};
       showToast('模板库加载失败，已使用本地模板', 'error', 1800);
     }
     renderTemplateLibraries();
   }
 
-  function renderAdminPanel() {
-    const panel = $('admin-panel');
-    const list = $('admin-user-list');
-    const empty = $('admin-user-empty');
-    if (!panel || !list || !empty) return;
-
-    if (currentUserProfile?.role !== 'admin') {
-      adminUsers = [];
-      list.innerHTML = '';
-      panel.setAttribute('hidden', '');
-      empty.removeAttribute('hidden');
-      return;
-    }
-
-    panel.removeAttribute('hidden');
-    if (!adminUsers.length) {
-      list.innerHTML = '';
-      empty.removeAttribute('hidden');
-      return;
-    }
-
-    empty.setAttribute('hidden', '');
-    list.innerHTML = adminUsers.map(user => {
-      const isSelf = user.id === currentUserProfile?.id;
-      const nextStatus = user.status === 'active' ? 'disabled' : 'active';
-      const nextRole = user.role === 'admin' ? 'user' : 'admin';
-      const nextPlan = user.planCode === 'pro' ? 'free' : 'pro';
-      return `
-        <article class="history-item">
-          <div class="history-item-header">
-            <strong>${user.username}</strong>
-            <time>${user.lastLoginAt ? formatTime(user.lastLoginAt) : '从未登录'}</time>
-          </div>
-          <p>状态：${user.status} · 角色：${user.role} · 套餐：${user.planCode}</p>
-          <div class="history-actions">
-            <button type="button" data-admin-user="${user.id}" data-admin-status="${nextStatus}" ${isSelf ? 'disabled' : ''}>
-              ${nextStatus === 'disabled' ? '禁用' : '启用'}
-            </button>
-            <button type="button" data-admin-user="${user.id}" data-admin-role="${nextRole}" ${isSelf ? 'disabled' : ''}>
-              ${nextRole === 'admin' ? '设为管理员' : '降为普通用户'}
-            </button>
-            <button type="button" data-admin-user="${user.id}" data-admin-plan="${nextPlan}">
-              ${nextPlan === 'pro' ? '设为 Pro' : '设为 Free'}
-            </button>
-          </div>
-        </article>
-      `;
-    }).join('');
-  }
-
-  async function loadAdminUsers() {
-    if (currentUserProfile?.role !== 'admin' || !persistence?.getAdminUsers) {
-      renderAdminPanel();
-      return;
-    }
-    try {
-      adminUsers = await persistence.getAdminUsers();
-    } catch {
-      adminUsers = [];
-      showToast('管理员用户列表加载失败', 'error', 1800);
-    }
-    renderAdminPanel();
-  }
-
-  async function updateAdminUser(userId, patch) {
-    if (currentUserProfile?.role !== 'admin' || !persistence?.updateAdminUser) return;
-    try {
-      await persistence.updateAdminUser(userId, patch);
-      await loadAdminUsers();
-      showToast('用户状态已更新', 'success', 1400);
-    } catch (error) {
-      showToast(error.message || '用户更新失败', 'error', 1800);
-    }
-  }
-
-  function ensureAuthGate() {
-    if ($('auth-gate')) return;
-    const gate = document.createElement('div');
-    gate.id = 'auth-gate';
-    gate.className = 'auth-gate';
-    gate.hidden = true;
-    gate.innerHTML = `
-      <div class="auth-card">
-        <div class="auth-eyebrow">固定账号登录</div>
-        <h2>先登录，再继续创作</h2>
-        <p>这个站点现在会为固定账号保存所有功能的历史记录与模板使用状态。</p>
-        <div class="auth-credentials">
-          <div><strong>默认账号：</strong><code>studio</code></div>
-          <div><strong>默认密码：</strong><code>AIGS2026!</code></div>
-        </div>
-        <form id="auth-form" class="auth-form">
-          <label>账号<input id="auth-username" type="text" autocomplete="username" value="studio" /></label>
-          <label>密码<input id="auth-password" type="password" autocomplete="current-password" value="AIGS2026!" /></label>
-          <div id="auth-error" class="auth-error"></div>
-          <button class="btn btn-primary" type="submit">进入工作台</button>
-        </form>
-      </div>
-    `;
-    document.body.appendChild(gate);
-    $('auth-form')?.addEventListener('submit', handleLoginSubmit);
+  function getPlanDisplayName(planCode) {
+    if (planCode === 'internal') return '内部';
+    if (planCode === 'pro') return 'Pro';
+    if (planCode === 'free') return 'Free';
+    return planCode || '未设置';
   }
 
   function renderUserPanel() {
     const panel = $('user-panel');
     if (!panel) return;
     if (!currentUser) {
-      panel.innerHTML = '<div class="user-panel-empty">未登录，历史记录与模板偏好不会展示。</div>';
+      panel.innerHTML = '<a class="topbar-login-button" id="btn-open-auth" href="/auth/?next=%2F"><span>登录</span></a>';
       return;
     }
+    const roleLabel = currentUserProfile?.role === 'admin' ? '管理员' : '成员';
+    const planLabel = getPlanDisplayName(currentUserProfile?.planCode);
+    const avatarLabel = String(currentUser || '?').trim().slice(0, 1).toUpperCase();
+    const summaryLabel = currentUserProfile?.mustResetPassword
+      ? '已登录 · 需先改密'
+      : `已登录 · ${roleLabel} · ${planLabel}`;
     panel.innerHTML = `
-      <div class="user-panel-row">
-        <div class="user-panel-label">
+      <div class="topbar-account">
+        <div class="topbar-account-avatar">${avatarLabel}</div>
+        <div class="topbar-account-copy">
           <strong>${currentUser}</strong>
-          <span>${formatUsageSummary(usageToday)}</span>
+          <span>${summaryLabel}</span>
         </div>
-        <button id="btn-logout" type="button">退出</button>
+        <a href="/account/" class="topbar-account-action"><span>个人中心</span></a>
+        ${currentUserProfile?.role === 'admin' ? '<a href="/admin/" class="topbar-account-action"><span>后台</span></a>' : ''}
+        <button id="btn-logout" class="topbar-account-action" type="button"><span>退出</span></button>
       </div>
     `;
     $('btn-logout')?.addEventListener('click', logout);
   }
 
-  function showAuthGate() {
-    $('auth-gate')?.removeAttribute('hidden');
-    document.querySelector('.app')?.classList.add('auth-locked');
+  function resetAuthenticatedWorkspaceState() {
+    currentUser = null;
+    currentUserProfile = null;
+    conversationState.list = [];
+    conversationState.archived = [];
+    conversationState.activeId = null;
+    conversationState.messages = [];
+    conversationSearchQuery = '';
+    if ($('chat-conversation-search')) $('chat-conversation-search').value = '';
+    currentResult = {};
+    clearTimeout(preferenceSaveTimer);
+    preferenceSaveTimer = null;
+    historyState.chat = [];
+    Object.keys(featureMeta).forEach(feature => { historyState[feature] = []; renderHistory(feature); });
+    templates = appShell?.TEMPLATE_LIBRARY || {};
+    usageToday = null;
+    restoreChatMessages([]);
+    renderUserPanel();
+    renderConversationList();
+    renderTemplateLibraries();
   }
 
-  function hideAuthGate() {
-    $('auth-gate')?.setAttribute('hidden', '');
-    document.querySelector('.app')?.classList.remove('auth-locked');
+  function handleProtectedSessionLoss(message = '登录状态已失效，请重新登录') {
+    if (authRecoveryLocked) return;
+    authRecoveryLocked = true;
+    resetAuthenticatedWorkspaceState();
+    showToast(message, 'error', 1800);
+    window.setTimeout(() => {
+      window.location.href = buildAuthPagePath(getCurrentAppPath());
+    }, 120);
+    setTimeout(() => { authRecoveryLocked = false; }, 600);
   }
 
-  async function handleLoginSubmit(event) {
-    event.preventDefault();
-    const username = $('auth-username')?.value?.trim();
-    const password = $('auth-password')?.value;
-    const error = $('auth-error');
-    try {
-      const user = await persistence?.login(username, password);
-      currentUserProfile = user || null;
-      currentUser = user?.username || username;
-      if (error) error.textContent = '';
-      renderUserPanel();
-      renderAdminPanel();
-      hideAuthGate();
-      await loadUserPreferences();
-      await refreshUsageToday();
-      await loadTemplateLibraries();
-      await loadAdminUsers();
-      await loadConversations();
-      await loadAllHistories();
+  function isProtectedSessionError(error) {
+    const status = Number(error?.status || 0);
+    return status === 401 || (status === 403 && error?.reason === 'password_reset_required');
+  }
+
+  function handlePasswordResetRequired(detail = {}) {
+    if (detail.user) {
+      currentUserProfile = {
+        ...(currentUserProfile || {}),
+        ...detail.user,
+        mustResetPassword: true
+      };
+      currentUser = currentUserProfile.username || currentUser;
+    } else if (currentUserProfile) {
+      currentUserProfile = {
+        ...currentUserProfile,
+        mustResetPassword: true
+      };
+    }
+
+    renderUserPanel();
+    window.location.href = buildAccountPagePath({
+      mode: 'reset-required',
+      next: getCurrentAppPath()
+    });
+  }
+
+  async function loadAuthenticatedWorkspaceData() {
+    await loadUserPreferences();
+    await refreshUsageToday();
+    await loadTemplateLibraries();
+    await loadConversations();
+    await loadAllHistories();
+  }
+
+  async function completeAuthenticatedBootstrap({ showWelcomeToast = false } = {}) {
+    renderUserPanel();
+
+    if (currentUserProfile?.mustResetPassword) {
+      handlePasswordResetRequired({
+        user: currentUserProfile,
+        message: '请先修改临时密码后再继续使用'
+      });
+      return;
+    }
+
+    await loadAuthenticatedWorkspaceData();
+    if (showWelcomeToast) {
       showToast(`欢迎回来，${currentUser}`, 'success', 1800);
-    } catch (loginError) {
-      if (error) error.textContent = loginError.message || '账号或密码不正确';
     }
   }
 
   async function logout() {
-    currentUser = null;
-    currentUserProfile = null;
-    adminUsers = [];
-    conversationState.list = [];
-    conversationState.activeId = null;
-    conversationState.messages = [];
-    historyState.chat = [];
-    Object.keys(featureMeta).forEach(feature => { historyState[feature] = []; renderHistory(feature); });
-    usageToday = null;
     try {
       await persistence?.logout();
     } catch {
       // Ignore logout failures and still lock UI locally.
     }
-    restoreChatMessages([]);
-    renderUserPanel();
-    renderAdminPanel();
-    renderConversationList();
-    showAuthGate();
+    resetAuthenticatedWorkspaceState();
+    window.location.href = buildAuthPagePath('/');
   }
 
   async function bootstrapAuth() {
-    ensureAuthGate();
     renderUserPanel();
-    showAuthGate();
+    const publicAuthIntent = getPublicAuthIntentFromUrl();
+    if (publicAuthIntent?.mode && publicAuthIntent?.token) {
+      const redirectUrl = new URL('/auth/', window.location.origin);
+      redirectUrl.searchParams.set(publicAuthIntent.mode === 'invite' ? 'invite' : 'reset', publicAuthIntent.token);
+      window.location.replace(`${redirectUrl.pathname}${redirectUrl.search}`);
+      return;
+    }
+    let restoredSession = false;
     try {
       const session = await persistence?.loadSession();
-      if (!session?.username) {
-        return;
+      if (session?.username) {
+        currentUserProfile = session;
+        currentUser = session.username;
+        restoredSession = true;
+        await completeAuthenticatedBootstrap();
       }
-      currentUserProfile = session;
-      currentUser = session.username;
-      renderUserPanel();
-      renderAdminPanel();
-      hideAuthGate();
-      await loadUserPreferences();
-      await refreshUsageToday();
-      await loadTemplateLibraries();
-      await loadAdminUsers();
-      await loadConversations();
-      await loadAllHistories();
     } catch {
-      showAuthGate();
+      restoredSession = false;
+    }
+
+    if (!restoredSession) {
+      window.location.replace(buildAuthPagePath(getCurrentAppPath()));
     }
   }
 
@@ -502,6 +511,7 @@
       await loadTemplateLibraries();
       showToast('模板已保存到你的账号', 'success', 1600);
     } catch (error) {
+      if (isProtectedSessionError(error)) return;
       showToast(error.message || '模板保存失败', 'error', 1800);
     }
   }
@@ -517,6 +527,7 @@
       await loadTemplateLibraries();
       showToast(result.favorite ? '模板已加入收藏' : '模板已取消收藏', 'success', 1400);
     } catch (error) {
+      if (isProtectedSessionError(error)) return;
       showToast(error.message || '模板收藏失败', 'error', 1800);
     }
   }
@@ -540,20 +551,85 @@
   }
 
   function getConversationTitlePreview(conversation) {
-    return conversation?.title || 'New Chat';
+    return conversation?.title || '新对话';
+  }
+
+  function getConversationSortValue(conversation) {
+    return Number(conversation?.lastMessageAt || conversation?.createdAt || 0);
+  }
+
+  function getArchivedConversationSortValue(conversation) {
+    return Number(conversation?.archivedAt || conversation?.updatedAt || conversation?.lastMessageAt || conversation?.createdAt || 0);
+  }
+
+  function sortConversationSummaries(items = []) {
+    return items.slice().sort((left, right) => {
+      const primary = getConversationSortValue(right) - getConversationSortValue(left);
+      if (primary !== 0) return primary;
+      return Number(right?.updatedAt || 0) - Number(left?.updatedAt || 0);
+    });
+  }
+
+  function sortArchivedConversationSummaries(items = []) {
+    return items.slice().sort((left, right) => {
+      const primary = getArchivedConversationSortValue(right) - getArchivedConversationSortValue(left);
+      if (primary !== 0) return primary;
+      return Number(right?.updatedAt || 0) - Number(left?.updatedAt || 0);
+    });
+  }
+
+  function setConversationList(items = []) {
+    conversationState.list = sortConversationSummaries(
+      (Array.isArray(items) ? items : []).filter(Boolean)
+    );
+  }
+
+  function setArchivedConversationList(items = []) {
+    conversationState.archived = sortArchivedConversationSummaries(
+      (Array.isArray(items) ? items : []).filter(Boolean)
+    );
+  }
+
+  function getActiveConversation() {
+    return conversationState.list.find(item => item.id === conversationState.activeId) || null;
+  }
+
+  function getConversationSearchQuery() {
+    return String(conversationSearchQuery || '');
+  }
+
+  function getFilteredActiveConversations() {
+    return filterConversationSummaries(conversationState.list, getConversationSearchQuery());
+  }
+
+  function getFilteredArchivedConversations() {
+    return filterConversationSummaries(conversationState.archived, getConversationSearchQuery());
+  }
+
+  function updateConversationSearch(value, options = {}) {
+    const nextValue = String(value || '');
+    const searchInput = $('chat-conversation-search');
+    conversationSearchQuery = nextValue;
+    if (options.syncInput !== false && searchInput) {
+      searchInput.value = nextValue;
+    }
+    if (options.render !== false) {
+      renderConversationList();
+    }
   }
 
   function upsertConversationSummary(conversation) {
     if (!conversation?.id) return;
-    conversationState.list = [conversation].concat(
+    setConversationList([conversation].concat(
       conversationState.list.filter(item => item.id !== conversation.id)
-    );
+    ));
   }
 
   function applyConversationPayload(conversation, messages = [], options = {}) {
     if (conversation?.id) {
       conversationState.activeId = conversation.id;
       upsertConversationSummary(conversation);
+      setArchivedConversationList(conversationState.archived.filter(item => item.id !== conversation.id));
     }
     conversationState.messages = Array.isArray(messages) ? messages.slice() : [];
     chatHistory = conversationState.messages.map(item => ({
@@ -574,13 +650,13 @@
 
     const activeConversation = conversationState.list.find(item => item.id === conversationState.activeId) || null;
     if (!currentUser || !activeConversation) {
-      title.textContent = 'No active conversation';
-      subtitle.textContent = 'Create a conversation to start chatting.';
+      title.textContent = '暂无进行中的对话';
+      subtitle.textContent = '新建一个对话后即可开始聊天。';
       return;
     }
 
     title.textContent = getConversationTitlePreview(activeConversation);
-    subtitle.textContent = `${activeConversation.messageCount || 0} messages · ${activeConversation.model || 'MiniMax-M2.7'}`;
+    subtitle.textContent = `${activeConversation.messageCount || 0} 条消息 · ${activeConversation.model || 'MiniMax-M2.7'}`;
   }
 
   function renderConversationList() {
@@ -588,24 +664,95 @@
     const empty = $('chat-conversation-empty');
     if (!list || !empty) return;
 
-    if (!currentUser || !conversationState.list.length) {
+    const totalConversations = conversationState.list.length;
+    const filteredConversations = getFilteredActiveConversations();
+
+    if (!currentUser || !totalConversations) {
       list.innerHTML = '';
+      empty.textContent = '暂无对话。';
       empty.removeAttribute('hidden');
       renderConversationMeta();
+      renderArchivedConversationList();
+      return;
+    }
+
+    if (!filteredConversations.length) {
+      list.innerHTML = '';
+      empty.textContent = '没有匹配搜索条件的进行中会话。';
+      empty.removeAttribute('hidden');
+      renderConversationMeta();
+      renderArchivedConversationList();
       return;
     }
 
     empty.setAttribute('hidden', '');
-    list.innerHTML = conversationState.list.map(item => `
+    list.innerHTML = filteredConversations.map(item => `
       <button
         type="button"
         class="chat-conversation-item${item.id === conversationState.activeId ? ' active' : ''}"
         data-conversation-id="${item.id}">
-        <strong>${getConversationTitlePreview(item)}</strong>
-        <span>${item.messageCount || 0} messages</span>
+        <strong>${escapeHtml(getConversationTitlePreview(item))}</strong>
+        <span>${item.messageCount || 0} 条消息</span>
       </button>
     `).join('');
     renderConversationMeta();
+    renderArchivedConversationList();
+  }
+
+  function renderArchivedConversationList() {
+    const section = $('chat-archived-section');
+    const count = $('chat-archived-count');
+    const empty = $('chat-archived-empty');
+    const list = $('chat-archived-list');
+    if (!section || !count || !empty || !list) return;
+
+    const totalArchivedConversations = conversationState.archived.length;
+    const filteredArchivedConversations = getFilteredArchivedConversations();
+
+    if (!currentUser || !totalArchivedConversations) {
+      section.setAttribute('hidden', '');
+      count.textContent = '0';
+      list.innerHTML = '';
+      empty.textContent = '暂无已归档会话。';
+      empty.removeAttribute('hidden');
+      return;
+    }
+
+    section.removeAttribute('hidden');
+    count.textContent = String(totalArchivedConversations);
+
+    if (!filteredArchivedConversations.length) {
+      list.innerHTML = '';
+      empty.textContent = '没有匹配搜索条件的已归档会话。';
+      empty.removeAttribute('hidden');
+      return;
+    }
+
+    empty.setAttribute('hidden', '');
+    list.innerHTML = filteredArchivedConversations.map(item => `
+      <article class="chat-archived-item">
+        <div class="chat-archived-copy">
+          <strong>${escapeHtml(getConversationTitlePreview(item))}</strong>
+          <span>${item.messageCount || 0} 条消息</span>
+        </div>
+        <div class="chat-archived-actions">
+          <button
+            type="button"
+            class="btn btn-secondary btn-chat-restore"
+            data-restore-conversation-id="${item.id}"
+            ${isChatGenerating ? 'disabled' : ''}>
+            恢复
+          </button>
+          <button
+            type="button"
+            class="btn btn-secondary btn-chat-delete"
+            data-delete-conversation-id="${item.id}"
+            ${isChatGenerating ? 'disabled' : ''}>
+            删除
+          </button>
+        </div>
+      </article>
+    `).join('');
   }
 
   async function _legacySelectConversation(conversationId) {
@@ -620,7 +767,7 @@
       restoreChatMessages(chatHistory);
       renderConversationList();
     } catch (error) {
-      showToast(error.message || 'Conversation load failed', 'error', 1800);
+      showToast(error.message || '会话加载失败', 'error', 1800);
     }
   }
 
@@ -639,7 +786,7 @@
       renderConversationList();
       return result.conversation;
     } catch (error) {
-      showToast(error.message || 'Conversation creation failed', 'error', 1800);
+      showToast(error.message || '会话创建失败', 'error', 1800);
       return null;
     }
   }
@@ -647,6 +794,7 @@
   async function _legacyLoadConversations() {
     if (!currentUser || !persistence?.getConversations) {
       conversationState.list = [];
+      conversationState.archived = [];
       conversationState.activeId = null;
       conversationState.messages = [];
       renderConversationList();
@@ -655,8 +803,10 @@
 
     try {
       conversationState.list = await persistence.getConversations();
+      conversationState.archived = persistence.listArchivedConversations ? await persistence.listArchivedConversations() : [];
     } catch {
       conversationState.list = [];
+      conversationState.archived = [];
     }
 
     if (!conversationState.list.length) {
@@ -676,23 +826,28 @@
   function renderConversationMeta() {
     const title = $('chat-conversation-title');
     const subtitle = $('chat-conversation-subtitle');
+    const renameButton = $('btn-chat-rename-conversation');
+    const archiveButton = $('btn-chat-archive-conversation');
     if (!title || !subtitle) return;
 
-    const activeConversation = conversationState.list.find(item => item.id === conversationState.activeId) || null;
+    const activeConversation = getActiveConversation();
+    const disableManagement = !currentUser || !activeConversation || isChatGenerating;
+    if (renameButton) renameButton.disabled = disableManagement;
+    if (archiveButton) archiveButton.disabled = disableManagement;
     if (!currentUser || !activeConversation) {
-      title.textContent = 'No active conversation';
-      subtitle.textContent = 'Create a conversation to start chatting.';
+      title.textContent = '暂无进行中的对话';
+      subtitle.textContent = '新建一个对话后即可开始聊天。';
       return;
     }
 
     title.textContent = getConversationTitlePreview(activeConversation);
-    subtitle.textContent = `${activeConversation.messageCount || 0} messages | ${activeConversation.model || 'MiniMax-M2.7'}`;
+    subtitle.textContent = `${activeConversation.messageCount || 0} 条消息 · ${activeConversation.model || 'MiniMax-M2.7'}`;
   }
 
   async function selectConversation(conversationId) {
     if (!currentUser || !conversationId || !persistence?.getConversation) return;
     if (isChatGenerating) {
-      showToast('Please wait for the current reply to finish before switching.', 'info', 1800);
+      showToast('请等待当前回复完成后再切换会话。', 'info', 1800);
       return;
     }
     try {
@@ -700,7 +855,7 @@
       if (!result?.conversation) return;
       applyConversationPayload(result.conversation, result.messages);
     } catch (error) {
-      showToast(error.message || 'Conversation load failed', 'error', 1800);
+      showToast(error.message || '会话加载失败', 'error', 1800);
     }
   }
 
@@ -714,14 +869,14 @@
       applyConversationPayload(result.conversation, result.messages);
       return result.conversation;
     } catch (error) {
-      showToast(error.message || 'Conversation creation failed', 'error', 1800);
+      showToast(error.message || '会话创建失败', 'error', 1800);
       return null;
     }
   }
 
   async function startNewConversation() {
     if (isChatGenerating) {
-      showToast('Please wait for the current reply to finish before creating a new conversation.', 'info', 1800);
+      showToast('请等待当前回复完成后再新建对话。', 'info', 1800);
       return null;
     }
     return createConversationAndSelect();
@@ -733,9 +888,136 @@
     return conversation?.id || null;
   }
 
+  async function renameActiveConversation() {
+    const activeConversation = getActiveConversation();
+    if (!currentUser || !activeConversation || !persistence?.updateConversation) return;
+    if (isChatGenerating) {
+      showToast('请等待当前回复完成后再重命名。', 'info', 1800);
+      return;
+    }
+
+    const nextTitleRaw = typeof window !== 'undefined' && typeof window.prompt === 'function'
+      ? window.prompt('重命名会话', getConversationTitlePreview(activeConversation))
+      : null;
+    if (nextTitleRaw == null) return;
+
+    const nextTitle = String(nextTitleRaw).replace(/\s+/g, ' ').trim();
+    if (!nextTitle) {
+      showToast('会话标题不能为空。', 'error', 1800);
+      return;
+    }
+    if (nextTitle === activeConversation.title) return;
+
+    try {
+      const result = await persistence.updateConversation(activeConversation.id, { title: nextTitle });
+      const updatedConversation = result?.conversation || null;
+      if (!updatedConversation?.id) return;
+      upsertConversationSummary(updatedConversation);
+      renderConversationList();
+      showToast('会话已重命名', 'success', 1400);
+    } catch (error) {
+      showToast(error.message || '会话重命名失败', 'error', 1800);
+    }
+  }
+
+  async function archiveActiveConversation() {
+    const activeConversation = getActiveConversation();
+    if (!currentUser || !activeConversation || !persistence?.archiveConversation) return;
+    if (isChatGenerating) {
+      showToast('请等待当前回复完成后再归档。', 'info', 1800);
+      return;
+    }
+
+    const confirmed = typeof window !== 'undefined' && typeof window.confirm === 'function'
+      ? window.confirm(`确认归档“${getConversationTitlePreview(activeConversation)}”吗？`)
+      : true;
+    if (!confirmed) return;
+
+    try {
+      const result = await persistence.archiveConversation(activeConversation.id);
+      setConversationList(result?.conversations || conversationState.list.filter(item => item.id !== activeConversation.id));
+      setArchivedConversationList(
+        result?.archivedConversations || [result?.archivedConversation].filter(Boolean).concat(
+          conversationState.archived.filter(item => item.id !== activeConversation.id)
+        )
+      );
+      conversationState.activeId = null;
+      conversationState.messages = [];
+      chatHistory = [];
+      restoreChatMessages([]);
+      renderConversationList();
+
+      const nextConversation = conversationState.list[0] || null;
+      if (nextConversation?.id) {
+        await selectConversation(nextConversation.id);
+      } else {
+        await createConversationAndSelect();
+      }
+
+      showToast('会话已归档', 'success', 1400);
+    } catch (error) {
+      if (isProtectedSessionError(error)) return;
+      showToast(error.message || '会话归档失败', 'error', 1800);
+    }
+  }
+
+  async function restoreArchivedConversation(conversationId) {
+    if (!currentUser || !conversationId || !persistence?.restoreConversation) return;
+    if (isChatGenerating) {
+      showToast('请等待当前回复完成后再恢复。', 'info', 1800);
+      return;
+    }
+
+    try {
+      const result = await persistence.restoreConversation(conversationId);
+      const restoredConversation = result?.conversation || null;
+      if (!restoredConversation?.id) return;
+
+      setConversationList(
+        result?.conversations || [restoredConversation].concat(conversationState.list.filter(item => item.id !== restoredConversation.id))
+      );
+      setArchivedConversationList(
+        result?.archivedConversations || conversationState.archived.filter(item => item.id !== restoredConversation.id)
+      );
+      renderConversationList();
+      await selectConversation(restoredConversation.id);
+      showToast('会话已恢复', 'success', 1400);
+    } catch (error) {
+      if (isProtectedSessionError(error)) return;
+      showToast(error.message || '会话恢复失败', 'error', 1800);
+    }
+  }
+
+  async function deleteArchivedConversation(conversationId) {
+    if (!currentUser || !conversationId || !persistence?.deleteArchivedConversation) return;
+    if (isChatGenerating) {
+      showToast('请等待当前回复完成后再删除。', 'info', 1800);
+      return;
+    }
+
+    const conversation = conversationState.archived.find(item => item.id === conversationId) || null;
+    const confirmed = typeof window !== 'undefined' && typeof window.confirm === 'function'
+      ? window.confirm(`确认永久删除已归档会话“${getConversationTitlePreview(conversation)}”吗？`)
+      : true;
+    if (!confirmed) return;
+
+    try {
+      const result = await persistence.deleteArchivedConversation(conversationId);
+      setArchivedConversationList(
+        result?.archivedConversations || conversationState.archived.filter(item => item.id !== conversationId)
+      );
+      renderConversationList();
+      showToast('已归档会话已删除', 'success', 1400);
+    } catch (error) {
+      if (isProtectedSessionError(error)) return;
+      showToast(error.message || '会话删除失败', 'error', 1800);
+    }
+  }
+
   async function loadConversations() {
     if (!currentUser || !persistence?.getConversations) {
-      conversationState.list = [];
+      setConversationList([]);
+      setArchivedConversationList([]);
       conversationState.activeId = null;
       conversationState.messages = [];
       renderConversationList();
@@ -743,9 +1025,16 @@
     }
 
     try {
-      conversationState.list = await persistence.getConversations();
-    } catch {
-      conversationState.list = [];
+      const [conversations, archivedConversations] = await Promise.all([
+        persistence.getConversations(),
+        persistence.listArchivedConversations ? persistence.listArchivedConversations() : Promise.resolve([])
+      ]);
+      setConversationList(conversations);
+      setArchivedConversationList(archivedConversations);
+    } catch (error) {
+      if (isProtectedSessionError(error)) return;
+      setConversationList([]);
+      setArchivedConversationList([]);
     }
 
     if (!conversationState.list.length) {
@@ -802,7 +1091,8 @@
     await Promise.all(Object.keys(featureMeta).filter(feature => feature !== 'chat').map(async feature => {
       try {
         historyState[feature] = await persistence.getHistory(currentUser, feature);
-      } catch {
+      } catch (error) {
+        if (isProtectedSessionError(error)) return;
         historyState[feature] = [];
       }
       renderHistory(feature);
@@ -952,6 +1242,26 @@
         startNewConversation();
         return;
       }
+      const restoreConversationButton = event.target.closest('[data-restore-conversation-id]');
+      if (restoreConversationButton) {
+        restoreArchivedConversation(restoreConversationButton.dataset.restoreConversationId);
+        return;
+      }
+      const deleteConversationButton = event.target.closest('[data-delete-conversation-id]');
+      if (deleteConversationButton) {
+        deleteArchivedConversation(deleteConversationButton.dataset.deleteConversationId);
+        return;
+      }
+      const renameConversationButton = event.target.closest('#btn-chat-rename-conversation');
+      if (renameConversationButton) {
+        renameActiveConversation();
+        return;
+      }
+      const archiveConversationButton = event.target.closest('#btn-chat-archive-conversation');
+      if (archiveConversationButton) {
+        archiveActiveConversation();
+        return;
+      }
       const conversationButton = event.target.closest('[data-conversation-id]');
       if (conversationButton) {
         selectConversation(conversationButton.dataset.conversationId);
@@ -967,15 +1277,6 @@
         toggleTemplateFavoriteAction(favoriteButton.dataset.templateFavorite, favoriteButton.dataset.templateId);
         return;
       }
-      const adminButton = event.target.closest('[data-admin-user]');
-      if (adminButton) {
-        const patch = {};
-        if (adminButton.dataset.adminStatus) patch.status = adminButton.dataset.adminStatus;
-        if (adminButton.dataset.adminRole) patch.role = adminButton.dataset.adminRole;
-        if (adminButton.dataset.adminPlan) patch.planCode = adminButton.dataset.adminPlan;
-        updateAdminUser(adminButton.dataset.adminUser, patch);
-        return;
-      }
       const templateButton = event.target.closest('[data-template-feature]');
       if (templateButton) {
         applyTemplate(templateButton.dataset.templateFeature, Number(templateButton.dataset.templateGroup), Number(templateButton.dataset.templateItem));
@@ -985,6 +1286,12 @@
       if (historyButton) {
         restoreHistoryEntry(historyButton.dataset.historyFeature, Number(historyButton.dataset.historyIndex), historyButton.dataset.historyAction);
       }
+    });
+
+    document.addEventListener('input', event => {
+      const searchInput = event.target.closest?.('#chat-conversation-search');
+      if (!searchInput) return;
+      updateConversationSearch(searchInput.value, { syncInput: false });
     });
   }
 
@@ -1075,6 +1382,11 @@
   function setTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
     userPreferences.theme = theme;
+    try {
+      window.localStorage.setItem('aigs.theme', theme);
+    } catch {
+      // Ignore localStorage failures.
+    }
     const btn = $('theme-toggle');
     if (btn) btn.setAttribute('data-tip', theme === 'light' ? '浅色模式' : '深色模式');
   }
@@ -1954,7 +2266,7 @@
   async function performChatSend(message) {
     const conversationId = await ensureActiveConversation();
     if (!conversationId) {
-      throw new Error('Conversation creation failed');
+      throw new Error('会话创建失败');
     }
 
     const model = $('chat-model')?.value || 'MiniMax-M2.7';
@@ -2008,22 +2320,26 @@
     if (isChatGenerating) {
       chatQueue.push(message);
       updateQueueIndicator();
-      showToast(`Message queued (${chatQueue.length} waiting)`, 'info', 1800);
+      showToast(`消息已加入队列（还有 ${chatQueue.length} 条等待）`, 'info', 1800);
       if (input) input.value = '';
       return;
     }
 
     isChatGenerating = true;
+    renderConversationMeta();
+    renderArchivedConversationList();
     if (input) input.value = '';
 
     try {
       await performChatSend(message);
       await drainChatQueue();
     } catch (error) {
-      showToast(error.message || 'Chat failed, please try again.', 'error', 2200);
+      showToast(error.message || '对话失败，请重试。', 'error', 2200);
     } finally {
       isChatGenerating = false;
       updateQueueIndicator();
+      renderConversationMeta();
+      renderArchivedConversationList();
     }
   }
 
@@ -2203,9 +2519,15 @@
   //  Init
   // ============================================
   function init() {
+    window.addEventListener('app-auth-expired', event => {
+      const message = event?.detail?.message || '登录状态已失效，请重新登录';
+      handleProtectedSessionLoss(message);
+    });
+    window.addEventListener('app-password-reset-required', event => {
+      handlePasswordResetRequired(event?.detail || {});
+    });
     ensureFeatureExtensions();
     renderTemplateLibraries();
-    renderAdminPanel();
     bindEnhancementEvents();
     initTabs();
     initTheme();

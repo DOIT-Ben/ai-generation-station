@@ -81,7 +81,6 @@
     </nav>
 
     <div class="sidebar-footer">
-      <div id="user-panel" class="user-panel"></div>
       <div id="quota-info" class="quota-card">
         <div class="quota-loading">加载中...</div>
       </div>
@@ -90,19 +89,6 @@
 
   <!-- Main Content -->
   <main class="main">
-
-    <section id="admin-panel" hidden>
-      <div class="section-header">
-        <h1><span class="icon">🛠️</span> 管理面板</h1>
-        <p>仅管理员可见，用于快速查看用户状态并做基础调整。</p>
-      </div>
-      <div class="feature-card">
-        <h3>用户列表</h3>
-        <p>本阶段只保留最小管理能力：状态、角色、套餐。</p>
-        <div id="admin-user-list" class="history-list"></div>
-        <div id="admin-user-empty" class="history-empty">当前没有可管理的用户。</div>
-      </div>
-    </section>
 
     <!-- Music Tab -->
     <section id="tab-music" class="tab-content">
@@ -627,20 +613,40 @@
           <aside class="chat-sidebar">
             <div class="chat-sidebar-header">
               <div>
-                <h2>Conversations</h2>
-                <p>Continue a saved context or start a fresh thread.</p>
+                <h2>会话列表</h2>
+                <p>继续已有上下文，或开始一段新对话。</p>
               </div>
-              <button class="btn btn-secondary btn-chat-new" id="btn-chat-new-conversation" type="button">New Chat</button>
+              <button class="btn btn-secondary btn-chat-new" id="btn-chat-new-conversation" type="button">新建对话</button>
             </div>
-            <div class="chat-conversation-empty" id="chat-conversation-empty">No conversations yet.</div>
+            <div class="chat-search-shell">
+              <input
+                id="chat-conversation-search"
+                class="chat-search-input"
+                type="search"
+                placeholder="搜索会话"
+                aria-label="搜索会话">
+            </div>
+            <div class="chat-conversation-empty" id="chat-conversation-empty">暂无对话。</div>
             <div class="chat-conversation-list" id="chat-conversation-list"></div>
+            <section class="chat-archived-section" id="chat-archived-section" hidden>
+              <div class="chat-archived-header">
+                <h3>已归档</h3>
+                <span id="chat-archived-count">0</span>
+              </div>
+              <div class="chat-archived-empty" id="chat-archived-empty">暂无已归档会话。</div>
+              <div class="chat-archived-list" id="chat-archived-list"></div>
+            </section>
           </aside>
 
           <div class="chat-main">
             <div class="chat-main-header">
               <div class="chat-main-meta">
-                <h2 id="chat-conversation-title">No active conversation</h2>
-                <p id="chat-conversation-subtitle">Create a conversation to start chatting.</p>
+                <h2 id="chat-conversation-title">暂无进行中的对话</h2>
+                <p id="chat-conversation-subtitle">新建一个对话后即可开始聊天。</p>
+              </div>
+              <div class="chat-main-actions">
+                <button class="btn btn-secondary btn-chat-manage" id="btn-chat-rename-conversation" type="button">重命名</button>
+                <button class="btn btn-secondary btn-chat-manage" id="btn-chat-archive-conversation" type="button">归档</button>
               </div>
             </div>
             <div class="chat-messages" id="chat-messages">
@@ -690,6 +696,7 @@
     <span class="sun-icon">☀️</span>
     <span class="moon-icon">🌙</span>
   </button>
+  <div id="user-panel" class="topbar-user-slot"></div>
 </div>
 
 <!-- Toast Container -->

@@ -50,6 +50,7 @@ function serializeCookie(name, value, options = {}) {
     const parts = [`${name}=${encodeURIComponent(value)}`];
     if (options.maxAge != null) parts.push(`Max-Age=${options.maxAge}`);
     if (options.httpOnly) parts.push('HttpOnly');
+    if (options.secure) parts.push('Secure');
     if (options.sameSite) parts.push(`SameSite=${options.sameSite}`);
     if (options.path) parts.push(`Path=${options.path}`);
     return parts.join('; ');
@@ -69,8 +70,12 @@ function sendJson(res, statusCode, payload) {
 }
 
 function serveStaticFile(res, filepath, mimeTypes, fallbackContentType = 'text/plain') {
-    const ext = path.extname(filepath);
-    const content = fs.readFileSync(filepath);
+    let resolvedPath = filepath;
+    if (fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isDirectory()) {
+        resolvedPath = path.join(resolvedPath, 'index.html');
+    }
+    const ext = path.extname(resolvedPath);
+    const content = fs.readFileSync(resolvedPath);
     res.writeHead(200, { 'Content-Type': mimeTypes[ext] || fallbackContentType });
     res.end(content);
 }
@@ -79,6 +84,7 @@ module.exports = {
     matchRoute,
     readJsonBody,
     parseCookies,
+    appendHeader,
     setCookie,
     clearCookie,
     sendJson,

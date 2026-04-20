@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>认证中心 | AI 内容生成站</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div id="portal-user-nav"></div>
+
+  <div class="theme-toggle-fixed">
+    <button class="theme-btn" id="theme-toggle" type="button" aria-label="切换主题" data-tip="深色模式">
+      <span class="sun-icon">☀️</span>
+      <span class="moon-icon">🌙</span>
+    </button>
+  </div>
+
+  <div class="portal-page-shell">
+    <main class="portal-layout portal-layout--split">
+      <section class="portal-hero-card">
+        <div class="portal-copy-stack">
+          <div class="portal-eyebrow">Auth Portal</div>
+          <h1>把认证流程从工作台里拿出来。</h1>
+          <p class="portal-lead">登录、注册、忘记密码、邀请激活、重置密码统一放在这里处理。工作台只保留创作和跨功能流转，不再背账号状态弹层。</p>
+          <div class="portal-kpi-grid">
+            <article class="portal-kpi">
+              <strong>公开注册</strong>
+              <span>对外保留，后续只需关接口开关，不必再改页面结构。</span>
+            </article>
+            <article class="portal-kpi">
+              <strong>邀请激活</strong>
+              <span>继续保留管理员签发的链接激活，不与公开注册互斥。</span>
+            </article>
+            <article class="portal-kpi">
+              <strong>重置闭环</strong>
+              <span>忘记密码与重置密码统一回到认证中心，不再打断工作台。</span>
+            </article>
+            <article class="portal-kpi">
+              <strong>后续可裁剪</strong>
+              <span>后面想关注册页，直接关入口和开关即可，工作台不受影响。</span>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="portal-surface-card">
+        <div class="portal-form-tabs" id="auth-mode-tabs">
+          <button class="portal-form-tab is-active" data-auth-mode="login" type="button">登录</button>
+          <button class="portal-form-tab" data-auth-mode="register" type="button">注册</button>
+          <button class="portal-form-tab" data-auth-mode="forgot" type="button">找回密码</button>
+        </div>
+
+        <section class="portal-form-pane" id="auth-pane-login">
+          <div class="section-header">
+            <h1>登录</h1>
+            <p>登录后进入创作工作台，继续对话、歌词、音乐、图片和翻唱流程。</p>
+          </div>
+          <form id="login-form" class="auth-form">
+            <label>账号<input id="login-username" type="text" autocomplete="username" placeholder="请输入账号" /></label>
+            <label>密码<input id="login-password" type="password" autocomplete="current-password" placeholder="请输入密码" /></label>
+            <div id="login-feedback" class="portal-feedback" hidden></div>
+            <div class="auth-form-actions">
+              <button class="btn btn-primary" type="submit">登录并进入工作台</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="portal-form-pane" id="auth-pane-register" hidden>
+          <div class="section-header">
+            <h1>注册</h1>
+            <p>对外保留注册入口。若以后不需要，只需关闭后端公开注册开关。</p>
+          </div>
+          <form id="register-form" class="auth-form">
+            <div class="portal-grid-2">
+              <label>账号<input id="register-username" type="text" autocomplete="username" placeholder="3-32 位账号" /></label>
+              <label>显示名<input id="register-display-name" type="text" autocomplete="nickname" placeholder="可选，默认同账号" /></label>
+            </div>
+            <label>邮箱<input id="register-email" type="email" autocomplete="email" placeholder="请输入邮箱地址" /></label>
+            <div class="portal-grid-2">
+              <label>密码<input id="register-password" type="password" autocomplete="new-password" placeholder="至少 8 位" /></label>
+              <label>确认密码<input id="register-confirm-password" type="password" autocomplete="new-password" placeholder="请再次输入密码" /></label>
+            </div>
+            <div id="register-feedback" class="portal-feedback" hidden></div>
+            <div class="auth-form-actions">
+              <button class="btn btn-primary" type="submit">注册并进入工作台</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="portal-form-pane" id="auth-pane-forgot" hidden>
+          <div class="section-header">
+            <h1>找回密码</h1>
+            <p>输入账号后，系统会按当前配置发送重置邮件，或给出本地预览重置链接。</p>
+          </div>
+          <form id="forgot-form" class="auth-form">
+            <label>账号<input id="forgot-username" type="text" autocomplete="username" placeholder="请输入账号" /></label>
+            <div id="forgot-feedback" class="portal-feedback" hidden></div>
+            <div id="forgot-preview" class="portal-banner" hidden>
+              <strong>继续前往重置</strong>
+              <p id="forgot-preview-copy" class="portal-inline-note"></p>
+              <div class="auth-form-actions">
+                <a class="btn btn-secondary" id="forgot-preview-link" href="#" target="_self">打开重置页面</a>
+              </div>
+            </div>
+            <div class="auth-form-actions">
+              <button class="btn btn-primary" type="submit">发送重置请求</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="portal-form-pane" id="auth-pane-token" hidden>
+          <div class="section-header">
+            <h1 id="token-title">设置新密码</h1>
+            <p id="token-message">验证通过后，你可以直接设置一个长期使用的新密码。</p>
+          </div>
+          <div class="portal-banner">
+            <div><strong>当前账号：</strong> <code id="token-username">-</code></div>
+            <div class="portal-inline-note" id="token-note">设置成功后会直接进入工作台。</div>
+          </div>
+          <form id="token-form" class="auth-form">
+            <div class="portal-grid-2">
+              <label>新密码<input id="token-password" type="password" autocomplete="new-password" placeholder="至少 8 位" /></label>
+              <label>确认密码<input id="token-confirm-password" type="password" autocomplete="new-password" placeholder="请再次输入密码" /></label>
+            </div>
+            <div id="token-feedback" class="portal-feedback" hidden></div>
+            <div class="auth-form-actions">
+              <button class="btn btn-primary" id="token-submit" type="submit">完成设置并进入工作台</button>
+              <button class="btn btn-reset" id="token-back-to-login" type="button">返回登录</button>
+            </div>
+          </form>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="/js/app-shell.js"></script>
+  <script src="/js/site-shell.js"></script>
+  <script src="/js/auth-page.js"></script>
+</body>
+</html>
