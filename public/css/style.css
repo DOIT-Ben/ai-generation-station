@@ -3006,6 +3006,50 @@ input[type="range"]::-webkit-slider-thumb:active {
   margin-top: 14px;
 }
 
+.chat-search-feedback {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chat-search-stat,
+.chat-search-warning,
+.chat-search-action {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 11px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--fg-secondary);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.chat-search-stat.is-active {
+  color: #b8f3ff;
+  border-color: rgba(0, 212, 255, 0.18);
+  background: rgba(0, 212, 255, 0.08);
+}
+
+.chat-search-warning {
+  color: #fde68a;
+  border-color: rgba(250, 204, 21, 0.18);
+  background: rgba(250, 204, 21, 0.08);
+}
+
+.chat-search-action {
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+}
+
+.chat-search-action:hover {
+  color: var(--fg-primary);
+  border-color: rgba(0, 212, 255, 0.22);
+  background: rgba(0, 212, 255, 0.1);
+}
+
 .chat-search-input {
   width: 100%;
   padding: 12px 14px;
@@ -3248,8 +3292,13 @@ input[type="range"]::-webkit-slider-thumb:active {
   color: var(--fg-primary);
 }
 
+[data-theme="light"] .chat-search-stat,
+[data-theme="light"] .chat-search-warning,
+[data-theme="light"] .chat-search-action,
 [data-theme="light"] .message-meta-pill.tone-role,
 [data-theme="light"] .chat-context-pill,
+[data-theme="light"] .chat-reading-outline,
+[data-theme="light"] .chat-outline-chip,
 [data-theme="light"] .chat-followup-strip,
 [data-theme="light"] .chat-followup-chip {
   background: rgba(255, 255, 255, 0.72);
@@ -3261,6 +3310,10 @@ input[type="range"]::-webkit-slider-thumb:active {
 }
 
 [data-theme="light"] .chat-context-strip {
+  border-bottom-color: rgba(24, 32, 51, 0.06);
+}
+
+[data-theme="light"] .chat-reading-outline {
   border-bottom-color: rgba(24, 32, 51, 0.06);
 }
 
@@ -3447,6 +3500,78 @@ input[type="range"]::-webkit-slider-thumb:active {
   color: #f9c7d8;
   border-color: rgba(244, 114, 182, 0.18);
   background: rgba(244, 114, 182, 0.08);
+}
+
+.chat-reading-outline {
+  display: grid;
+  gap: 10px;
+  padding: 14px 28px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01)),
+    var(--workspace-header-bg);
+}
+
+.chat-reading-outline-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.chat-reading-outline-copy strong {
+  color: var(--fg-primary);
+  font-size: 0.83rem;
+  line-height: 1.4;
+}
+
+.chat-reading-outline-copy span {
+  color: var(--fg-muted);
+  font-size: 0.74rem;
+  line-height: 1.5;
+}
+
+.chat-reading-outline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chat-outline-chip {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--fg-secondary);
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 700;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+}
+
+.chat-outline-chip span {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(0, 212, 255, 0.12);
+  color: #b8f3ff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.68rem;
+}
+
+.chat-outline-chip.level-h3 {
+  padding-left: 18px;
+}
+
+.chat-outline-chip:hover {
+  transform: translateY(-1px);
+  color: var(--fg-primary);
+  border-color: rgba(0, 212, 255, 0.22);
+  background: rgba(0, 212, 255, 0.1);
 }
 
 .chat-main-actions {
@@ -4184,6 +4309,10 @@ input[type="range"]::-webkit-slider-thumb:active {
     padding: 0 16px 14px;
   }
 
+  .chat-reading-outline {
+    padding: 14px 16px;
+  }
+
   .chat-main-actions {
     width: 100%;
   }
@@ -4197,7 +4326,10 @@ input[type="range"]::-webkit-slider-thumb:active {
   }
 
   .chat-followup-actions,
-  .chat-context-pills {
+  .chat-context-pills,
+  .chat-reading-outline-actions,
+  .template-recent-actions,
+  .chat-search-feedback {
     gap: 8px;
   }
   
@@ -4884,6 +5016,58 @@ input[type="range"]::-webkit-slider-thumb:active {
   margin-top: 18px;
 }
 
+.template-recent-strip {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle);
+  background:
+    linear-gradient(180deg, rgba(0, 212, 255, 0.06), rgba(255, 255, 255, 0.015)),
+    rgba(255, 255, 255, 0.02);
+}
+
+.template-recent-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.template-recent-copy strong {
+  color: var(--fg-primary);
+  font-size: 0.88rem;
+}
+
+.template-recent-copy span {
+  color: var(--fg-muted);
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+
+.template-recent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.template-recent-chip {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 212, 255, 0.22);
+  background: rgba(0, 212, 255, 0.08);
+  color: var(--fg-primary);
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 700;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.template-recent-chip:hover {
+  transform: translateY(-1px);
+  border-color: rgba(0, 212, 255, 0.3);
+  background: linear-gradient(90deg, rgba(0, 212, 255, 0.16), rgba(255, 45, 149, 0.12));
+}
+
 .template-library-toolbar {
   display: grid;
   gap: 10px;
@@ -5092,6 +5276,7 @@ input[type="range"]::-webkit-slider-thumb:active {
 
 [data-theme="light"] .template-library-stat,
 [data-theme="light"] .template-search-input,
+[data-theme="light"] .template-recent-chip,
 [data-theme="light"] .template-item-preview,
 [data-theme="light"] .template-item-stat {
   border-color: rgba(24, 32, 51, 0.06);
@@ -5099,6 +5284,7 @@ input[type="range"]::-webkit-slider-thumb:active {
 }
 
 [data-theme="light"] .template-category,
+[data-theme="light"] .template-recent-strip,
 [data-theme="light"] .template-item {
   border-color: rgba(24, 32, 51, 0.06);
 }

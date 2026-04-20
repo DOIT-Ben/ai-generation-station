@@ -168,7 +168,8 @@
       lastTab: 'chat',
       lastConversationId: null,
       drafts: {},
-      lastSavedAt: null
+      lastSavedAt: null,
+      recentTemplates: {}
     };
   }
 
@@ -183,7 +184,8 @@
       lastTab: nextLastTab,
       lastConversationId: raw.lastConversationId ? String(raw.lastConversationId) : null,
       drafts: raw.drafts && typeof raw.drafts === 'object' ? raw.drafts : {},
-      lastSavedAt: raw.lastSavedAt ? Number(raw.lastSavedAt) : null
+      lastSavedAt: raw.lastSavedAt ? Number(raw.lastSavedAt) : null,
+      recentTemplates: raw.recentTemplates && typeof raw.recentTemplates === 'object' ? raw.recentTemplates : {}
     };
   }
 
@@ -1021,6 +1023,51 @@
     return String(templateSearchState[feature] || '').trim().toLowerCase();
   }
 
+  function getRecentTemplatesForFeature(feature) {
+    const recentTemplates = workspaceState?.recentTemplates && typeof workspaceState.recentTemplates === 'object'
+      ? workspaceState.recentTemplates
+      : {};
+    return Array.isArray(recentTemplates[feature]) ? recentTemplates[feature].slice() : [];
+  }
+
+  function resolveRecentTemplateReference(feature, recentItem) {
+    const groupIndex = Number(recentItem?.groupIndex);
+    const itemIndex = Number(recentItem?.itemIndex);
+    const template = templates?.[feature]?.[groupIndex]?.items?.[itemIndex];
+    if (!template) return null;
+    return {
+      ...recentItem,
+      groupIndex,
+      itemIndex,
+      template
+    };
+  }
+
+  function getResolvedRecentTemplates(feature) {
+    return getRecentTemplatesForFeature(feature)
+      .map(item => resolveRecentTemplateReference(feature, item))
+      .filter(Boolean);
+  }
+
+  function recordRecentTemplateUse(feature, item = {}) {
+    if (!feature) return;
+    const nextItem = {
+      label: String(item.label || '未命名模板'),
+      groupIndex: Number(item.groupIndex),
+      itemIndex: Number(item.itemIndex),
+      timestamp: Date.now()
+    };
+    if (Number.isNaN(nextItem.groupIndex) || Number.isNaN(nextItem.itemIndex)) return;
+
+    const previous = getRecentTemplatesForFeature(feature)
+      .filter(entry => !(Number(entry?.groupIndex) === nextItem.groupIndex && Number(entry?.itemIndex) === nextItem.itemIndex));
+    workspaceState.recentTemplates = {
+      ...(workspaceState.recentTemplates || {}),
+      [feature]: [nextItem].concat(previous).slice(0, 4)
+    };
+    scheduleWorkspaceStateSave();
+  }
+
   function filterTemplateGroups(feature, groups = []) {
     const query = getTemplateSearchQuery(feature);
     const terms = query.split(/\s+/).filter(Boolean);
@@ -1063,16 +1110,62 @@
       const container = $(`template-groups-${feature}`);
       if (!container) return;
       const filteredGroups = filterTemplateGroups(feature, groups);
+      const recentTemplates = getResolvedRecentTemplates(feature);
       renderTemplateLibraryStat(feature, groups, filteredGroups);
       if (!groups.length) {
         container.innerHTML = '<div class="history-empty">当前还没有模板。</div>';
         return;
       }
       if (!filteredGroups.length) {
-        container.innerHTML = '<div class="history-empty">没有匹配的模板，换个关键词试试。</div>';
+        container.innerHTML = `
+          ${recentTemplates.length ? `
+            <section class="template-recent-strip">
+              <div class="template-recent-copy">
+                <strong>最近使用</strong>
+                <span>刚用过的模板会优先留在这里，方便你继续复用。</span>
+              </div>
+              <div class="template-recent-actions">
+                ${recentTemplates.map(item => `
+                  <button
+                    type="button"
+                    class="template-recent-chip"
+                    data-template-feature="${feature}"
+                    data-template-group="${item.groupIndex}"
+                    data-template-item="${item.itemIndex}"
+                    data-template-label="${escapeHtml(item.label || item.template?.label || '未命名模板')}">
+                    ${escapeHtml(item.label || item.template?.label || '未命名模板')}
+                  </button>
+                `).join('')}
+              </div>
+            </section>
+          ` : ''}
+          <div class="history-empty">没有匹配的模板，换个关键词试试。</div>
+        `;
         return;
       }
-      container.innerHTML = filteredGroups.map(group => `
+      container.innerHTML = `
+        ${recentTemplates.length ? `
+          <section class="template-recent-strip">
+            <div class="template-recent-copy">
+              <strong>最近使用</strong>
+              <span>刚用过的模板会优先留在这里，方便你继续复用。</span>
+            </div>
+            <div class="template-recent-actions">
+              ${recentTemplates.map(item => `
+                <button
+                  type="button"
+                  class="template-recent-chip"
+                  data-template-feature="${feature}"
+                  data-template-group="${item.groupIndex}"
+                  data-template-item="${item.itemIndex}"
+                  data-template-label="${escapeHtml(item.label || item.template?.label || '未命名模板')}">
+                  ${escapeHtml(item.label || item.template?.label || '未命名模板')}
+                </button>
+              `).join('')}
+            </div>
+          </section>
+        ` : ''}
+        ${filteredGroups.map(group => `
         <div class="template-category">
           <div class="template-category-header">
             <div class="template-category-title">${escapeHtml(group.category || '未分类')}</div>
@@ -1105,7 +1198,8 @@
             `).join('')}
           </div>
         </div>
-      `).join('');
+        `).join('')}
+      `;
     });
   }
 
@@ -1385,6 +1479,7 @@
       list.innerHTML = '';
       empty.textContent = '暂无对话。';
       empty.removeAttribute('hidden');
+      renderConversationSearchFeedback();
       renderConversationMeta();
       renderArchivedConversationList();
       return;
@@ -1394,6 +1489,7 @@
       list.innerHTML = '';
       empty.textContent = '没有匹配搜索条件的进行中会话。';
       empty.removeAttribute('hidden');
+      renderConversationSearchFeedback();
       renderConversationMeta();
       renderArchivedConversationList();
       return;
@@ -1443,6 +1539,7 @@
         </div>
       </section>
     `).join('');
+    renderConversationSearchFeedback();
     renderConversationMeta();
     renderArchivedConversationList();
   }
@@ -1463,6 +1560,7 @@
       list.innerHTML = '';
       empty.textContent = '暂无已归档会话。';
       empty.removeAttribute('hidden');
+      renderConversationSearchFeedback();
       return;
     }
 
@@ -1473,6 +1571,7 @@
       list.innerHTML = '';
       empty.textContent = '没有匹配搜索条件的已归档会话。';
       empty.removeAttribute('hidden');
+      renderConversationSearchFeedback();
       return;
     }
 
@@ -1505,6 +1604,7 @@
         </div>
       </article>
     `).join('');
+    renderConversationSearchFeedback();
   }
 
   async function _legacySelectConversation(conversationId) {
@@ -1596,6 +1696,51 @@
     title.textContent = getConversationTitlePreview(activeConversation);
     subtitle.textContent = `${getActiveConversationLastActivityLabel(activeConversation)} · ${getConversationPreview(activeConversation)}`;
     renderChatContextStrip();
+  }
+
+  function renderConversationSearchFeedback() {
+    const feedback = $('chat-search-feedback');
+    if (!feedback) return;
+
+    const query = getConversationSearchQuery().trim();
+    const activeConversation = getActiveConversation();
+    const filteredActive = getFilteredActiveConversations();
+    const filteredArchived = getFilteredArchivedConversations();
+    const totalActive = conversationState.list.length;
+    const totalArchived = conversationState.archived.length;
+    const activeVisible = Boolean(activeConversation && filteredActive.some(item => item.id === activeConversation.id));
+
+    if (!currentUser && totalActive <= 0 && totalArchived <= 0) {
+      feedback.setAttribute('hidden', '');
+      feedback.innerHTML = '';
+      return;
+    }
+
+    if (!query) {
+      feedback.innerHTML = `
+        <span class="chat-search-stat">进行中 ${totalActive} 条</span>
+        <span class="chat-search-stat">已归档 ${totalArchived} 条</span>
+        ${activeConversation ? '<button type="button" class="chat-search-action" data-chat-focus-current="true">定位当前对话</button>' : ''}
+      `;
+      feedback.removeAttribute('hidden');
+      return;
+    }
+
+    feedback.innerHTML = `
+      <span class="chat-search-stat is-active">匹配 ${filteredActive.length} / ${totalActive} 条进行中</span>
+      <span class="chat-search-stat">匹配 ${filteredArchived.length} / ${totalArchived} 条已归档</span>
+      ${activeConversation && !activeVisible ? '<span class="chat-search-warning">当前对话未命中筛选</span>' : ''}
+      <button type="button" class="chat-search-action" data-chat-search-reset="true">清空筛选</button>
+      ${activeConversation ? '<button type="button" class="chat-search-action" data-chat-focus-current="true">回到当前对话</button>' : ''}
+    `;
+    feedback.removeAttribute('hidden');
+  }
+
+  function focusCurrentConversationInList() {
+    const activeConversation = getActiveConversation();
+    if (!activeConversation?.id) return;
+    const activeRow = document.querySelector(`.chat-conversation-item[data-conversation-id="${CSS.escape(activeConversation.id)}"]`);
+    activeRow?.scrollIntoView({ block: 'nearest' });
   }
 
   async function selectConversation(conversationId) {
@@ -2015,6 +2160,7 @@
     if (!Array.isArray(messages) || messages.length === 0) {
       addChatMessage('chatbot', '', { rawHtml: createChatStarterPanelMarkup() });
       chatHistory = [];
+      renderChatReadingOutline();
       if (options.forceFollow === false) {
         setChatAutoFollow(false);
         updateChatScrollButton();
@@ -2047,8 +2193,10 @@
       }
       setChatAutoFollow(false);
       updateChatScrollButton();
+      renderChatReadingOutline();
       return;
     }
+    renderChatReadingOutline();
     followChatToBottom(true);
   }
 
@@ -2134,6 +2282,12 @@
   function applyTemplate(feature, groupIndex, itemIndex) {
     const template = templates?.[feature]?.[groupIndex]?.items?.[itemIndex];
     if (!template) return;
+    recordRecentTemplateUse(feature, {
+      label: template.label || '未命名模板',
+      groupIndex,
+      itemIndex
+    });
+    renderTemplateLibraries();
     switchTab(feature);
     if (feature === 'chat') {
       const input = $('chat-input');
@@ -2243,6 +2397,34 @@
       const chatFollowUpButton = event.target.closest('[data-chat-followup-prompt]');
       if (chatFollowUpButton) {
         applyChatStarterPrompt(chatFollowUpButton.dataset.chatFollowupPrompt || '');
+        return;
+      }
+      const searchResetButton = event.target.closest('[data-chat-search-reset]');
+      if (searchResetButton) {
+        updateConversationSearch('');
+        $('chat-conversation-search')?.focus();
+        return;
+      }
+      const focusCurrentButton = event.target.closest('[data-chat-focus-current]');
+      if (focusCurrentButton) {
+        if (getConversationSearchQuery().trim()) {
+          updateConversationSearch('');
+          window.setTimeout(() => {
+            focusCurrentConversationInList();
+          }, 0);
+        } else {
+          focusCurrentConversationInList();
+        }
+        return;
+      }
+      const outlineButton = event.target.closest('[data-chat-outline-target]');
+      if (outlineButton) {
+        const targetId = outlineButton.dataset.chatOutlineTarget || '';
+        const targetHeading = targetId ? document.getElementById(targetId) : null;
+        if (targetHeading) {
+          setChatAutoFollow(false);
+          targetHeading.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }
         return;
       }
       const conversationButton = event.target.closest('[data-conversation-id]');
@@ -3381,6 +3563,42 @@
     return `<div class="message-meta-row">${metaItems.join('')}</div>`;
   }
 
+  function annotateChatMessageHeadings(msgDiv, messageId = '') {
+    if (!msgDiv) return;
+    const headingNodes = Array.from(msgDiv.querySelectorAll('.message-body h1, .message-body h2, .message-body h3'));
+    const headingBase = String(messageId || msgDiv.dataset.chatMessageId || buildTransientMessageId('chat-heading')).trim();
+    headingNodes.forEach((heading, index) => {
+      heading.id = `chat-heading-${headingBase}-${index + 1}`;
+      heading.dataset.chatHeadingLevel = heading.tagName.toLowerCase();
+    });
+  }
+
+  function renderChatReadingOutline() {
+    const outline = $('chat-reading-outline');
+    const actions = $('chat-reading-outline-actions');
+    const container = $('chat-messages');
+    if (!outline || !actions || !container) return;
+
+    const chatbotMessages = Array.from(container.querySelectorAll('.chat-message.chatbot'));
+    const targetMessage = chatbotMessages.reverse().find(node => node.querySelectorAll('.message-body h1, .message-body h2, .message-body h3').length >= 2);
+    if (!targetMessage) {
+      outline.setAttribute('hidden', '');
+      actions.innerHTML = '';
+      return;
+    }
+
+    const headings = Array.from(targetMessage.querySelectorAll('.message-body h1, .message-body h2, .message-body h3'));
+    actions.innerHTML = headings.map((heading, index) => `
+      <button
+        type="button"
+        class="chat-outline-chip level-${escapeHtml((heading.tagName || 'h2').toLowerCase())}"
+        data-chat-outline-target="${escapeHtml(heading.id)}">
+        <span>${index + 1}</span>${escapeHtml(String(heading.textContent || '').trim())}
+      </button>
+    `).join('');
+    outline.removeAttribute('hidden');
+  }
+
   function buildChatAssistantActions(message) {
     if (!message?.id) return '';
     const versions = Array.isArray(message.versions) ? message.versions : [];
@@ -3481,6 +3699,7 @@
     const actionsHtml = role === 'chatbot' ? buildChatAssistantActions(messageData) : '';
     const metaHtml = settings.rawHtml ? '' : buildChatMessageMeta(messageData, role, settings);
     msgDiv.innerHTML = `<div class="message-avatar">${avatar}</div><div class="message-content">${metaHtml}<div class="message-body">${formattedContent}</div>${actionsHtml}</div>`;
+    annotateChatMessageHeadings(msgDiv, messageId);
     insertChatMessageNode(container, msgDiv, settings.insertAfterMessageId || '');
     followChatToBottom(settings.forceFollow !== false);
     return null;
