@@ -26,6 +26,8 @@ function main() {
   assert.ok(html.includes('id="workspace-resume-card"'), 'index should contain the workspace resume card');
   assert.ok(html.includes('id="workspace-clear-draft"'), 'index should contain the workspace clear-draft action');
   assert.ok(html.includes('id="chat-scroll-to-latest"'), 'index should contain the chat scroll-to-latest action');
+  assert.ok(html.includes('id="chat-request-status"'), 'index should contain chat request status feedback');
+  assert.ok(html.includes('id="btn-chat-stop"'), 'index should contain chat stop-generation action');
   assert.ok(html.includes('id="btn-chat-new-conversation"'), 'index should contain new conversation button');
   assert.ok(html.includes('id="btn-chat-rename-conversation"'), 'index should contain rename conversation button');
   assert.ok(html.includes('id="btn-chat-archive-conversation"'), 'index should contain archive conversation button');
@@ -68,6 +70,9 @@ function main() {
   assert.ok(appJs.includes('conversation_state'), 'workspace should handle streamed conversation state events');
   assert.ok(appJs.includes('rewriteAssistantMessage'), 'workspace should expose assistant rewrite actions');
   assert.ok(appJs.includes('copyAssistantMessage'), 'workspace should expose assistant copy actions');
+  assert.ok(appJs.includes('retryTransientAssistantMessage'), 'workspace should expose retry actions for failed assistant replies');
+  assert.ok(appJs.includes('stopChatGeneration'), 'workspace should expose stop-generation behavior');
+  assert.ok(appJs.includes('groupConversationsByDay'), 'workspace should group conversation list items by relative day');
   assert.ok(authPageJs.includes('注册成功，正在进入工作台'), 'auth page should contain a register success flow');
   assert.ok(authPageJs.includes('账号激活成功'), 'auth page should contain an invite-activation success flow');
   assert.ok(accountPageJs.includes('密码已更新，当前会话已保留。'), 'account page should surface password update success feedback');

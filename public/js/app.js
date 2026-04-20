@@ -15,6 +15,10 @@
   let chatQueue = [];
   let isChatGenerating = false;
   let pendingChatInput = null; // 保存排队时用户输入的内容
+  let activeChatAbortController = null;
+  let activeChatRequestContext = null;
+  const transientConversationEntries = new Map();
+  const chatMessageUiState = new Map();
   const chatScrollState = {
     autoFollow: true
   };
@@ -38,7 +42,8 @@
     return collection.filter(item => {
       const haystack = [
         item?.title || '',
-        item?.model || ''
+        item?.model || '',
+        item?.preview || ''
       ].join(' ').toLowerCase();
       return terms.every(term => haystack.includes(term));
     });
@@ -396,6 +401,44 @@
     const normalized = String(text || '').replace(/\s+/g, ' ').trim();
     if (normalized.length <= length) return normalized;
     return `${normalized.slice(0, length)}...`;
+  }
+
+  function formatTimeOfDay(timestamp) {
+    if (!timestamp) return '';
+    try {
+      return new Date(timestamp).toLocaleTimeString('zh-CN', {
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return '';
+    }
+  }
+
+  function getDayBucketLabel(timestamp) {
+    if (!timestamp) return '更早';
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const target = new Date(timestamp);
+    if (Number.isNaN(target.getTime())) return '更早';
+    target.setHours(0, 0, 0, 0);
+    const diffDays = Math.round((today.getTime() - target.getTime()) / 86400000);
+    if (diffDays <= 0) return '今天';
+    if (diffDays === 1) return '昨天';
+    return '更早';
+  }
+
+  function formatMonthDay(timestamp) {
+    if (!timestamp) return '';
+    try {
+      return new Date(timestamp).toLocaleDateString('zh-CN', {
+        month: '2-digit',
+        day: '2-digit'
+      });
+    } catch {
+      return '';
+    }
   }
 
   function formatUsageSummary(usage) {
@@ -839,6 +882,44 @@
     return conversation?.title || '新对话';
   }
 
+  function getConversationPreview(conversation) {
+    const preview = truncateText(conversation?.preview || conversation?.lastMessagePreview || '', 72);
+    if (preview) return preview;
+    if (Number(conversation?.messageCount || 0) <= 0) {
+      return '还没有消息，适合开始一个新主题。';
+    }
+    return `${conversation?.messageCount || 0} 条消息 · ${conversation?.model || 'MiniMax-M2.7'}`;
+  }
+
+  function getConversationTimestamp(conversation) {
+    return Number(conversation?.lastMessageAt || conversation?.updatedAt || conversation?.createdAt || 0);
+  }
+
+  function getConversationTimeLabel(conversation) {
+    const timestamp = getConversationTimestamp(conversation);
+    if (!timestamp) return '';
+    return getDayBucketLabel(timestamp) === '今天'
+      ? formatTimeOfDay(timestamp)
+      : formatMonthDay(timestamp);
+  }
+
+  function groupConversationsByDay(items = []) {
+    const groups = [];
+    items.forEach(item => {
+      const label = getDayBucketLabel(getConversationTimestamp(item));
+      const currentGroup = groups[groups.length - 1];
+      if (currentGroup && currentGroup.label === label) {
+        currentGroup.items.push(item);
+        return;
+      }
+      groups.push({
+        label,
+        items: [item]
+      });
+    });
+    return groups;
+  }
+
   function getConversationSortValue(conversation) {
     return Number(conversation?.lastMessageAt || conversation?.createdAt || 0);
   }
@@ -910,6 +991,26 @@
     ));
   }
 
+  function getConversationTransientEntries(conversationId = conversationState.activeId) {
+    if (!conversationId) return [];
+    const entries = transientConversationEntries.get(conversationId);
+    return Array.isArray(entries) ? entries.slice() : [];
+  }
+
+  function setConversationTransientEntries(conversationId, entries = []) {
+    if (!conversationId) return;
+    if (!Array.isArray(entries) || entries.length === 0) {
+      transientConversationEntries.delete(conversationId);
+      return;
+    }
+    transientConversationEntries.set(conversationId, entries.slice());
+  }
+
+  function clearConversationTransientEntries(conversationId = conversationState.activeId) {
+    if (!conversationId) return;
+    transientConversationEntries.delete(conversationId);
+  }
+
   function applyConversationPayload(conversation, messages = [], options = {}) {
     if (conversation?.id) {
       conversationState.activeId = conversation.id;
@@ -975,14 +1076,29 @@
     }
 
     empty.setAttribute('hidden', '');
-    list.innerHTML = filteredConversations.map(item => `
-      <button
-        type="button"
-        class="chat-conversation-item${item.id === conversationState.activeId ? ' active' : ''}"
-        data-conversation-id="${item.id}">
-        <strong>${escapeHtml(getConversationTitlePreview(item))}</strong>
-        <span>${item.messageCount || 0} 条消息</span>
-      </button>
+    const groups = groupConversationsByDay(filteredConversations);
+    list.innerHTML = groups.map(group => `
+      <section class="chat-conversation-group">
+        <div class="chat-conversation-group-label">${group.label}</div>
+        <div class="chat-conversation-group-list">
+          ${group.items.map(item => `
+            <button
+              type="button"
+              class="chat-conversation-item${item.id === conversationState.activeId ? ' active' : ''}"
+              data-conversation-id="${item.id}">
+              <div class="chat-conversation-item-top">
+                <strong>${escapeHtml(getConversationTitlePreview(item))}</strong>
+                <time>${escapeHtml(getConversationTimeLabel(item))}</time>
+              </div>
+              <p class="chat-conversation-preview">${escapeHtml(getConversationPreview(item))}</p>
+              <div class="chat-conversation-meta">
+                <span>${item.messageCount || 0} 条消息</span>
+                <span>${escapeHtml(item.model || 'MiniMax-M2.7')}</span>
+              </div>
+            </button>
+          `).join('')}
+        </div>
+      </section>
     `).join('');
     renderConversationMeta();
     renderArchivedConversationList();
@@ -1021,8 +1137,12 @@
     list.innerHTML = filteredArchivedConversations.map(item => `
       <article class="chat-archived-item">
         <div class="chat-archived-copy">
-          <strong>${escapeHtml(getConversationTitlePreview(item))}</strong>
-          <span>${item.messageCount || 0} 条消息</span>
+          <div class="chat-conversation-item-top">
+            <strong>${escapeHtml(getConversationTitlePreview(item))}</strong>
+            <time>${escapeHtml(getConversationTimeLabel(item))}</time>
+          </div>
+          <p class="chat-conversation-preview">${escapeHtml(getConversationPreview(item))}</p>
+          <span>${item.messageCount || 0} 条消息 · ${escapeHtml(item.model || 'MiniMax-M2.7')}</span>
         </div>
         <div class="chat-archived-actions">
           <button
@@ -1130,7 +1250,7 @@
     }
 
     title.textContent = getConversationTitlePreview(activeConversation);
-    subtitle.textContent = `${activeConversation.messageCount || 0} 条消息 · ${activeConversation.model || 'MiniMax-M2.7'}`;
+    subtitle.textContent = `${activeConversation.messageCount || 0} 条消息 · ${activeConversation.model || 'MiniMax-M2.7'} · ${getConversationPreview(activeConversation)}`;
   }
 
   async function selectConversation(conversationId) {
@@ -1451,7 +1571,71 @@
   }
 
   function getConversationMessageById(messageId) {
-    return (conversationState.messages || []).find(item => item.id === messageId) || null;
+    const persisted = (conversationState.messages || []).find(item => item.id === messageId);
+    if (persisted) return persisted;
+    const activeTransient = getConversationTransientEntries().find(item => item.id === messageId);
+    if (activeTransient) return activeTransient;
+    for (const entries of transientConversationEntries.values()) {
+      const matched = (Array.isArray(entries) ? entries : []).find(item => item.id === messageId);
+      if (matched) return matched;
+    }
+    return null;
+  }
+
+  function getChatMessageUiState(messageId) {
+    if (!messageId) return null;
+    return chatMessageUiState.get(messageId) || null;
+  }
+
+  function setChatMessageUiState(messageId, patch = {}) {
+    if (!messageId) return;
+    const nextState = {
+      ...(chatMessageUiState.get(messageId) || {}),
+      ...patch
+    };
+    chatMessageUiState.set(messageId, nextState);
+    if (patch.expiresInMs) {
+      window.setTimeout(() => {
+        const currentState = chatMessageUiState.get(messageId);
+        if (currentState !== nextState) return;
+        chatMessageUiState.delete(messageId);
+        if (conversationState.activeId) {
+          restoreChatMessages(conversationState.messages, { forceFollow: false });
+        }
+      }, Number(patch.expiresInMs));
+    }
+  }
+
+  function setChatRequestStatus(text = '', tone = 'info') {
+    const statusEl = $('chat-request-status');
+    if (!statusEl) return;
+    const normalizedText = String(text || '').trim();
+    if (!normalizedText) {
+      statusEl.setAttribute('hidden', '');
+      statusEl.textContent = '';
+      statusEl.dataset.tone = 'info';
+      return;
+    }
+    statusEl.textContent = normalizedText;
+    statusEl.dataset.tone = tone;
+    statusEl.removeAttribute('hidden');
+  }
+
+  function buildTransientMessageId(prefix = 'chat-temp') {
+    return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+  }
+
+  function removeTransientEntry(messageId, conversationId = conversationState.activeId) {
+    if (!conversationId || !messageId) return;
+    const nextEntries = getConversationTransientEntries(conversationId).filter(item => item.id !== messageId);
+    setConversationTransientEntries(conversationId, nextEntries);
+  }
+
+  function clearTransientConversationRender(conversationId = conversationState.activeId) {
+    clearConversationTransientEntries(conversationId);
+    if (conversationState.activeId === conversationId) {
+      restoreChatMessages(conversationState.messages, { forceFollow: false });
+    }
   }
 
   function restoreChatMessages(messages, options = {}) {
@@ -1459,6 +1643,7 @@
     const chatContainer = document.querySelector('.chat-container');
     const tabChat = $('tab-chat');
     if (!container) return;
+    const transientConversationId = options.transientConversationId || conversationState.activeId;
     container.innerHTML = '';
     chatContainer?.classList.remove('has-messages');
     tabChat?.classList.remove('has-messages');
@@ -1480,6 +1665,15 @@
         message
       });
     });
+    if (options.restoreTransient !== false) {
+      getConversationTransientEntries(transientConversationId).forEach(message => {
+        addChatMessage(message.role === 'assistant' ? 'chatbot' : 'user', message.content || '', {
+          message,
+          insertAfterMessageId: message.afterMessageId || '',
+          forceFollow: false
+        });
+      });
+    }
     if (options.forceFollow === false) {
       const anchorMessageId = String(options.anchorMessageId || '').trim();
       if (anchorMessageId) {
@@ -1625,7 +1819,7 @@
       }
       const copyMessageButton = event.target.closest('[data-chat-copy-id]');
       if (copyMessageButton) {
-        copyAssistantMessage(copyMessageButton.dataset.chatCopyId).catch(error => {
+        copyAssistantMessage(copyMessageButton.dataset.chatCopyId, copyMessageButton).catch(error => {
           showToast(error.message || '复制失败，请重试。', 'error', 1600);
         });
         return;
@@ -1641,6 +1835,18 @@
           .catch(error => {
             showToast(error.message || '切换版本失败，请重试。', 'error', 1600);
           });
+        return;
+      }
+      const retryMessageButton = event.target.closest('[data-chat-retry-id]');
+      if (retryMessageButton) {
+        retryTransientAssistantMessage(retryMessageButton.dataset.chatRetryId);
+        return;
+      }
+      const copyCodeButton = event.target.closest('.chat-code-copy');
+      if (copyCodeButton) {
+        copyCodeBlock(copyCodeButton).catch(error => {
+          showToast(error.message || '复制代码失败，请重试。', 'error', 1600);
+        });
         return;
       }
       const scrollToLatestButton = event.target.closest('#chat-scroll-to-latest');
@@ -2517,7 +2723,10 @@
     const langLabel = String(language || '').trim();
     return `
       <div class="chat-code-block">
-        ${langLabel ? `<div class="chat-code-header">${langLabel}</div>` : ''}
+        <div class="chat-code-header">
+          <span>${langLabel || '代码'}</span>
+          <button class="chat-code-copy" type="button">复制代码</button>
+        </div>
         <pre><code>${code}</code></pre>
       </div>
     `;
@@ -2642,25 +2851,76 @@
     return html || '<p></p>';
   }
 
+  function getAssistantMessageStatus(message) {
+    if (!message?.id) return null;
+
+    const uiState = getChatMessageUiState(message.id);
+    if (uiState?.label) {
+      return {
+        label: uiState.label,
+        tone: uiState.tone || 'info'
+      };
+    }
+
+    if (message.transient && message.statusText) {
+      return {
+        label: message.statusText,
+        tone: message.statusTone || 'warning'
+      };
+    }
+
+    const versions = Array.isArray(message.versions) ? message.versions : [];
+    const versionCount = Math.max(Number(message.versionCount || 0), versions.length || 0);
+    if (versionCount > 1) {
+      const activeVersionIndex = Math.max(1, Number(message.activeVersionIndex || versions.findIndex(item => item.active) + 1 || 1));
+      return {
+        label: `当前显示第 ${activeVersionIndex} 版，共 ${versionCount} 版`,
+        tone: 'neutral'
+      };
+    }
+
+    return null;
+  }
+
   function buildChatAssistantActions(message) {
     if (!message?.id) return '';
     const versions = Array.isArray(message.versions) ? message.versions : [];
     const versionCount = Math.max(Number(message.versionCount || 0), versions.length || 0);
     const activeVersionIndex = Math.max(1, Number(message.activeVersionIndex || versions.findIndex(item => item.active) + 1 || 1));
+    const status = getAssistantMessageStatus(message);
+    const canCopy = Boolean(String(message.content || '').trim());
+    const canRetry = Boolean(message.transient && message.retryPayload);
 
     return `
       <div class="message-actions">
-        <button class="message-action-btn" type="button" data-chat-copy-id="${escapeHtml(message.id)}">复制</button>
-        <button class="message-action-btn" type="button" data-chat-rewrite-id="${escapeHtml(message.id)}">重写</button>
-        ${versionCount > 1 ? `
-          <div class="message-version-switcher">
-            <button class="message-action-btn" type="button" data-chat-version-nav="prev" data-chat-message-id="${escapeHtml(message.id)}" ${activeVersionIndex <= 1 ? 'disabled' : ''}>上一版</button>
-            <span class="message-version-label">版本 ${activeVersionIndex}/${versionCount}</span>
-            <button class="message-action-btn" type="button" data-chat-version-nav="next" data-chat-message-id="${escapeHtml(message.id)}" ${activeVersionIndex >= versionCount ? 'disabled' : ''}>下一版</button>
-          </div>
-        ` : ''}
+        ${status ? `<div class="message-status-row"><span class="message-status-badge tone-${escapeHtml(status.tone)}">${escapeHtml(status.label)}</span></div>` : ''}
+        <div class="message-actions-row">
+          ${canCopy ? `<button class="message-action-btn" type="button" data-chat-copy-id="${escapeHtml(message.id)}">复制</button>` : ''}
+          ${!message.transient ? `<button class="message-action-btn" type="button" data-chat-rewrite-id="${escapeHtml(message.id)}">重写</button>` : ''}
+          ${canRetry ? `<button class="message-action-btn tone-retry" type="button" data-chat-retry-id="${escapeHtml(message.id)}">重试</button>` : ''}
+          ${versionCount > 1 ? `
+            <div class="message-version-switcher">
+              <button class="message-action-btn" type="button" data-chat-version-nav="prev" data-chat-message-id="${escapeHtml(message.id)}" ${activeVersionIndex <= 1 ? 'disabled' : ''}>上一版</button>
+              <span class="message-version-label">版本 ${activeVersionIndex}/${versionCount}</span>
+              <button class="message-action-btn" type="button" data-chat-version-nav="next" data-chat-message-id="${escapeHtml(message.id)}" ${activeVersionIndex >= versionCount ? 'disabled' : ''}>下一版</button>
+            </div>
+          ` : ''}
+        </div>
       </div>
     `;
+  }
+
+  function insertChatMessageNode(container, node, insertAfterMessageId = '') {
+    if (!container || !node) return;
+    const anchorMessageId = String(insertAfterMessageId || '').trim();
+    const anchor = anchorMessageId
+      ? container.querySelector(`.chat-message[data-chat-message-id="${CSS.escape(anchorMessageId)}"]`)
+      : null;
+    if (anchor?.parentNode === container) {
+      anchor.insertAdjacentElement('afterend', node);
+      return;
+    }
+    container.appendChild(node);
   }
 
   function createThinkingMessage(options = {}) {
@@ -2679,15 +2939,8 @@
       </div>
     `;
 
-    const anchorMessageId = String(options.afterMessageId || '').trim();
-    const anchor = anchorMessageId ? document.querySelector(`.chat-message[data-chat-message-id="${CSS.escape(anchorMessageId)}"]`) : null;
-    if (anchor?.parentNode === container) {
-      anchor.insertAdjacentElement('afterend', msgDiv);
-      followChatToBottom(false);
-    } else {
-      container.appendChild(msgDiv);
-      followChatToBottom(true);
-    }
+    insertChatMessageNode(container, msgDiv, options.afterMessageId || '');
+    followChatToBottom(!options.afterMessageId);
     return {
       msgDiv,
       contentWrap: msgDiv.querySelector('.message-content')
@@ -2713,9 +2966,13 @@
       msgDiv.dataset.chatMessageId = messageId;
     }
 
+    if (settings.message?.transient) {
+      msgDiv.classList.add('is-transient');
+    }
+
     if (role === 'chatbot' && settings.isStreaming) {
       msgDiv.innerHTML = `<div class="message-avatar">${avatar}</div><div class="message-content"><div class="message-body streaming-content"></div></div>`;
-      container.appendChild(msgDiv);
+      insertChatMessageNode(container, msgDiv, settings.insertAfterMessageId || '');
       followChatToBottom(settings.forceFollow !== false);
       return { msgDiv, contentEl: msgDiv.querySelector('.streaming-content') };
     }
@@ -2723,7 +2980,7 @@
     const formattedContent = formatChatMessageHtml(content);
     const actionsHtml = role === 'chatbot' ? buildChatAssistantActions(messageData) : '';
     msgDiv.innerHTML = `<div class="message-avatar">${avatar}</div><div class="message-content"><div class="message-body">${formattedContent}</div>${actionsHtml}</div>`;
-    container.appendChild(msgDiv);
+    insertChatMessageNode(container, msgDiv, settings.insertAfterMessageId || '');
     followChatToBottom(settings.forceFollow !== false);
     return null;
   }
@@ -2846,23 +3103,33 @@
       }
     };
 
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      buffer = buffer.replace(/\r\n/g, '\n');
-      let boundaryIndex = buffer.indexOf('\n\n');
-      while (boundaryIndex !== -1) {
-        const block = buffer.slice(0, boundaryIndex);
-        buffer = buffer.slice(boundaryIndex + 2);
-        consumeBlock(block);
-        boundaryIndex = buffer.indexOf('\n\n');
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        buffer = buffer.replace(/\r\n/g, '\n');
+        let boundaryIndex = buffer.indexOf('\n\n');
+        while (boundaryIndex !== -1) {
+          const block = buffer.slice(0, boundaryIndex);
+          buffer = buffer.slice(boundaryIndex + 2);
+          consumeBlock(block);
+          boundaryIndex = buffer.indexOf('\n\n');
+        }
       }
-    }
-
-    buffer += decoder.decode();
-    if (buffer.trim()) {
-      consumeBlock(buffer);
+  
+      buffer += decoder.decode();
+      if (buffer.trim()) {
+        consumeBlock(buffer);
+      }
+    } catch (error) {
+      const wrappedError = error instanceof Error ? error : new Error('对话流中断，请重试。');
+      wrappedError.partialReply = reply;
+      if (error?.name === 'AbortError') {
+        wrappedError.name = 'AbortError';
+        wrappedError.isAbort = true;
+      }
+      throw wrappedError;
     }
 
     if (contentEl) {
@@ -2881,9 +3148,20 @@
 
   function setChatLoading(loading) {
     const btn = $('btn-chat-send');
+    const stopBtn = $('btn-chat-stop');
     const input = $('chat-input');
-    if (btn) btn.disabled = loading;
+    if (btn) btn.disabled = false;
     btn?.classList.toggle('is-loading', Boolean(loading));
+    btn?.setAttribute('aria-busy', loading ? 'true' : 'false');
+    if (stopBtn) {
+      if (loading) {
+        stopBtn.removeAttribute('hidden');
+        stopBtn.disabled = false;
+      } else {
+        stopBtn.setAttribute('hidden', '');
+        stopBtn.disabled = true;
+      }
+    }
     if (input) input.disabled = false;
   }
 
@@ -2900,6 +3178,61 @@
     }
   }
 
+  function describeChatFailure(error) {
+    if (error?.isAbort || error?.name === 'AbortError') {
+      return {
+        tone: 'warning',
+        toast: '已停止当前回复',
+        statusText: String(error?.partialReply || '').trim()
+          ? '已停止生成，保留到当前进度，可直接重试。'
+          : '已停止生成，可直接重试。'
+      };
+    }
+    return {
+      tone: 'error',
+      toast: error?.message || '对话失败，请重试。',
+      statusText: String(error?.partialReply || '').trim()
+        ? '回复中断，已保留当前内容，可直接重试。'
+        : (error?.message || '对话失败，请重试。')
+    };
+  }
+
+  function createFailedChatEntries(context = {}, error) {
+    const failure = describeChatFailure(error);
+    const entries = [];
+    const userMessageText = String(context.message || '').trim();
+    const assistantContent = String(error?.partialReply || '').trim();
+
+    if (!context.rewriteMessageId && userMessageText) {
+      entries.push({
+        id: buildTransientMessageId('chat-user'),
+        role: 'user',
+        content: userMessageText,
+        transient: true
+      });
+    }
+
+    entries.push({
+      id: buildTransientMessageId('chat-assistant'),
+      role: 'assistant',
+      content: assistantContent,
+      transient: true,
+      afterMessageId: context.rewriteMessageId || '',
+      statusText: failure.statusText,
+      statusTone: failure.tone,
+      retryPayload: {
+        message: context.message,
+        rewriteMessageId: context.rewriteMessageId || ''
+      }
+    });
+
+    return {
+      entries,
+      toast: failure.toast,
+      tone: failure.tone
+    };
+  }
+
   async function performChatSend(message, options = {}) {
     const previousHistory = chatHistory.slice();
     const conversationId = await ensureActiveConversation();
@@ -2911,12 +3244,26 @@
     const rewriteMessageId = String(options.rewriteMessageId || '').trim();
     const rewriteTarget = rewriteMessageId ? getConversationMessageById(rewriteMessageId) : null;
     const rewriteTurnId = String(rewriteTarget?.metadata?.turnId || '').trim();
+    clearConversationTransientEntries(conversationId);
+    if (conversationState.activeId === conversationId) {
+      restoreChatMessages(conversationState.messages, {
+        forceFollow: !rewriteMessageId
+      });
+    }
     if (!rewriteMessageId) {
       addChatMessage('user', message, { forceFollow: true });
     }
 
     const thinkingMessage = createThinkingMessage(rewriteMessageId ? { afterMessageId: rewriteMessageId } : {});
     setChatLoading(true);
+    setChatRequestStatus(rewriteMessageId ? '正在重写回复，可随时停止。' : '正在流式回复，可继续输入下一条或点击停止。', 'info');
+    const abortController = new AbortController();
+    activeChatAbortController = abortController;
+    activeChatRequestContext = {
+      conversationId,
+      message,
+      rewriteMessageId
+    };
 
     try {
       const response = await apiFetch('/api/chat', {
@@ -2929,11 +3276,11 @@
           model,
           stream: true
         }),
+        signal: abortController.signal
       });
 
       const data = await streamChatMessage(response, thinkingMessage);
       if (!data.reply && !data.conversation && !Array.isArray(data.messages)) {
-        restoreChatMessages(previousHistory);
         throw new Error('对话结果为空，请重试。');
       }
 
@@ -2948,13 +3295,53 @@
             ? { forceFollow: false, anchorMessageId: rewriteAnchorId }
             : { forceFollow: true }
         });
+        if (rewriteAnchorId && rewriteMessageId) {
+          setChatMessageUiState(rewriteAnchorId, {
+            label: '已生成新的回复版本',
+            tone: 'success',
+            expiresInMs: 2200
+          });
+        }
       }
       return data;
     } catch (error) {
-      restoreChatMessages(previousHistory);
+      const failureState = createFailedChatEntries({
+        conversationId,
+        message,
+        rewriteMessageId
+      }, error);
+      setConversationTransientEntries(conversationId, failureState.entries);
+      if (conversationState.activeId === conversationId) {
+        const anchorMessageId = failureState.entries[failureState.entries.length - 1]?.id || '';
+        restoreChatMessages(previousHistory, {
+          forceFollow: false,
+          anchorMessageId,
+          transientConversationId: conversationId,
+          restoreTransient: false
+        });
+        failureState.entries.forEach(message => {
+          addChatMessage(message.role === 'assistant' ? 'chatbot' : 'user', message.content || '', {
+            message,
+            insertAfterMessageId: message.afterMessageId || '',
+            forceFollow: false
+          });
+        });
+        if (anchorMessageId) {
+          const container = $('chat-messages');
+          const anchor = container?.querySelector(`.chat-message[data-chat-message-id="${CSS.escape(anchorMessageId)}"]`);
+          anchor?.scrollIntoView({ block: 'nearest' });
+        }
+      }
       throw error;
     } finally {
+      if (activeChatAbortController === abortController) {
+        activeChatAbortController = null;
+      }
+      if (activeChatRequestContext?.conversationId === conversationId) {
+        activeChatRequestContext = null;
+      }
       setChatLoading(false);
+      setChatRequestStatus('');
     }
   }
 
@@ -2966,9 +3353,53 @@
     }
   }
 
+  function stopChatGeneration() {
+    if (!isChatGenerating || !activeChatAbortController) return;
+    activeChatAbortController.abort();
+    setChatRequestStatus('正在停止当前回复…', 'warning');
+  }
+
+  async function retryTransientAssistantMessage(messageId) {
+    const message = getConversationMessageById(messageId);
+    const retryPayload = message?.retryPayload || null;
+    if (!retryPayload) return;
+    if (isChatGenerating) {
+      showToast('请等待当前回复完成后再重试。', 'info', 1800);
+      return;
+    }
+
+    const conversationId = conversationState.activeId;
+    if (conversationId) {
+      clearConversationTransientEntries(conversationId);
+      restoreChatMessages(conversationState.messages, { forceFollow: false });
+    }
+
+    isChatGenerating = true;
+    renderConversationMeta();
+    renderArchivedConversationList();
+
+    try {
+      await performChatSend(retryPayload.message, { rewriteMessageId: retryPayload.rewriteMessageId || '' });
+      showToast('已重新发起这条回复', 'success', 1400);
+    } catch (error) {
+      const failure = describeChatFailure(error);
+      showToast(failure.toast, failure.tone === 'warning' ? 'info' : 'error', 2200);
+    } finally {
+      isChatGenerating = false;
+      updateQueueIndicator();
+      renderConversationMeta();
+      renderArchivedConversationList();
+    }
+  }
+
   async function sendChatMessage(forcedMessage) {
     const input = $('chat-input');
-    const message = String(forcedMessage != null ? forcedMessage : input?.value || '').trim();
+    const isDomEvent = forcedMessage && typeof forcedMessage === 'object' && (
+      typeof forcedMessage.preventDefault === 'function' ||
+      typeof forcedMessage.stopPropagation === 'function' ||
+      Object.prototype.hasOwnProperty.call(forcedMessage, 'type')
+    );
+    const message = String(!isDomEvent && forcedMessage != null ? forcedMessage : input?.value || '').trim();
     if (!message) return;
 
     if (isChatGenerating) {
@@ -2992,7 +3423,8 @@
       await performChatSend(message);
       await drainChatQueue();
     } catch (error) {
-      showToast(error.message || '对话失败，请重试。', 'error', 2200);
+      const failure = describeChatFailure(error);
+      showToast(failure.toast, failure.tone === 'warning' ? 'info' : 'error', 2200);
     } finally {
       isChatGenerating = false;
       updateQueueIndicator();
@@ -3042,7 +3474,8 @@
       await performChatSend(undefined, { rewriteMessageId: messageId });
       showToast('已生成新的回复版本', 'success', 1400);
     } catch (error) {
-      showToast(error.message || '重写失败，请重试。', 'error', 2200);
+      const failure = describeChatFailure(error);
+      showToast(failure.toast, failure.tone === 'warning' ? 'info' : 'error', 2200);
     } finally {
       isChatGenerating = false;
       updateQueueIndicator();
@@ -3051,11 +3484,31 @@
     }
   }
 
-  async function copyAssistantMessage(messageId) {
+  function flashButtonFeedback(button, nextLabel, timeoutMs = 1400) {
+    if (!button) return;
+    const defaultLabel = button.dataset.defaultLabel || button.textContent || '';
+    button.dataset.defaultLabel = defaultLabel;
+    button.textContent = nextLabel;
+    button.disabled = true;
+    window.setTimeout(() => {
+      button.textContent = button.dataset.defaultLabel || defaultLabel;
+      button.disabled = false;
+    }, timeoutMs);
+  }
+
+  async function copyAssistantMessage(messageId, triggerButton = null) {
     const message = getConversationMessageById(messageId);
     if (!message?.content) return;
     await navigator.clipboard.writeText(message.content);
+    flashButtonFeedback(triggerButton, '已复制');
     showToast('已复制回复内容', 'success', 1200);
+  }
+
+  async function copyCodeBlock(button) {
+    const code = button?.closest('.chat-code-block')?.querySelector('code')?.textContent || '';
+    if (!code) return;
+    await navigator.clipboard.writeText(code);
+    flashButtonFeedback(button, '已复制');
   }
 
   async function switchAssistantVersion(messageId, direction) {
@@ -3069,6 +3522,11 @@
     if (!nextVersion?.id) return;
 
     await activateAssistantVersion(nextVersion.id);
+    setChatMessageUiState(nextVersion.id, {
+      label: `已切换到第 ${nextIndex + 1} 版`,
+      tone: 'success',
+      expiresInMs: 2200
+    });
   }
 
   // ============================================
@@ -3402,6 +3860,7 @@
 
     // Chat
     $('btn-chat-send')?.addEventListener('click', sendChatMessage);
+    $('btn-chat-stop')?.addEventListener('click', stopChatGeneration);
     $('chat-input')?.addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.ctrlKey && !e.shiftKey && !e.altKey) { e.preventDefault(); sendChatMessage(); }
     });

@@ -318,7 +318,8 @@
     return collection.filter(item => {
       const haystack = [
         item?.title || '',
-        item?.model || ''
+        item?.model || '',
+        item?.preview || ''
       ].join(' ').toLowerCase();
       return terms.every(term => haystack.includes(term));
     });

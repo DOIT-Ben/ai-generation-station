@@ -517,21 +517,42 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
     const selectConversationByIdStmt = db.prepare(`
         SELECT id, user_id AS userId, feature, title, model, message_count AS messageCount,
                last_message_at AS lastMessageAt, created_at AS createdAt, updated_at AS updatedAt,
-               archived_at AS archivedAt
+               archived_at AS archivedAt,
+               (
+                   SELECT content
+                   FROM conversation_messages
+                   WHERE conversation_id = conversations.id
+                   ORDER BY created_at DESC, id DESC
+                   LIMIT 1
+               ) AS preview
         FROM conversations
         WHERE id = ? AND user_id = ? AND archived_at IS NULL
     `);
     const selectArchivedConversationByIdStmt = db.prepare(`
         SELECT id, user_id AS userId, feature, title, model, message_count AS messageCount,
                last_message_at AS lastMessageAt, created_at AS createdAt, updated_at AS updatedAt,
-               archived_at AS archivedAt
+               archived_at AS archivedAt,
+               (
+                   SELECT content
+                   FROM conversation_messages
+                   WHERE conversation_id = conversations.id
+                   ORDER BY created_at DESC, id DESC
+                   LIMIT 1
+               ) AS preview
         FROM conversations
         WHERE id = ? AND user_id = ? AND archived_at IS NOT NULL
     `);
     const listConversationsStmt = db.prepare(`
         SELECT id, user_id AS userId, feature, title, model, message_count AS messageCount,
                last_message_at AS lastMessageAt, created_at AS createdAt, updated_at AS updatedAt,
-               archived_at AS archivedAt
+               archived_at AS archivedAt,
+               (
+                   SELECT content
+                   FROM conversation_messages
+                   WHERE conversation_id = conversations.id
+                   ORDER BY created_at DESC, id DESC
+                   LIMIT 1
+               ) AS preview
         FROM conversations
         WHERE user_id = ? AND archived_at IS NULL
         ORDER BY COALESCE(last_message_at, created_at) DESC, updated_at DESC
@@ -540,7 +561,14 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
     const listArchivedConversationsStmt = db.prepare(`
         SELECT id, user_id AS userId, feature, title, model, message_count AS messageCount,
                last_message_at AS lastMessageAt, created_at AS createdAt, updated_at AS updatedAt,
-               archived_at AS archivedAt
+               archived_at AS archivedAt,
+               (
+                   SELECT content
+                   FROM conversation_messages
+                   WHERE conversation_id = conversations.id
+                   ORDER BY created_at DESC, id DESC
+                   LIMIT 1
+               ) AS preview
         FROM conversations
         WHERE user_id = ? AND archived_at IS NOT NULL
         ORDER BY archived_at DESC, updated_at DESC
@@ -745,6 +773,12 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         return normalized.length > 48 ? `${normalized.slice(0, 48)}...` : normalized;
     }
 
+    function buildConversationPreview(text) {
+        const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+        if (!normalized) return '';
+        return normalized.length > 140 ? `${normalized.slice(0, 140)}...` : normalized;
+    }
+
     function normalizeConversation(row) {
         if (!row) return null;
         return {
@@ -755,6 +789,7 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
             model: row.model || 'MiniMax-M2.7',
             messageCount: Number(row.messageCount || 0),
             lastMessageAt: row.lastMessageAt || null,
+            preview: buildConversationPreview(row.preview || ''),
             createdAt: row.createdAt,
             updatedAt: row.updatedAt,
             archivedAt: row.archivedAt || null
