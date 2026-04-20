@@ -82,10 +82,16 @@ function createConfig(options = {}) {
     const SESSION_TTL_MS = Number(getConfigValue(env, localConfig, 'SESSION_TTL_MS', 7 * 24 * 60 * 60 * 1000));
     const SESSION_COOKIE_SECURE = parseBooleanFlag(getConfigValue(env, localConfig, 'SESSION_COOKIE_SECURE', ''), false);
     const SESSION_COOKIE_SAME_SITE = normalizeSameSite(getConfigValue(env, localConfig, 'SESSION_COOKIE_SAME_SITE', 'Lax'));
+    const CSRF_COOKIE_NAME = String(getConfigValue(env, localConfig, 'CSRF_COOKIE_NAME', 'aigs_csrf') || 'aigs_csrf').trim() || 'aigs_csrf';
+    const CSRF_TOKEN_HEADER_NAME = String(getConfigValue(env, localConfig, 'CSRF_TOKEN_HEADER_NAME', 'x-csrf-token') || 'x-csrf-token').trim().toLowerCase() || 'x-csrf-token';
     const PUBLIC_REGISTRATION_ENABLED = parseBooleanFlag(getConfigValue(env, localConfig, 'PUBLIC_REGISTRATION_ENABLED', 'true'), true);
     const APP_STATE_DB = path.isAbsolute(getConfigValue(env, localConfig, 'APP_STATE_DB', ''))
         ? getConfigValue(env, localConfig, 'APP_STATE_DB', '')
         : path.join(DATA_DIR, getConfigValue(env, localConfig, 'APP_STATE_DB', 'app-state.sqlite'));
+    const CSRF_SECRET = String(
+        getConfigValue(env, localConfig, 'CSRF_SECRET', `${APP_PASSWORD}:${APP_STATE_DB}`)
+            || `${APP_PASSWORD}:${APP_STATE_DB}`
+    ).trim() || `${APP_PASSWORD}:${APP_STATE_DB}`;
     const LEGACY_STATE_FILE = path.isAbsolute(getConfigValue(env, localConfig, 'APP_STATE_FILE', ''))
         ? getConfigValue(env, localConfig, 'APP_STATE_FILE', '')
         : path.join(DATA_DIR, getConfigValue(env, localConfig, 'APP_STATE_FILE', 'app-state.json'));
@@ -159,6 +165,9 @@ function createConfig(options = {}) {
         SESSION_TTL_MS,
         SESSION_COOKIE_SECURE,
         SESSION_COOKIE_SAME_SITE,
+        CSRF_COOKIE_NAME,
+        CSRF_TOKEN_HEADER_NAME,
+        CSRF_SECRET,
         PUBLIC_REGISTRATION_ENABLED,
         APP_STATE_DB,
         LEGACY_STATE_FILE,

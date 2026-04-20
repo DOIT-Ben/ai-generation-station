@@ -11,6 +11,10 @@ Provide one canonical proxy baseline for exposing the current Node server safely
 - canonical backend health endpoint:
   - `/api/health`
 - same-origin frontend and API are still the default deployment model
+- separate-site browser deployments now require an explicit frontend/API contract:
+  - frontend pages set `<meta name="aigs-api-base-url" content="https://api.example.com">`
+  - backend allowlists the frontend origin through `ALLOWED_ORIGINS`
+  - browser clients bootstrap `GET /api/auth/csrf` before unsafe requests
 
 ## Required Backend Environment
 
@@ -22,6 +26,15 @@ Optional:
 
 - `ALLOWED_ORIGINS=https://your-domain.example`
   - only needed if a deliberate extra browser origin must call the API
+- `CSRF_SECRET=stable-random-secret`
+  - strongly recommended whenever the browser frontend is hosted on a separate origin
+
+If the browser frontend is hosted on a different origin than the API:
+
+- set `ALLOWED_ORIGINS=https://app.example.com`
+- set `SESSION_COOKIE_SAME_SITE=None`
+- keep `SESSION_COOKIE_SECURE=true`
+- set `CSRF_SECRET` explicitly instead of relying on the fallback secret
 
 ## Caddy Example
 
@@ -79,9 +92,15 @@ server {
    - `X-Content-Type-Options`
    - `Referrer-Policy`
 5. confirm a disallowed `Origin` on `/api/*` returns `403`
+6. if using a separate-site frontend:
+   - confirm `GET /api/auth/csrf` returns `200` for the allowed frontend origin
+   - confirm the response sets an HttpOnly CSRF seed cookie
+   - confirm the browser preflight allows `X-CSRF-Token`
+   - confirm an unsafe request without the CSRF header fails with `403`
 
 ## Known Limits
 
 - current baseline still assumes one backend process
 - there is not yet a WebSocket-specific proxy path
-- there is not yet a dedicated CSRF token layer for separate-site browser apps
+- the frontend deployment still depends on one small runtime page setting:
+  - `<meta name="aigs-api-base-url" ...>`

@@ -224,6 +224,85 @@
     }
   }
 
+  function getGlobalScope() {
+    if (typeof globalThis !== 'undefined') return globalThis;
+    if (typeof window !== 'undefined') return window;
+    return {};
+  }
+
+  function getBrowserOrigin() {
+    if (typeof window !== 'undefined' && window.location?.origin) {
+      return window.location.origin;
+    }
+    return 'http://localhost';
+  }
+
+  function getConfiguredApiBaseUrl() {
+    const globalScope = getGlobalScope();
+    const directValue = String(globalScope.AIGS_API_BASE_URL || '').trim();
+    if (directValue) {
+      try {
+        return new URL(directValue, getBrowserOrigin()).origin;
+      } catch {
+        return null;
+      }
+    }
+
+    if (typeof document === 'undefined' || typeof document.querySelector !== 'function') {
+      return null;
+    }
+
+    const meta = document.querySelector('meta[name="aigs-api-base-url"]');
+    const metaValue = String(meta?.getAttribute?.('content') || '').trim();
+    if (!metaValue) return null;
+
+    try {
+      return new URL(metaValue, getBrowserOrigin()).origin;
+    } catch {
+      return null;
+    }
+  }
+
+  function buildApiUrl(pathname) {
+    const rawPath = String(pathname || '').trim();
+    if (!rawPath) return rawPath;
+
+    try {
+      return new URL(rawPath).href;
+    } catch {
+      // Keep relative path handling below.
+    }
+
+    const normalizedPath = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
+    const apiBaseUrl = getConfiguredApiBaseUrl();
+    if (!apiBaseUrl) {
+      return normalizedPath;
+    }
+    return new URL(normalizedPath, apiBaseUrl).href;
+  }
+
+  function resolveApiAssetUrl(rawUrl) {
+    const value = String(rawUrl || '').trim();
+    if (!value) return '';
+
+    try {
+      return new URL(value).href;
+    } catch {
+      // Keep relative path handling below.
+    }
+
+    const apiBaseUrl = getConfiguredApiBaseUrl();
+    if (!apiBaseUrl) {
+      return value;
+    }
+
+    const normalizedPath = value.startsWith('/') ? value : `/${value}`;
+    if (!normalizedPath.startsWith('/output/') && !normalizedPath.startsWith('/api/')) {
+      return value;
+    }
+    return new URL(normalizedPath, apiBaseUrl).href;
+  }
+
   function normalizeConversationTitle(title) {
     const normalized = String(title || '').replace(/\s+/g, ' ').trim();
     if (!normalized) return '新对话';
@@ -243,6 +322,94 @@
       ].join(' ').toLowerCase();
       return terms.every(term => haystack.includes(term));
     });
+  }
+
+  function createApiClient(fetchImpl) {
+    const CSRF_HEADER_NAME = 'X-CSRF-Token';
+    let csrfToken = null;
+    let csrfPromise = null;
+
+    async function loadCsrfToken(forceRefresh = false) {
+      if (!forceRefresh && csrfToken) {
+        return csrfToken;
+      }
+      if (!forceRefresh && csrfPromise) {
+        return csrfPromise;
+      }
+
+      const request = (async () => {
+        const response = await fetchImpl(buildApiUrl('/api/auth/csrf'), {
+          method: 'GET',
+          credentials: 'include'
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data?.csrfToken) {
+          throw new Error(data.error || 'CSRF token bootstrap failed');
+        }
+        csrfToken = String(data.csrfToken);
+        return csrfToken;
+      })();
+
+      csrfPromise = request.finally(() => {
+        csrfPromise = null;
+      });
+      return csrfPromise;
+    }
+
+    async function readCloneReason(response) {
+      if (!response || typeof response.clone !== 'function') {
+        return null;
+      }
+
+      const payload = await response.clone().json().catch(() => null);
+      return payload?.reason || null;
+    }
+
+    async function fetchApi(pathname, options = {}, meta = {}) {
+      const method = String(options.method || 'GET').toUpperCase();
+      const requiresCsrf = !['GET', 'HEAD', 'OPTIONS'].includes(method);
+      const headers = {
+        ...(options.headers || {})
+      };
+
+      if (requiresCsrf) {
+        headers[CSRF_HEADER_NAME] = await loadCsrfToken(Boolean(meta.forceCsrfRefresh));
+      }
+
+      const response = await fetchImpl(buildApiUrl(pathname), {
+        ...options,
+        method,
+        credentials: 'include',
+        headers
+      });
+
+      if (requiresCsrf && !meta.retried && response.status === 403) {
+        const reason = await readCloneReason(response);
+        if (String(reason || '').startsWith('csrf_')) {
+          csrfToken = null;
+          await loadCsrfToken(true);
+          return fetchApi(pathname, options, {
+            ...meta,
+            retried: true,
+            forceCsrfRefresh: false
+          });
+        }
+      }
+
+      return response;
+    }
+
+    return {
+      fetch: fetchApi,
+      buildUrl: buildApiUrl,
+      resolveAssetUrl: resolveApiAssetUrl,
+      clearCsrfToken() {
+        csrfToken = null;
+      },
+      async ensureCsrfToken(forceRefresh = false) {
+        return loadCsrfToken(forceRefresh);
+      }
+    };
   }
 
   function createPersistence(storage) {
@@ -404,6 +571,8 @@
   }
 
   function createRemotePersistence(fetchImpl) {
+    const apiClient = createApiClient(fetchImpl);
+
     function notifyAuthExpired(detail) {
       if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
       const eventDetail = detail || {};
@@ -460,7 +629,7 @@
 
     return {
       async loadSession() {
-        const response = await fetchImpl('/api/auth/session', { credentials: 'same-origin' });
+        const response = await apiClient.fetch('/api/auth/session', { credentials: 'same-origin' });
         if (response.status === 401) {
           return null;
         }
@@ -469,7 +638,7 @@
       },
 
       async login(username, password) {
-        const response = await fetchImpl('/api/auth/login', {
+        const response = await apiClient.fetch('/api/auth/login', {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
@@ -480,7 +649,7 @@
       },
 
       async register(payload) {
-        const response = await fetchImpl('/api/auth/register', {
+        const response = await apiClient.fetch('/api/auth/register', {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
@@ -491,7 +660,7 @@
       },
 
       async logout() {
-        const response = await fetchImpl('/api/auth/logout', {
+        const response = await apiClient.fetch('/api/auth/logout', {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' }
@@ -500,7 +669,7 @@
       },
 
       async changePassword(payload) {
-        const response = await fetchImpl('/api/auth/change-password', {
+        const response = await apiClient.fetch('/api/auth/change-password', {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
@@ -516,14 +685,14 @@
       async getInvitationSession(token) {
         const params = new URLSearchParams();
         if (token != null && token !== '') params.set('token', String(token));
-        const response = await fetchImpl(`/api/auth/invitation?${params.toString()}`, {
+        const response = await apiClient.fetch(`/api/auth/invitation?${params.toString()}`, {
           credentials: 'same-origin'
         });
         return parseResponse(response);
       },
 
       async activateInvitation(token, password) {
-        const response = await fetchImpl('/api/auth/invitation/activate', {
+        const response = await apiClient.fetch('/api/auth/invitation/activate', {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
@@ -536,7 +705,7 @@
       },
 
       async requestPasswordReset(username) {
-        const response = await fetchImpl('/api/auth/forgot-password', {
+        const response = await apiClient.fetch('/api/auth/forgot-password', {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
@@ -548,14 +717,14 @@
       async getPasswordResetSession(token) {
         const params = new URLSearchParams();
         if (token != null && token !== '') params.set('token', String(token));
-        const response = await fetchImpl(`/api/auth/password-reset?${params.toString()}`, {
+        const response = await apiClient.fetch(`/api/auth/password-reset?${params.toString()}`, {
           credentials: 'same-origin'
         });
         return parseResponse(response);
       },
 
       async completePasswordReset(token, password) {
-        const response = await fetchImpl('/api/auth/password-reset/complete', {
+        const response = await apiClient.fetch('/api/auth/password-reset/complete', {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
@@ -568,13 +737,13 @@
       },
 
       async getHistory(username, feature) {
-        const response = await fetchImpl(`/api/history/${feature}`, { credentials: 'same-origin' });
+        const response = await apiClient.fetch(`/api/history/${feature}`, { credentials: 'same-origin' });
         const data = await parseResponse(response);
         return data.items || [];
       },
 
       async appendHistory(username, feature, entry) {
-        const response = await fetchImpl(`/api/history/${feature}`, {
+        const response = await apiClient.fetch(`/api/history/${feature}`, {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
@@ -585,13 +754,13 @@
       },
 
       async getPreferences() {
-        const response = await fetchImpl('/api/preferences', { credentials: 'same-origin' });
+        const response = await apiClient.fetch('/api/preferences', { credentials: 'same-origin' });
         const data = await parseResponse(response);
         return data.preferences || {};
       },
 
       async savePreferences(patch) {
-        const response = await fetchImpl('/api/preferences', {
+        const response = await apiClient.fetch('/api/preferences', {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
@@ -602,18 +771,18 @@
       },
 
       async getUsageToday() {
-        const response = await fetchImpl('/api/usage/today', { credentials: 'same-origin' });
+        const response = await apiClient.fetch('/api/usage/today', { credentials: 'same-origin' });
         const data = await parseResponse(response);
         return data.usage || {};
       },
 
       async getTemplates(feature) {
-        const response = await fetchImpl(`/api/templates/${feature}`, { credentials: 'same-origin' });
+        const response = await apiClient.fetch(`/api/templates/${feature}`, { credentials: 'same-origin' });
         return parseResponse(response);
       },
 
       async createTemplate(feature, template) {
-        const response = await fetchImpl(`/api/templates/${feature}`, {
+        const response = await apiClient.fetch(`/api/templates/${feature}`, {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
@@ -624,7 +793,7 @@
       },
 
       async toggleTemplateFavorite(feature, templateId) {
-        const response = await fetchImpl(`/api/templates/${feature}/${templateId}/favorite`, {
+        const response = await apiClient.fetch(`/api/templates/${feature}/${templateId}/favorite`, {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' }
@@ -633,7 +802,7 @@
       },
 
       async getAdminUsers() {
-        const response = await fetchImpl('/api/admin/users', { credentials: 'same-origin' });
+        const response = await apiClient.fetch('/api/admin/users', { credentials: 'same-origin' });
         const data = await parseResponse(response);
         return data.users || [];
       },
@@ -644,14 +813,14 @@
           if (value == null || value === '') return;
           params.set(key, String(value));
         });
-        const response = await fetchImpl(`/api/admin/audit-logs${params.toString() ? `?${params.toString()}` : ''}`, {
+        const response = await apiClient.fetch(`/api/admin/audit-logs${params.toString() ? `?${params.toString()}` : ''}`, {
           credentials: 'same-origin'
         });
         return parseResponse(response);
       },
 
       async issueAdminInvitation(userId) {
-        const response = await fetchImpl(`/api/admin/users/${userId}/invite`, {
+        const response = await apiClient.fetch(`/api/admin/users/${userId}/invite`, {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
@@ -661,7 +830,7 @@
       },
 
       async resendAdminInvitation(userId) {
-        const response = await fetchImpl(`/api/admin/users/${userId}/invite-resend`, {
+        const response = await apiClient.fetch(`/api/admin/users/${userId}/invite-resend`, {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
@@ -671,7 +840,7 @@
       },
 
       async revokeAdminInvitation(userId) {
-        const response = await fetchImpl(`/api/admin/users/${userId}/invite-revoke`, {
+        const response = await apiClient.fetch(`/api/admin/users/${userId}/invite-revoke`, {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
@@ -681,7 +850,7 @@
       },
 
       async createAdminUser(payload) {
-        const response = await fetchImpl('/api/admin/users', {
+        const response = await apiClient.fetch('/api/admin/users', {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
@@ -692,7 +861,7 @@
       },
 
       async updateAdminUser(userId, patch) {
-        const response = await fetchImpl(`/api/admin/users/${userId}`, {
+        const response = await apiClient.fetch(`/api/admin/users/${userId}`, {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
@@ -703,7 +872,7 @@
       },
 
       async resetAdminUserPassword(userId, password) {
-        const response = await fetchImpl(`/api/admin/users/${userId}/password`, {
+        const response = await apiClient.fetch(`/api/admin/users/${userId}/password`, {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
@@ -717,19 +886,19 @@
       },
 
       async getConversations() {
-        const response = await fetchImpl('/api/conversations', { credentials: 'same-origin' });
+        const response = await apiClient.fetch('/api/conversations', { credentials: 'same-origin' });
         const data = await parseResponse(response);
         return data.conversations || [];
       },
 
       async listArchivedConversations() {
-        const response = await fetchImpl('/api/conversations/archived', { credentials: 'same-origin' });
+        const response = await apiClient.fetch('/api/conversations/archived', { credentials: 'same-origin' });
         const data = await parseResponse(response);
         return data.conversations || [];
       },
 
       async createConversation(payload = {}) {
-        const response = await fetchImpl('/api/conversations', {
+        const response = await apiClient.fetch('/api/conversations', {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
@@ -743,7 +912,7 @@
       },
 
       async getConversation(conversationId) {
-        const response = await fetchImpl(`/api/conversations/${conversationId}`, { credentials: 'same-origin' });
+        const response = await apiClient.fetch(`/api/conversations/${conversationId}`, { credentials: 'same-origin' });
         const data = await parseResponse(response);
         return {
           conversation: data.conversation || null,
@@ -752,7 +921,7 @@
       },
 
       async updateConversation(conversationId, patch = {}) {
-        const response = await fetchImpl(`/api/conversations/${conversationId}`, {
+        const response = await apiClient.fetch(`/api/conversations/${conversationId}`, {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
@@ -765,7 +934,7 @@
       },
 
       async archiveConversation(conversationId) {
-        const response = await fetchImpl(`/api/conversations/${conversationId}/archive`, {
+        const response = await apiClient.fetch(`/api/conversations/${conversationId}/archive`, {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
@@ -775,7 +944,7 @@
       },
 
       async restoreConversation(conversationId) {
-        const response = await fetchImpl(`/api/conversations/${conversationId}/restore`, {
+        const response = await apiClient.fetch(`/api/conversations/${conversationId}/restore`, {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
@@ -785,7 +954,7 @@
       },
 
       async deleteArchivedConversation(conversationId) {
-        const response = await fetchImpl(`/api/conversations/${conversationId}/delete`, {
+        const response = await apiClient.fetch(`/api/conversations/${conversationId}/delete`, {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
@@ -795,7 +964,7 @@
       },
 
       async sendChatMessage(payload) {
-        const response = await fetchImpl('/api/chat', {
+        const response = await apiClient.fetch('/api/chat', {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
@@ -816,6 +985,10 @@
     filterConversationSummaries,
     createMemoryStorage,
     createPersistence,
+    createApiClient,
+    getConfiguredApiBaseUrl,
+    buildApiUrl,
+    resolveApiAssetUrl,
     createRemotePersistence
   };
 });

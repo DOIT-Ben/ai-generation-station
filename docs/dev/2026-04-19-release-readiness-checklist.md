@@ -72,10 +72,13 @@ Run these in addition to the release-core lane before calling the build fully re
 20. Verify `/api/health` returns `200` locally and through the chosen proxy path
 21. Verify proxy-facing responses include the baseline security headers and CSP
 22. Verify disallowed API origins return `403` with `origin_not_allowed`
-23. Review the latest capacity-baseline artifact and confirm the current auth/admin-write throughput is acceptable for the next user-testing round
-24. Verify one backup can be created with `backup-app-state.ps1` and the manifest records the intended state/output scope
-25. Verify one restore dry-run path or isolated restore rehearsal succeeds before calling the environment operationally safe
-26. Verify prune policy removes old audit logs and old backup folders intentionally without touching `output\runtime`
+23. If a separate-site frontend is enabled, verify `GET /api/auth/csrf` succeeds only for the allowed frontend origin and sets an HttpOnly CSRF seed cookie
+24. If a separate-site frontend is enabled, verify unsafe `/api/*` requests without `X-CSRF-Token` fail with `403` and a `csrf_*` reason
+25. If a separate-site frontend is enabled, verify the frontend pages point at the intended API origin through the `aigs-api-base-url` meta setting
+26. Review the latest capacity-baseline artifact and confirm the current auth/admin-write throughput is acceptable for the next user-testing round
+27. Verify one backup can be created with `backup-app-state.ps1` and the manifest records the intended state/output scope
+28. Verify one restore dry-run path or isolated restore rehearsal succeeds before calling the environment operationally safe
+29. Verify prune policy removes old audit logs and old backup folders intentionally without touching `output\runtime`
 
 ## Support/Triage Notes
 
@@ -123,6 +126,16 @@ Run these in addition to the release-core lane before calling the build fully re
   - expect `403`
   - reason: `origin_not_allowed`
   - user-facing copy: `当前来源不被允许访问该接口`
+- missing or stale CSRF bootstrap:
+  - expect `403`
+  - reason:
+    - `csrf_seed_missing`
+    - `csrf_required`
+    - `csrf_invalid`
+  - user-facing copy:
+    - `安全校验已失效，请刷新页面后重试`
+    - `请求缺少安全校验，请刷新页面后重试`
+    - `安全校验失败，请刷新页面后重试`
 
 ### Admin Problems
 
@@ -175,5 +188,6 @@ Ready for user-facing testing only if:
 6. abuse throttling and admin audit logging behave intentionally
 7. gateway/origin/security-header behavior behaves intentionally
 8. state backup/restore/prune behavior is documented and manually sanity-checked
+9. separate-site browser CSRF behavior is intentional when cross-origin deployment is enabled
 
 If any of these fail, the round is not ready.

@@ -1,5 +1,6 @@
 const ROUTE_METHODS = {
     '/api/health': ['GET'],
+    '/api/auth/csrf': ['GET'],
     '/api/auth/session': ['GET'],
     '/api/auth/login': ['POST'],
     '/api/auth/register': ['POST'],

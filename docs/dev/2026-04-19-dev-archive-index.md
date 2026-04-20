@@ -10,7 +10,9 @@ Historical context still exists under `docs/开发过程文档`, but new active 
 
 - `User-Facing Productization Baseline`
 - `Email Delivery, Operator Controls, And Release Hardening`
-- `Next Recommended Mainline: State Durability And Retention Baseline`
+- `State Durability And Retention Baseline`
+- `Separate-Site Browser Security Baseline`
+- `Next Recommended Mainline: Auth/Write-Path Scaling And Multi-Node Readiness`
 
 ## Latest Extension Read Order
 
@@ -26,10 +28,12 @@ Read these first for the latest round:
 8. `2026-04-20-next-state-durability-mainline-granular-todo.md`
 9. `2026-04-20-state-durability-retention-plan.md`
 10. `2026-04-20-state-durability-retention-execution.md`
-11. `2026-04-19-user-facing-auth-rules.md`
-12. `2026-04-19-production-env-matrix.md`
-13. `2026-04-19-local-service-runbook.md`
-14. `2026-04-19-release-readiness-checklist.md`
+11. `2026-04-20-separate-site-browser-security-plan.md`
+12. `2026-04-20-separate-site-browser-security-execution.md`
+13. `2026-04-19-user-facing-auth-rules.md`
+14. `2026-04-19-production-env-matrix.md`
+15. `2026-04-19-local-service-runbook.md`
+16. `2026-04-19-release-readiness-checklist.md`
 
 ## Active Read Order
 
@@ -108,6 +112,7 @@ Read these first for the latest round:
 - fixed the anonymous desktop sidebar dead-click state caused by auth-gate hit-area overlap
 - promoted a `release-core` non-browser regression lane for sessions where browser automation is intentionally deferred or environment-blocked
 - re-established `docs/dev` as the sole active write target for the current round
+- added a separate-site browser CSRF baseline with configurable frontend API origin support
 
 ## Historical Context Still Relevant
 

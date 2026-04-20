@@ -1,6 +1,39 @@
 const assert = require('assert');
 const AppShell = require('./public/js/app-shell.js');
 
+function createMockResponse(payload, options = {}) {
+  const status = Number(options.status || 200);
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    clone() {
+      return createMockResponse(payload, options);
+    },
+    async json() {
+      return payload;
+    }
+  };
+}
+
+function createCsrfAwareFetch(calls, handler) {
+  return async (url, options = {}) => {
+    calls.push({ url, options });
+    if (String(url).includes('/api/auth/csrf')) {
+      return createMockResponse({
+        csrfToken: 'csrf-test-token',
+        headerName: 'X-CSRF-Token'
+      });
+    }
+    return handler
+      ? handler(url, options)
+      : createMockResponse({});
+  };
+}
+
+function withoutCsrfBootstrapCalls(calls) {
+  return calls.filter(call => !String(call.url).includes('/api/auth/csrf'));
+}
+
 function testAuth() {
   assert.equal(AppShell.authenticate('studio', 'AIGS2026!'), true, 'fixed credentials should authenticate');
   assert.equal(AppShell.authenticate('studio', 'wrong'), false, 'wrong password should fail');
@@ -35,21 +68,12 @@ function testRemotePersistenceShape() {
 
 async function testRemotePersistencePublicAuthRoutes() {
   const calls = [];
-  const remote = AppShell.createRemotePersistence(async (url, options = {}) => {
-    calls.push({ url, options });
-    return {
-      ok: true,
-      status: 200,
-      async json() {
-        return {
-          success: true,
-          user: {
-            username: 'invite-user'
-          }
-        };
-      }
-    };
-  });
+  const remote = AppShell.createRemotePersistence(createCsrfAwareFetch(calls, async () => createMockResponse({
+    success: true,
+    user: {
+      username: 'invite-user'
+    }
+  })));
 
   await remote.getInvitationSession('invite-token');
   await remote.activateInvitation('invite-token', 'Invite2026!');
@@ -65,47 +89,41 @@ async function testRemotePersistencePublicAuthRoutes() {
   await remote.resendAdminInvitation('user-123');
   await remote.revokeAdminInvitation('user-123');
 
-  assert.equal(calls[0].url, '/api/auth/invitation?token=invite-token', 'invitation session should request the invite validation route');
-  assert.equal(calls[0].options.credentials, 'same-origin', 'invitation session should keep same-origin credentials');
-  assert.equal(calls[1].url, '/api/auth/invitation/activate', 'invitation activation should request the activate route');
-  assert.equal(calls[1].options.method, 'POST', 'invitation activation should use POST');
-  assert.equal(JSON.parse(calls[1].options.body).password, 'Invite2026!', 'invitation activation should send the chosen password');
-  assert.equal(calls[2].url, '/api/auth/register', 'public register should request the register route');
-  assert.equal(calls[2].options.method, 'POST', 'public register should use POST');
-  assert.equal(JSON.parse(calls[2].options.body).email, 'invite@example.com', 'public register should send the email payload');
-  assert.equal(calls[3].url, '/api/auth/forgot-password', 'forgot-password should request the recovery route');
-  assert.equal(calls[3].options.method, 'POST', 'forgot-password should use POST');
-  assert.equal(JSON.parse(calls[3].options.body).username, 'invite-user', 'forgot-password should send the username payload');
-  assert.equal(calls[4].url, '/api/auth/password-reset?token=reset-token', 'password-reset session should request the reset validation route');
-  assert.equal(calls[5].url, '/api/auth/password-reset/complete', 'password-reset completion should request the completion route');
-  assert.equal(JSON.parse(calls[5].options.body).token, 'reset-token', 'password-reset completion should send the reset token');
-  assert.equal(calls[6].url, '/api/admin/users/user-123/invite', 'admin invitation should hit the admin invite route');
-  assert.equal(calls[6].options.method, 'POST', 'admin invitation should use POST');
-  assert.equal(calls[7].url, '/api/admin/users/user-123/invite-resend', 'admin invitation resend should hit the resend route');
-  assert.equal(calls[7].options.method, 'POST', 'admin invitation resend should use POST');
-  assert.equal(calls[8].url, '/api/admin/users/user-123/invite-revoke', 'admin invitation revoke should hit the revoke route');
-  assert.equal(calls[8].options.method, 'POST', 'admin invitation revoke should use POST');
+  const requestCalls = withoutCsrfBootstrapCalls(calls);
+  assert.ok(calls.some(call => String(call.url).includes('/api/auth/csrf')), 'POST auth/admin routes should bootstrap a CSRF token');
+  assert.equal(requestCalls[0].url, '/api/auth/invitation?token=invite-token', 'invitation session should request the invite validation route');
+  assert.equal(requestCalls[0].options.credentials, 'include', 'invitation session should use credentialed requests');
+  assert.equal(requestCalls[1].url, '/api/auth/invitation/activate', 'invitation activation should request the activate route');
+  assert.equal(requestCalls[1].options.method, 'POST', 'invitation activation should use POST');
+  assert.equal(requestCalls[1].options.headers['X-CSRF-Token'], 'csrf-test-token', 'invitation activation should include the CSRF header');
+  assert.equal(JSON.parse(requestCalls[1].options.body).password, 'Invite2026!', 'invitation activation should send the chosen password');
+  assert.equal(requestCalls[2].url, '/api/auth/register', 'public register should request the register route');
+  assert.equal(requestCalls[2].options.method, 'POST', 'public register should use POST');
+  assert.equal(JSON.parse(requestCalls[2].options.body).email, 'invite@example.com', 'public register should send the email payload');
+  assert.equal(requestCalls[3].url, '/api/auth/forgot-password', 'forgot-password should request the recovery route');
+  assert.equal(requestCalls[3].options.method, 'POST', 'forgot-password should use POST');
+  assert.equal(JSON.parse(requestCalls[3].options.body).username, 'invite-user', 'forgot-password should send the username payload');
+  assert.equal(requestCalls[4].url, '/api/auth/password-reset?token=reset-token', 'password-reset session should request the reset validation route');
+  assert.equal(requestCalls[5].url, '/api/auth/password-reset/complete', 'password-reset completion should request the completion route');
+  assert.equal(JSON.parse(requestCalls[5].options.body).token, 'reset-token', 'password-reset completion should send the reset token');
+  assert.equal(requestCalls[6].url, '/api/admin/users/user-123/invite', 'admin invitation should hit the admin invite route');
+  assert.equal(requestCalls[6].options.method, 'POST', 'admin invitation should use POST');
+  assert.equal(requestCalls[7].url, '/api/admin/users/user-123/invite-resend', 'admin invitation resend should hit the resend route');
+  assert.equal(requestCalls[7].options.method, 'POST', 'admin invitation resend should use POST');
+  assert.equal(requestCalls[8].url, '/api/admin/users/user-123/invite-revoke', 'admin invitation revoke should hit the revoke route');
+  assert.equal(requestCalls[8].options.method, 'POST', 'admin invitation revoke should use POST');
 }
 
 async function testRemotePersistenceAdminUserPayloads() {
   const calls = [];
-  const remote = AppShell.createRemotePersistence(async (url, options = {}) => {
-    calls.push({ url, options });
-    return {
-      ok: true,
-      status: 200,
-      async json() {
-        return {
-          users: [],
-          user: {
-            id: 'user-123',
-            username: 'member-user',
-            email: 'member@example.com'
-          }
-        };
-      }
-    };
-  });
+  const remote = AppShell.createRemotePersistence(createCsrfAwareFetch(calls, async () => createMockResponse({
+    users: [],
+    user: {
+      id: 'user-123',
+      username: 'member-user',
+      email: 'member@example.com'
+    }
+  })));
 
   await remote.getAdminUsers();
   await remote.createAdminUser({
@@ -117,35 +135,28 @@ async function testRemotePersistenceAdminUserPayloads() {
     email: 'member-updated@example.com'
   });
 
-  assert.equal(calls[0].url, '/api/admin/users', 'admin user list should hit the admin users endpoint');
-  assert.equal(calls[0].options.credentials, 'same-origin', 'admin user list should keep same-origin credentials');
-  assert.equal(calls[1].url, '/api/admin/users', 'admin create-user should hit the admin users endpoint');
-  assert.equal(calls[1].options.method, 'POST', 'admin create-user should use POST');
-  assert.equal(JSON.parse(calls[1].options.body).email, 'member@example.com', 'admin create-user should send the email payload');
-  assert.equal(calls[2].url, '/api/admin/users/user-123', 'admin update-user should hit the user patch route');
-  assert.equal(calls[2].options.method, 'POST', 'admin update-user should use POST');
-  assert.equal(JSON.parse(calls[2].options.body).email, 'member-updated@example.com', 'admin update-user should send the updated email payload');
+  const requestCalls = withoutCsrfBootstrapCalls(calls);
+  assert.equal(requestCalls[0].url, '/api/admin/users', 'admin user list should hit the admin users endpoint');
+  assert.equal(requestCalls[0].options.credentials, 'include', 'admin user list should use credentialed requests');
+  assert.equal(requestCalls[1].url, '/api/admin/users', 'admin create-user should hit the admin users endpoint');
+  assert.equal(requestCalls[1].options.method, 'POST', 'admin create-user should use POST');
+  assert.equal(requestCalls[1].options.headers['X-CSRF-Token'], 'csrf-test-token', 'admin create-user should include the CSRF header');
+  assert.equal(JSON.parse(requestCalls[1].options.body).email, 'member@example.com', 'admin create-user should send the email payload');
+  assert.equal(requestCalls[2].url, '/api/admin/users/user-123', 'admin update-user should hit the user patch route');
+  assert.equal(requestCalls[2].options.method, 'POST', 'admin update-user should use POST');
+  assert.equal(JSON.parse(requestCalls[2].options.body).email, 'member-updated@example.com', 'admin update-user should send the updated email payload');
 }
 
 async function testRemotePersistenceAdminAuditQuery() {
   const calls = [];
-  const remote = AppShell.createRemotePersistence(async (url, options = {}) => {
-    calls.push({ url, options });
-    return {
-      ok: true,
-      status: 200,
-      async json() {
-        return {
-          items: [],
-          page: 2,
-          pageSize: 25,
-          total: 0,
-          totalPages: 1,
-          hasMore: false
-        };
-      }
-    };
-  });
+  const remote = AppShell.createRemotePersistence(createCsrfAwareFetch(calls, async () => createMockResponse({
+    items: [],
+    page: 2,
+    pageSize: 25,
+    total: 0,
+    totalPages: 1,
+    hasMore: false
+  })));
 
   await remote.getAdminAuditLogs({
     page: 2,
@@ -167,7 +178,73 @@ async function testRemotePersistenceAdminAuditQuery() {
   assert.equal(requestUrl.searchParams.get('targetUsername'), 'member-user', 'admin audit query should include target filter');
   assert.equal(requestUrl.searchParams.get('from'), '2026-04-19', 'admin audit query should include from date');
   assert.equal(requestUrl.searchParams.get('to'), '2026-04-20', 'admin audit query should include to date');
-  assert.equal(calls[0].options.credentials, 'same-origin', 'admin audit query should keep same-origin credentials');
+  assert.equal(calls[0].options.credentials, 'include', 'admin audit query should use credentialed requests');
+}
+
+async function testApiClientConfiguredBaseUrlAndAssetResolution() {
+  const calls = [];
+  const previousApiBaseUrl = global.AIGS_API_BASE_URL;
+
+  global.AIGS_API_BASE_URL = 'https://api.example.com';
+
+  try {
+    const client = AppShell.createApiClient(createCsrfAwareFetch(calls, async () => createMockResponse({ ok: true })));
+    await client.fetch('/api/preferences');
+
+    assert.equal(calls[0].url, 'https://api.example.com/api/preferences', 'configured API base URL should prefix browser API requests');
+    assert.equal(calls[0].options.credentials, 'include', 'configured API base requests should keep credentials included');
+    assert.equal(
+      AppShell.resolveApiAssetUrl('/output/demo.mp3'),
+      'https://api.example.com/output/demo.mp3',
+      'relative output URLs should resolve against the configured API base URL'
+    );
+  } finally {
+    if (previousApiBaseUrl === undefined) {
+      delete global.AIGS_API_BASE_URL;
+    } else {
+      global.AIGS_API_BASE_URL = previousApiBaseUrl;
+    }
+  }
+}
+
+async function testApiClientRetriesCsrfOnce() {
+  const calls = [];
+  let csrfTokenCount = 0;
+  let protectedPostCount = 0;
+
+  const client = AppShell.createApiClient(async (url, options = {}) => {
+    calls.push({ url, options });
+    if (String(url).includes('/api/auth/csrf')) {
+      csrfTokenCount += 1;
+      return createMockResponse({
+        csrfToken: `csrf-token-${csrfTokenCount}`,
+        headerName: 'X-CSRF-Token'
+      });
+    }
+
+    protectedPostCount += 1;
+    if (protectedPostCount === 1) {
+      return createMockResponse({
+        error: '安全校验失败，请刷新页面后重试',
+        reason: 'csrf_invalid'
+      }, { status: 403 });
+    }
+
+    return createMockResponse({ success: true });
+  });
+
+  const response = await client.fetch('/api/preferences', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ theme: 'dark' })
+  });
+
+  const data = await response.json();
+  assert.equal(data.success, true, 'csrf retry path should eventually return the successful response');
+  assert.equal(csrfTokenCount, 2, 'csrf retry path should refresh the token once after a csrf failure');
+  assert.equal(protectedPostCount, 2, 'csrf retry path should replay the protected request once');
+  assert.equal(calls[1].options.headers['X-CSRF-Token'], 'csrf-token-1', 'first protected request should use the first csrf token');
+  assert.equal(calls[calls.length - 1].options.headers['X-CSRF-Token'], 'csrf-token-2', 'retried protected request should use the refreshed csrf token');
 }
 
 async function testRemotePersistenceAuthExpiryEvent() {
@@ -338,6 +415,8 @@ async function main() {
   testAuth();
   testTemplates();
   testRemotePersistenceShape();
+  await testApiClientConfiguredBaseUrlAndAssetResolution();
+  await testApiClientRetriesCsrfOnce();
   await testRemotePersistenceAdminAuditQuery();
   await testRemotePersistencePublicAuthRoutes();
   await testRemotePersistenceAdminUserPayloads();

@@ -5,8 +5,23 @@ const { createServer } = require('./server/index');
 const { createConfig } = require('./server/config');
 const { dispatchRequest } = require('./test-live-utils');
 
-function request(server, requestPath, method, body) {
-  return dispatchRequest(server, requestPath, method, body);
+async function request(server, requestPath, method, body) {
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(String(method || 'GET').toUpperCase())) {
+    return dispatchRequest(server, requestPath, method, body);
+  }
+
+  const csrfBootstrap = await dispatchRequest(server, '/api/auth/csrf', 'GET');
+  const csrfToken = csrfBootstrap.data?.csrfToken;
+  const rawSetCookie = csrfBootstrap.headers?.['set-cookie'];
+  const csrfCookie = Array.isArray(rawSetCookie) ? rawSetCookie[0] : rawSetCookie;
+  const csrfCookieHeader = String(csrfCookie || '').split(';')[0];
+
+  return dispatchRequest(server, requestPath, method, body, {
+    headers: {
+      Cookie: csrfCookieHeader,
+      ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {})
+    }
+  });
 }
 
 function createRuntime(dbPath) {

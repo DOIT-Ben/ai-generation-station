@@ -16,6 +16,7 @@ List the backend environment variables that matter for the current release candi
 | `TRUST_PROXY` | trust forwarded proxy headers | `true` |
 | `SESSION_COOKIE_SECURE` | force `Secure` session cookies | `true` |
 | `SESSION_COOKIE_SAME_SITE` | session cookie same-site policy | `Lax` |
+| `CSRF_SECRET` | secret used to derive browser CSRF tokens | stable random secret outside source control |
 
 ## Strongly Recommended
 
@@ -64,12 +65,25 @@ Server default policy allows:
 - fonts from self plus `https://fonts.gstatic.com`
 - images/media from self plus local `data:` / `blob:` usage already present in the app
 
+## Separate-Site Frontend Notes
+
+If the frontend pages are hosted on a different origin than the API:
+
+1. set `ALLOWED_ORIGINS` to the exact frontend origin
+2. set `SESSION_COOKIE_SAME_SITE=None`
+3. keep `SESSION_COOKIE_SECURE=true`
+4. set `CSRF_SECRET` to a stable secret value
+5. set `<meta name="aigs-api-base-url" content="https://api.example.com">` in the served frontend pages
+
+Default same-origin deployments do not need the meta override and can keep `SESSION_COOKIE_SAME_SITE=Lax`.
+
 ## Do Not Forget
 
 1. do not leave bootstrap defaults in any public-facing environment
 2. do not enable `TRUST_PROXY=true` unless a real reverse proxy is actually supplying trusted forwarded headers
 3. do not add extra origins unless there is a real browser entry point that requires them
 4. if `SESSION_COOKIE_SAME_SITE=None` is ever chosen, keep `SESSION_COOKIE_SECURE=true`
-5. do not enable `NOTIFICATION_DELIVERY_MODE=resend` without configuring both `NOTIFICATION_FROM_EMAIL` and `RESEND_API_KEY`
-6. do not point `STATE_BACKUP_DIR` inside `OUTPUT_DIR`
-7. do not treat `output\runtime` logs as durable recoverable user state
+5. if a separate-site frontend is enabled, do not forget to configure both `ALLOWED_ORIGINS` and `CSRF_SECRET`
+6. do not enable `NOTIFICATION_DELIVERY_MODE=resend` without configuring both `NOTIFICATION_FROM_EMAIL` and `RESEND_API_KEY`
+7. do not point `STATE_BACKUP_DIR` inside `OUTPUT_DIR`
+8. do not treat `output\runtime` logs as durable recoverable user state

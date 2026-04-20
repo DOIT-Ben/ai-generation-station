@@ -107,6 +107,66 @@ function normalizeHeaders(headers = {}) {
     }, {});
 }
 
+function isUnsafeMethod(method) {
+    return !['GET', 'HEAD', 'OPTIONS'].includes(String(method || 'GET').toUpperCase());
+}
+
+function getCookieHeaderValue(rawSetCookieHeader) {
+    if (!rawSetCookieHeader) return '';
+    const items = Array.isArray(rawSetCookieHeader) ? rawSetCookieHeader : [rawSetCookieHeader];
+    return items
+        .map(item => String(item || '').split(';')[0].trim())
+        .filter(Boolean)
+        .join('; ');
+}
+
+function mergeCookieHeaders(...cookieHeaders) {
+    const cookieMap = new Map();
+    cookieHeaders
+        .map(value => String(value || '').trim())
+        .filter(Boolean)
+        .forEach(headerValue => {
+            headerValue.split(';').map(part => part.trim()).filter(Boolean).forEach(part => {
+                const [name, ...rest] = part.split('=');
+                if (!name || rest.length === 0) return;
+                cookieMap.set(name.trim(), rest.join('=').trim());
+            });
+        });
+
+    return Array.from(cookieMap.entries())
+        .map(([name, value]) => `${name}=${value}`)
+        .join('; ');
+}
+
+async function withCsrfProtection(requestFn, path, method, body, options = {}) {
+    if (!isUnsafeMethod(method) || options.skipCsrf === true) {
+        return requestFn(path, method, body, options);
+    }
+
+    const baseHeaders = normalizeHeaders(options.headers || {});
+    const csrfBootstrap = await requestFn('/api/auth/csrf', 'GET', null, {
+        headers: baseHeaders
+    });
+    const csrfCookieHeader = getCookieHeaderValue(csrfBootstrap.headers?.['set-cookie']);
+    const mergedCookie = mergeCookieHeaders(baseHeaders.cookie, csrfCookieHeader);
+    const csrfToken = csrfBootstrap.data?.csrfToken;
+    const headers = {
+        ...baseHeaders
+    };
+
+    if (mergedCookie) {
+        headers.cookie = mergedCookie;
+    }
+    if (csrfToken) {
+        headers['x-csrf-token'] = csrfToken;
+    }
+
+    return requestFn(path, method, body, {
+        ...options,
+        headers
+    });
+}
+
 function dispatchRequest(server, path, method, body, options = {}) {
     return new Promise((resolve, reject) => {
         const payload = options.raw
@@ -203,9 +263,15 @@ function makeNetworkRequest(path, method, body, options = {}) {
 function makeRequest(path, method, body, options = {}) {
     const server = getBoundServer();
     if (server) {
-        return dispatchRequest(server, path, method, body, options);
+        return withCsrfProtection(
+            (requestPath, requestMethod, requestBody, requestOptions) => dispatchRequest(server, requestPath, requestMethod, requestBody, requestOptions),
+            path,
+            method,
+            body,
+            options
+        );
     }
-    return makeNetworkRequest(path, method, body, options);
+    return withCsrfProtection(makeNetworkRequest, path, method, body, options);
 }
 
 async function assertServerReady() {

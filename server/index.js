@@ -18,6 +18,7 @@ const { createStateRoutes } = require('./routes/state');
 const { createSystemRoutes } = require('./routes/system');
 const { createStateStore } = require('./state-store');
 const { createNotificationService } = require('./lib/notifications');
+const { isSafeMethod, deriveCsrfToken, readRequestHeader } = require('./lib/csrf');
 const {
     applySecurityHeaders,
     applyCorsHeaders,
@@ -40,6 +41,9 @@ function createServer(options = {}) {
         SESSION_TTL_MS,
         SESSION_COOKIE_SECURE,
         SESSION_COOKIE_SAME_SITE,
+        CSRF_COOKIE_NAME,
+        CSRF_TOKEN_HEADER_NAME,
+        CSRF_SECRET,
         PUBLIC_REGISTRATION_ENABLED,
         APP_STATE_DB,
         LEGACY_STATE_FILE,
@@ -109,7 +113,11 @@ function createServer(options = {}) {
                 allowedOrigins: ALLOWED_ORIGINS,
                 publicRegistrationEnabled: PUBLIC_REGISTRATION_ENABLED,
                 sessionCookieSecure: SESSION_COOKIE_SECURE,
-                sessionCookieSameSite: SESSION_COOKIE_SAME_SITE
+                sessionCookieSameSite: SESSION_COOKIE_SAME_SITE,
+                sessionTtlMs: SESSION_TTL_MS,
+                csrfCookieName: CSRF_COOKIE_NAME,
+                csrfTokenHeaderName: CSRF_TOKEN_HEADER_NAME,
+                csrfSecret: CSRF_SECRET
             }
         }),
         ...createLocalRoutes({ OUTPUT_DIR, MIME_TYPES, musicTasks, coverTasks, imageTasks, stateStore }),
@@ -152,6 +160,36 @@ function createServer(options = {}) {
             const allowedMethods = ROUTE_METHODS[matchedRoute] || ['GET', 'POST'];
             if (!allowedMethods.includes(req.method)) {
                 sendJson(res, 405, { error: `Method ${req.method} not allowed` });
+                return;
+            }
+        }
+
+        if (handler && parsedUrl.pathname.startsWith('/api/') && !isSafeMethod(req.method)) {
+            const csrfSeed = String(cookies[CSRF_COOKIE_NAME] || '').trim();
+            const csrfHeader = String(readRequestHeader(req, CSRF_TOKEN_HEADER_NAME) || '').trim();
+            const expectedCsrfToken = deriveCsrfToken(csrfSeed, CSRF_SECRET);
+
+            if (!csrfSeed) {
+                sendJson(res, 403, {
+                    error: '安全校验已失效，请刷新页面后重试',
+                    reason: 'csrf_seed_missing'
+                });
+                return;
+            }
+
+            if (!csrfHeader) {
+                sendJson(res, 403, {
+                    error: '请求缺少安全校验，请刷新页面后重试',
+                    reason: 'csrf_required'
+                });
+                return;
+            }
+
+            if (!expectedCsrfToken || csrfHeader !== expectedCsrfToken) {
+                sendJson(res, 403, {
+                    error: '安全校验失败，请刷新页面后重试',
+                    reason: 'csrf_invalid'
+                });
                 return;
             }
         }

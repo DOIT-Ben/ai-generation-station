@@ -40,6 +40,20 @@ function assert(condition, message) {
   }
 }
 
+function getSetCookies(response) {
+  const raw = response.headers['set-cookie'];
+  if (!raw) return [];
+  return Array.isArray(raw) ? raw : [raw];
+}
+
+function getCookieHeader(cookieLine) {
+  return String(cookieLine || '').split(';')[0];
+}
+
+function findCookie(response, cookieName) {
+  return getSetCookies(response).find(cookie => String(cookie).startsWith(`${cookieName}=`)) || null;
+}
+
 async function testHealthAndSecurityHeaders() {
   await withServer(async server => {
     const health = await request(server, '/api/health', 'GET');
@@ -105,15 +119,20 @@ async function testSameOriginAndAllowedCors() {
     );
     assert(String(allowedOrigin.headers['vary'] || '').includes('Origin'), 'Expected Vary: Origin when CORS is evaluated');
 
-    const preflight = await request(server, '/api/health', 'OPTIONS', null, {
+    const preflight = await request(server, '/api/auth/login', 'OPTIONS', null, {
       Host: 'localhost:18806',
       Origin: 'https://studio.example.com',
-      'Access-Control-Request-Method': 'GET'
+      'Access-Control-Request-Method': 'POST',
+      'Access-Control-Request-Headers': 'Content-Type, X-CSRF-Token'
     });
     assert(preflight.status === 204, `Expected allowed preflight to return 204, got ${preflight.status}`);
     assert(
       preflight.headers['access-control-allow-origin'] === 'https://studio.example.com',
       'Expected allowed preflight to return explicit Access-Control-Allow-Origin'
+    );
+    assert(
+      String(preflight.headers['access-control-allow-headers'] || '').includes('X-CSRF-Token'),
+      'Expected allowed preflight to include the CSRF request header'
     );
   }, {
     env: {
@@ -125,25 +144,58 @@ async function testSameOriginAndAllowedCors() {
 
 async function testDisallowedOriginAndSecureCookie() {
   await withServer(async server => {
-    const disallowed = await request(server, '/api/health', 'GET', null, {
+    const disallowed = await request(server, '/api/auth/csrf', 'GET', null, {
       Host: 'localhost:18807',
       Origin: 'https://evil.example.com'
     });
     assert(disallowed.status === 403, `Expected disallowed API origin to return 403, got ${disallowed.status}`);
     assert(disallowed.data.reason === 'origin_not_allowed', 'Expected explicit origin_not_allowed reason');
 
-    const proxiedLogin = await request(server, '/api/auth/login', 'POST', {
-      username: 'studio',
-      password: 'AIGS2026!'
-    }, {
+    const baseHeaders = {
       Host: 'studio.example.com',
       Origin: 'https://studio.example.com',
       'X-Forwarded-Proto': 'https',
       'X-Forwarded-For': '198.51.100.10'
+    };
+
+    const missingSeedLogin = await request(server, '/api/auth/login', 'POST', {
+      username: 'studio',
+      password: 'AIGS2026!'
+    }, baseHeaders);
+    assert(missingSeedLogin.status === 403, `Expected login without CSRF seed to return 403, got ${missingSeedLogin.status}`);
+    assert(missingSeedLogin.data.reason === 'csrf_seed_missing', 'Expected login without CSRF seed to fail with csrf_seed_missing');
+
+    const csrfBootstrap = await request(server, '/api/auth/csrf', 'GET', null, baseHeaders);
+    assert(csrfBootstrap.status === 200, `Expected CSRF bootstrap to return 200, got ${csrfBootstrap.status}`);
+    assert(Boolean(csrfBootstrap.data.csrfToken), 'Expected CSRF bootstrap payload to include a token');
+    assert(csrfBootstrap.data.headerName === 'X-CSRF-Token', 'Expected CSRF bootstrap payload to expose the header name');
+
+    const csrfCookie = findCookie(csrfBootstrap, 'aigs_csrf');
+    assert(Boolean(csrfCookie), 'Expected CSRF bootstrap to set the CSRF seed cookie');
+    assert(String(csrfCookie).includes('Secure'), 'Expected CSRF seed cookie to be secure behind HTTPS');
+    assert(String(csrfCookie).includes('HttpOnly'), 'Expected CSRF seed cookie to remain HttpOnly');
+    assert(String(csrfCookie).includes('SameSite=None'), 'Expected configured SameSite=None to be preserved on the CSRF seed cookie');
+
+    const missingHeaderLogin = await request(server, '/api/auth/login', 'POST', {
+      username: 'studio',
+      password: 'AIGS2026!'
+    }, {
+      ...baseHeaders,
+      Cookie: getCookieHeader(csrfCookie)
+    });
+    assert(missingHeaderLogin.status === 403, `Expected login without CSRF header to return 403, got ${missingHeaderLogin.status}`);
+    assert(missingHeaderLogin.data.reason === 'csrf_required', 'Expected login without CSRF header to fail with csrf_required');
+
+    const proxiedLogin = await request(server, '/api/auth/login', 'POST', {
+      username: 'studio',
+      password: 'AIGS2026!'
+    }, {
+      ...baseHeaders,
+      Cookie: getCookieHeader(csrfCookie),
+      'X-CSRF-Token': csrfBootstrap.data.csrfToken
     });
     assert(proxiedLogin.status === 200, `Expected proxied login to succeed, got ${proxiedLogin.status}`);
-    const rawCookieHeader = proxiedLogin.headers['set-cookie'];
-    const cookieHeader = Array.isArray(rawCookieHeader) ? rawCookieHeader[0] : rawCookieHeader;
+    const cookieHeader = findCookie(proxiedLogin, 'aigs_session');
     assert(Boolean(cookieHeader), 'Expected proxied login to return a session cookie');
     assert(String(cookieHeader).includes('Secure'), 'Expected proxied HTTPS login to set a Secure cookie');
     assert(String(cookieHeader).includes('HttpOnly'), 'Expected proxied login cookie to remain HttpOnly');

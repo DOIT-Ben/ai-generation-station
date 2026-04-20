@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { parseCookies, sendJson, setCookie, clearCookie } = require('../lib/http');
+const { createCsrfSeed, deriveCsrfToken } = require('../lib/csrf');
 const { getClientIp, getRequestProtocol } = require('../lib/request-security');
 
 function createStateRoutes({ stateStore, sessionCookieName, authConfig, notificationService, securityConfig = {} }) {
@@ -143,6 +144,33 @@ function createStateRoutes({ stateStore, sessionCookieName, authConfig, notifica
             path: '/'
         });
         return session;
+    }
+
+    function ensureCsrfSeed(req, res) {
+        const cookies = parseCookies(req.headers.cookie || '');
+        const cookieName = securityConfig.csrfCookieName || 'aigs_csrf';
+        let csrfSeed = String(cookies[cookieName] || '').trim();
+        if (csrfSeed) {
+            return csrfSeed;
+        }
+
+        csrfSeed = createCsrfSeed();
+        setCookie(res, cookieName, csrfSeed, {
+            httpOnly: true,
+            secure: Boolean(securityConfig.sessionCookieSecure) || getRequestProtocol(req, requestSecurityOptions) === 'https',
+            sameSite: securityConfig.sessionCookieSameSite || 'Lax',
+            maxAge: Math.max(60, Math.floor(Number(securityConfig.sessionTtlMs || (7 * 24 * 60 * 60 * 1000)) / 1000)),
+            path: '/'
+        });
+        return csrfSeed;
+    }
+
+    function getCsrfPayload(req, res) {
+        const csrfSeed = ensureCsrfSeed(req, res);
+        return {
+            csrfToken: deriveCsrfToken(csrfSeed, securityConfig.csrfSecret),
+            headerName: 'X-CSRF-Token'
+        };
     }
 
     function buildPreviewPath(kind, token) {
@@ -369,6 +397,11 @@ function createStateRoutes({ stateStore, sessionCookieName, authConfig, notifica
     }
 
     return {
+        '/api/auth/csrf': async (req, res) => {
+            res.setHeader('Cache-Control', 'no-store');
+            return getCsrfPayload(req, res);
+        },
+
         '/api/auth/session': async (req, res) => {
             const { token, session, reason } = getCurrentSession(req);
             if (!session) {

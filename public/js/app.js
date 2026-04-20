@@ -20,7 +20,12 @@
   const $ = id => document.getElementById(id);
   const $$ = (sel, ctx) => (ctx || document).querySelectorAll(sel);
   const appShell = window.AppShell || null;
+  const apiClient = appShell && window.fetch && appShell.createApiClient
+    ? appShell.createApiClient(window.fetch.bind(window))
+    : null;
+  const apiFetch = apiClient?.fetch ? apiClient.fetch.bind(apiClient) : window.fetch.bind(window);
   const persistence = appShell && window.fetch ? appShell.createRemotePersistence(window.fetch.bind(window)) : null;
+  const resolveApiAssetUrl = appShell?.resolveApiAssetUrl || (value => value);
   const filterConversationSummaries = appShell?.filterConversationSummaries || ((items, query) => {
     const collection = Array.isArray(items) ? items.slice() : [];
     const normalizedQuery = String(query || '').replace(/\s+/g, ' ').trim().toLowerCase();
@@ -1162,7 +1167,7 @@
       return;
     }
     if (feature === 'music') {
-      $('music-audio').src = result.url || '';
+      $('music-audio').src = resolveApiAssetUrl(result.url || '');
       const durationMs = parseInt(result.duration, 10) || 0;
       $('music-duration-info').textContent = durationMs ? `${(durationMs / 1000).toFixed(1)}秒` : '';
       $('music-model-info').textContent = '模型: music-2.6';
@@ -1170,19 +1175,19 @@
       return;
     }
     if (feature === 'cover') {
-      $('cover-image').src = result.url || '';
+      $('cover-image').src = resolveApiAssetUrl(result.url || '');
       $('cover-meta').textContent = inputs?.style ? `风格: ${inputs.style}` : '';
       getResultArea('cover')?.removeAttribute('hidden');
       return;
     }
     if (feature === 'speech') {
       $('speech-result')?.removeAttribute('hidden');
-      $('speech-audio').src = result.url || '';
+      $('speech-audio').src = resolveApiAssetUrl(result.url || '');
       $('speech-info').textContent = result.info || '';
       return;
     }
     if (feature === 'covervoice') {
-      $('voice-audio').src = result.url || '';
+      $('voice-audio').src = resolveApiAssetUrl(result.url || '');
       $('voice-meta').textContent = result.duration ? `时长: ${result.duration}s` : '';
       getResultArea('covervoice')?.removeAttribute('hidden');
     }
@@ -1429,7 +1434,7 @@
     const el = $('quota-info');
 
     try {
-      const res = await fetch('/api/quota');
+      const res = await apiFetch('/api/quota');
       if (!res.ok) throw new Error();
       const data = await res.json();
       const models = data.model_remains || [];
@@ -1501,7 +1506,7 @@
     startInlineProgress(resultTab, `${resultTab}-progress-fill`, `${resultTab}-progress-text`);
 
     try {
-      const res = await fetch(apiEndpoint, {
+      const res = await apiFetch(apiEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
@@ -1561,7 +1566,7 @@
 
     try {
       // 1. 启动音乐生成任务
-      const res = await fetch('/api/generate/music', {
+      const res = await apiFetch('/api/generate/music', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt, style, bpm, key, duration }),
@@ -1575,7 +1580,7 @@
 
       // 2. 轮询检查任务状态
       const checkStatus = async () => {
-        const statusRes = await fetch('/api/music/status', {
+        const statusRes = await apiFetch('/api/music/status', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ taskId }),
@@ -1606,14 +1611,14 @@
 
       // 3. 显示结果
       stopInlineProgress();
-      $('music-audio').src = statusData.audio_url || statusData.url || '';
+      $('music-audio').src = resolveApiAssetUrl(statusData.audio_url || statusData.url || '');
       // 转换毫秒为秒显示
       const durationMs = parseInt(statusData.duration) || 0;
       const durationSec = (durationMs / 1000).toFixed(1);
       $('music-duration-info').textContent = durationMs > 0 ? `${durationSec}秒` : '';
       $('music-model-info').textContent = '模型: music-2.6';
       recordFeatureHistory('music', prompt, `${style || '默认风格'} · ${duration || '自动时长'}`, { prompt, style, bpm, key, duration }, {
-        url: statusData.url || '',
+        url: resolveApiAssetUrl(statusData.url || ''),
         duration: statusData.duration || 0
       });
 
@@ -1672,7 +1677,7 @@
     showLoading('正在生成封面...', 0);
     startInlineProgress('cover', 'cover-progress-fill', 'cover-progress-text');
 
-    fetch('/api/generate/cover', {
+    apiFetch('/api/generate/cover', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt, ratio, style }),
@@ -1694,7 +1699,7 @@
     const btn = $('btn-generate-cover');
 
     const tryPoll = (retry) => {
-      fetch('/api/image/status', {
+      apiFetch('/api/image/status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ taskId }),
@@ -1706,7 +1711,7 @@
           if (data.status === 'completed') {
             stopInlineProgress();
             const img = $('cover-image');
-            img.src = data.url || '';
+            img.src = resolveApiAssetUrl(data.url || '');
             img.onclick = () => openImageModal(img.src);
             $('cover-meta').textContent = data.model ? `模型: ${data.model}` : '';
             $('cover-result')?.removeAttribute('hidden');
@@ -1714,7 +1719,7 @@
             loadQuota();
             refreshUsageToday();
             recordFeatureHistory('cover', inputs.prompt, `${inputs.style || '自动风格'} · ${inputs.ratio || '1:1'}`, inputs, {
-              url: data.url,
+              url: resolveApiAssetUrl(data.url),
               size: data.size,
               duration: data.duration
             });
@@ -1782,7 +1787,7 @@
     try {
       // 1. 把文件转成 base64 上传
       const base64 = await fileToBase64(file);
-      const uploadRes = await fetch('/api/upload', {
+      const uploadRes = await apiFetch('/api/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filename: file.name, data: base64 }),
@@ -1790,7 +1795,7 @@
       const uploadData = await uploadRes.json();
       if (!uploadData.success) throw new Error(uploadData.error || '文件上传失败');
 
-      const audioUrl = uploadData.url;
+      const audioUrl = resolveApiAssetUrl(uploadData.url);
       showLoading('正在处理翻唱...', 50);
 
       // 2. 用上传后的 URL 发起翻唱
@@ -1821,7 +1826,7 @@
         pitch: $('voice-pitch')?.value || '',
       };
 
-      const res = await fetch('/api/generate/voice', {
+      const res = await apiFetch('/api/generate/voice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
@@ -1840,7 +1845,7 @@
 
       // 轮询检查任务状态
       const checkStatus = async () => {
-        const statusRes = await fetch('/api/music-cover/status', {
+        const statusRes = await apiFetch('/api/music-cover/status', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ taskId }),
@@ -1871,7 +1876,7 @@
 
       stopInlineProgress();
 
-      $('voice-audio').src = statusData.url || '';
+      $('voice-audio').src = resolveApiAssetUrl(statusData.url || '');
       $('voice-meta').textContent = statusData.duration ? `时长: ${statusData.duration}s` : '';
 
       if (resultEl) { resultEl.removeAttribute('hidden'); resultEl.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' }); }
@@ -1884,7 +1889,7 @@
         pitch: config.pitch,
         audio_url: audioUrl
       }, {
-        url: statusData.url || '',
+        url: resolveApiAssetUrl(statusData.url || ''),
         duration: statusData.duration || 0
       });
       showToast('歌声翻唱完成！', 'success');
@@ -1917,7 +1922,7 @@
         pitch: $('voice-pitch')?.value || '',
       };
 
-      const res = await fetch('/api/generate/voice', {
+      const res = await apiFetch('/api/generate/voice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
@@ -1936,7 +1941,7 @@
 
       // 轮询检查任务状态
       const checkStatus = async () => {
-        const statusRes = await fetch('/api/music-cover/status', {
+        const statusRes = await apiFetch('/api/music-cover/status', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ taskId }),
@@ -1967,7 +1972,7 @@
 
       stopInlineProgress();
 
-      $('voice-audio').src = statusData.url || '';
+      $('voice-audio').src = resolveApiAssetUrl(statusData.url || '');
       $('voice-meta').textContent = statusData.duration ? `时长: ${statusData.duration}s` : '';
 
       if (resultEl) { resultEl.removeAttribute('hidden'); resultEl.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' }); }
@@ -1980,7 +1985,7 @@
         pitch: config.pitch,
         audio_url: audioUrl
       }, {
-        url: statusData.url || '',
+        url: resolveApiAssetUrl(statusData.url || ''),
         duration: statusData.duration || 0
       });
       showToast('歌声翻唱完成！', 'success');
@@ -2187,7 +2192,7 @@
 
     try {
       const model = $('chat-model')?.value || 'MiniMax-M2.7';
-      const res = await fetch('/api/chat', {
+      const res = await apiFetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: chatHistory, model }),
@@ -2230,7 +2235,7 @@
 
     try {
       const model = $('chat-model')?.value || 'MiniMax-M2.7';
-      const res = await fetch('/api/chat', {
+      const res = await apiFetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: chatHistory, model }),
@@ -2274,7 +2279,7 @@
     setChatLoading(true);
 
     try {
-      const res = await fetch('/api/chat', {
+      const res = await apiFetch('/api/chat', {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
@@ -2451,7 +2456,7 @@
       if (btn) btn.disabled = true;
 
       try {
-        const res = await fetch('/api/tts', {
+        const res = await apiFetch('/api/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -2470,10 +2475,10 @@
         if (data.success) {
           $('speech-result')?.removeAttribute('hidden');
           const audio = $('speech-audio');
-          if (audio) audio.src = data.url;
+          if (audio) audio.src = resolveApiAssetUrl(data.url);
           const info = $('speech-info');
           if (info) info.textContent = `音频时长: ${data.extra?.audio_length || '?'}s | 消耗字符: ${data.extra?.usage_characters || text.length}`;
-          currentResult.speech = { url: data.url, info: info?.textContent || '' };
+          currentResult.speech = { url: resolveApiAssetUrl(data.url), info: info?.textContent || '' };
           recordFeatureHistory('speech', text, `${$('speech-voice')?.value || ''} · ${$('speech-emotion')?.value || ''}`, {
             text,
             voice_id: $('speech-voice')?.value,
@@ -2483,7 +2488,7 @@
             vol: $('speech-vol')?.value,
             output_format: $('speech-format')?.value
           }, {
-            url: data.url,
+            url: resolveApiAssetUrl(data.url),
             info: info?.textContent || ''
           });
           showToast('语音生成成功！', 'success');

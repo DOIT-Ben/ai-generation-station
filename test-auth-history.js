@@ -6,8 +6,57 @@ const { createServer } = require('./server/index');
 const { createConfig } = require('./server/config');
 const { dispatchRequest } = require('./test-live-utils');
 
-function request(server, requestPath, method, body, headers = {}) {
-  return dispatchRequest(server, requestPath, method, body, { headers });
+function isUnsafeMethod(method) {
+  return !['GET', 'HEAD', 'OPTIONS'].includes(String(method || 'GET').toUpperCase());
+}
+
+function extractCookieHeader(rawSetCookieHeader) {
+  if (!rawSetCookieHeader) return '';
+  const items = Array.isArray(rawSetCookieHeader) ? rawSetCookieHeader : [rawSetCookieHeader];
+  return items
+    .map(item => String(item || '').split(';')[0].trim())
+    .filter(Boolean)
+    .join('; ');
+}
+
+function mergeCookieHeaders(...cookieHeaders) {
+  const cookieMap = new Map();
+  cookieHeaders
+    .map(value => String(value || '').trim())
+    .filter(Boolean)
+    .forEach(headerValue => {
+      headerValue.split(';').map(part => part.trim()).filter(Boolean).forEach(part => {
+        const [name, ...rest] = part.split('=');
+        if (!name || rest.length === 0) return;
+        cookieMap.set(name.trim(), rest.join('=').trim());
+      });
+    });
+
+  return Array.from(cookieMap.entries())
+    .map(([name, value]) => `${name}=${value}`)
+    .join('; ');
+}
+
+async function request(server, requestPath, method, body, headers = {}) {
+  if (!isUnsafeMethod(method)) {
+    return dispatchRequest(server, requestPath, method, body, { headers });
+  }
+
+  const csrfBootstrap = await dispatchRequest(server, '/api/auth/csrf', 'GET', null, { headers });
+  const csrfToken = csrfBootstrap.data?.csrfToken;
+  const csrfCookieHeader = extractCookieHeader(csrfBootstrap.headers?.['set-cookie']);
+  const mergedHeaders = {
+    ...headers
+  };
+  const mergedCookie = mergeCookieHeaders(headers.Cookie || headers.cookie, csrfCookieHeader);
+  if (mergedCookie) {
+    mergedHeaders.Cookie = mergedCookie;
+  }
+  if (csrfToken) {
+    mergedHeaders['X-CSRF-Token'] = csrfToken;
+  }
+
+  return dispatchRequest(server, requestPath, method, body, { headers: mergedHeaders });
 }
 
 function createHttpsStub(responses = []) {

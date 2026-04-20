@@ -47,47 +47,142 @@ function removeFileIfExists(filepath) {
   }
 }
 
-function makeRequest({ port, requestPath, method = 'GET', body = null, headers = {} }) {
-  return new Promise((resolve, reject) => {
-    const payload = body == null ? null : JSON.stringify(body);
-    const requestHeaders = { ...headers };
-    if (payload) {
-      requestHeaders['Content-Type'] = requestHeaders['Content-Type'] || 'application/json';
-      requestHeaders['Content-Length'] = Buffer.byteLength(payload);
-    }
+function isUnsafeMethod(method) {
+  return !['GET', 'HEAD', 'OPTIONS'].includes(String(method || 'GET').toUpperCase());
+}
 
-    const req = http.request({
-      hostname: '127.0.0.1',
-      port,
-      path: requestPath,
-      method,
-      headers: requestHeaders
-    }, res => {
-      let data = '';
-      res.on('data', chunk => {
-        data += chunk;
-      });
-      res.on('end', () => {
-        let parsed = data;
-        try {
-          parsed = data ? JSON.parse(data) : null;
-        } catch {
-          parsed = data;
-        }
-        resolve({
-          status: Number(res.statusCode || 0),
-          headers: res.headers || {},
-          data: parsed,
-          rawBody: data
-        });
+function extractCookieHeader(rawSetCookieHeader) {
+  if (!rawSetCookieHeader) return '';
+  const items = Array.isArray(rawSetCookieHeader) ? rawSetCookieHeader : [rawSetCookieHeader];
+  return items
+    .map(item => String(item || '').split(';')[0].trim())
+    .filter(Boolean)
+    .join('; ');
+}
+
+function mergeCookieHeaders(...cookieHeaders) {
+  const cookieMap = new Map();
+  cookieHeaders
+    .map(value => String(value || '').trim())
+    .filter(Boolean)
+    .forEach(headerValue => {
+      headerValue.split(';').map(part => part.trim()).filter(Boolean).forEach(part => {
+        const [name, ...rest] = part.split('=');
+        if (!name || rest.length === 0) return;
+        cookieMap.set(name.trim(), rest.join('=').trim());
       });
     });
 
-    req.on('error', reject);
-    if (payload) {
-      req.write(payload);
+  return Array.from(cookieMap.entries())
+    .map(([name, value]) => `${name}=${value}`)
+    .join('; ');
+}
+
+function makeRequest({ port, requestPath, method = 'GET', body = null, headers = {} }) {
+  if (!isUnsafeMethod(method)) {
+    return new Promise((resolve, reject) => {
+      const payload = body == null ? null : JSON.stringify(body);
+      const requestHeaders = { ...headers };
+      if (payload) {
+        requestHeaders['Content-Type'] = requestHeaders['Content-Type'] || 'application/json';
+        requestHeaders['Content-Length'] = Buffer.byteLength(payload);
+      }
+
+      const req = http.request({
+        hostname: '127.0.0.1',
+        port,
+        path: requestPath,
+        method,
+        headers: requestHeaders
+      }, res => {
+        let data = '';
+        res.on('data', chunk => {
+          data += chunk;
+        });
+        res.on('end', () => {
+          let parsed = data;
+          try {
+            parsed = data ? JSON.parse(data) : null;
+          } catch {
+            parsed = data;
+          }
+          resolve({
+            status: Number(res.statusCode || 0),
+            headers: res.headers || {},
+            data: parsed,
+            rawBody: data
+          });
+        });
+      });
+
+      req.on('error', reject);
+      if (payload) {
+        req.write(payload);
+      }
+      req.end();
+    });
+  }
+
+  return makeRequest({
+    port,
+    requestPath: '/api/auth/csrf',
+    method: 'GET',
+    headers
+  }).then(csrfBootstrap => {
+    const csrfToken = csrfBootstrap.data?.csrfToken;
+    const csrfCookieHeader = extractCookieHeader(csrfBootstrap.headers?.['set-cookie']);
+    const mergedCookie = mergeCookieHeaders(headers.Cookie || headers.cookie, csrfCookieHeader);
+    const mergedHeaders = {
+      ...headers
+    };
+    if (mergedCookie) {
+      mergedHeaders.Cookie = mergedCookie;
     }
-    req.end();
+    if (csrfToken) {
+      mergedHeaders['X-CSRF-Token'] = csrfToken;
+    }
+
+    return new Promise((resolve, reject) => {
+      const payload = body == null ? null : JSON.stringify(body);
+      const requestHeaders = { ...mergedHeaders };
+      if (payload) {
+        requestHeaders['Content-Type'] = requestHeaders['Content-Type'] || 'application/json';
+        requestHeaders['Content-Length'] = Buffer.byteLength(payload);
+      }
+
+      const req = http.request({
+        hostname: '127.0.0.1',
+        port,
+        path: requestPath,
+        method,
+        headers: requestHeaders
+      }, res => {
+        let data = '';
+        res.on('data', chunk => {
+          data += chunk;
+        });
+        res.on('end', () => {
+          let parsed = data;
+          try {
+            parsed = data ? JSON.parse(data) : null;
+          } catch {
+            parsed = data;
+          }
+          resolve({
+            status: Number(res.statusCode || 0),
+            headers: res.headers || {},
+            data: parsed,
+            rawBody: data
+          });
+        });
+      });
+
+      req.on('error', reject);
+      if (payload) {
+        req.write(payload);
+      }
+      req.end();
+    });
   });
 }
 

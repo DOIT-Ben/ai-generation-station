@@ -13,6 +13,7 @@ function main() {
   const adminPageJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'admin-page.js'), 'utf8');
 
   assert.ok(html.includes('/js/app-shell.js'), 'index should load app-shell.js before app.js');
+  assert.ok(html.includes('name="aigs-api-base-url"'), 'index should expose the optional API base-url meta tag');
   assert.ok(html.includes('id="user-panel"'), 'index should contain user panel placeholder');
   assert.ok(!html.includes('id="account-panel"'), 'index should no longer contain the account panel');
   assert.ok(!html.includes('id="admin-panel"'), 'index should no longer contain the admin panel');
@@ -34,14 +35,17 @@ function main() {
   assert.ok(html.includes('重命名'), 'rename conversation button should be localized to Chinese');
   assert.ok(html.includes('归档'), 'archive conversation button should be localized to Chinese');
   assert.ok(authHtml.includes('/js/auth-page.js'), 'auth page should load the auth page controller');
+  assert.ok(authHtml.includes('name="aigs-api-base-url"'), 'auth page should expose the optional API base-url meta tag');
   assert.ok(authHtml.includes('data-auth-mode="login"'), 'auth page should expose the login tab');
   assert.ok(authHtml.includes('data-auth-mode="register"'), 'auth page should expose the register tab');
   assert.ok(authHtml.includes('data-auth-mode="forgot"'), 'auth page should expose the forgot-password tab');
   assert.ok(authHtml.includes('id="token-form"'), 'auth page should expose token-based activation/reset form');
   assert.ok(accountHtml.includes('/js/account-page.js'), 'account page should load the account page controller');
+  assert.ok(accountHtml.includes('name="aigs-api-base-url"'), 'account page should expose the optional API base-url meta tag');
   assert.ok(accountHtml.includes('id="account-password-form"'), 'account page should contain the account password form');
   assert.ok(accountHtml.includes('id="account-admin-link"'), 'account page should expose the admin shortcut link placeholder');
   assert.ok(adminHtml.includes('/js/admin-page.js'), 'admin page should load the admin page controller');
+  assert.ok(adminHtml.includes('name="aigs-api-base-url"'), 'admin page should expose the optional API base-url meta tag');
   assert.ok(adminHtml.includes('id="admin-create-user-form"'), 'admin page should contain admin create-user form');
   assert.ok(adminHtml.includes('id="admin-reset-password-form"'), 'admin page should contain admin reset-password form');
   assert.ok(adminHtml.includes('id="admin-invite-feedback"'), 'admin page should contain admin invitation feedback area');
