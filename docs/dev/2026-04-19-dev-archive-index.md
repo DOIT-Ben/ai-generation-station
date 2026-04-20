@@ -36,11 +36,13 @@ Read these first for the latest round:
 16. `2026-04-20-p21-auth-write-scaling-execution.md`
 17. `2026-04-20-p22-notification-failover-plan.md`
 18. `2026-04-20-p22-notification-failover-execution.md`
-19. `2026-04-20-git-write-blocker-note.md`
-20. `2026-04-19-user-facing-auth-rules.md`
-21. `2026-04-19-production-env-matrix.md`
-22. `2026-04-19-local-service-runbook.md`
-23. `2026-04-19-release-readiness-checklist.md`
+19. `2026-04-20-operator-readiness-closeout-plan.md`
+20. `2026-04-20-operator-readiness-closeout-execution.md`
+21. `2026-04-20-git-write-blocker-note.md`
+22. `2026-04-19-user-facing-auth-rules.md`
+23. `2026-04-19-production-env-matrix.md`
+24. `2026-04-19-local-service-runbook.md`
+25. `2026-04-19-release-readiness-checklist.md`
 
 ## Active Read Order
 
@@ -134,6 +136,7 @@ Read these first for the latest round:
 - documented the git metadata write blocker that prevented final staging/commit in this session
 - fully refreshed the multi-page visual regression baseline and removed the retired baseline artifacts
 - added a bounded notification failover baseline for manual admin invitation fallback during provider outage
+- aligned release/operator entry points around one browser-assisted release gate and one intentional visual-baseline refresh command
 
 ## Historical Context Still Relevant
 

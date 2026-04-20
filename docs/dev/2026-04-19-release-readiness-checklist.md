@@ -36,17 +36,14 @@ Use this as the default phase-end gate when browser automation is intentionally 
 
 Run these in addition to the release-core lane before calling the build fully ready for user-facing testing:
 
-1. `node test-style-contract.js`
-2. `node test-page-markup.js`
-3. `node test-frontend-state.js`
-4. `node test-auth-history.js`
-5. `node test-ui-flow-smoke.js --port 18797 --launch-server`
-6. `node test-ui-visual.js --port 18797 --launch-server`
-7. `node test-failures.js`
-8. `node test-security-gateway.js`
-9. `node test-capacity-baseline.js`
-10. `. 'D:\document\PowerShell\profile.ps1'; node test-regression.js --skip-live --port 18797`
-11. `. 'D:\document\PowerShell\profile.ps1'; node test-regression.js`
+1. `npm run test:release-browser`
+
+### Intentional Visual Baseline Refresh
+
+Only run this when the UI has intentionally changed and the new screenshots have been reviewed:
+
+1. `npm run test:ui-visual:update -- --port 18797 --launch-server`
+2. `node test-ui-visual.js --port 18797 --launch-server`
 
 ## Manual Review Gates
 
@@ -65,20 +62,29 @@ Run these in addition to the release-core lane before calling the build fully re
 13. Verify sensitive burst guards still apply after local service restart when the same `APP_STATE_DB` is reused
 14. Verify the admin audit panel loads, filters, paginates, and shows an intentional empty state or the expected populated state after admin actions
 15. Review any intentional visual-baseline refresh before accepting changed screenshots
-16. Verify repeated login bursts return `429` with `login_rate_limited`
-17. Verify repeated admin create-user bursts return `429` with `admin_user_create_rate_limited`
-18. Verify repeated admin password-reset bursts return `429` with `admin_password_reset_rate_limited`
-19. Verify successful admin create/disable/role-change/password-reset/invite/resend/revoke actions write audit records in SQLite and surface in the admin audit panel
-20. Verify `/api/health` returns `200` locally and through the chosen proxy path
-21. Verify proxy-facing responses include the baseline security headers and CSP
-22. Verify disallowed API origins return `403` with `origin_not_allowed`
-23. If a separate-site frontend is enabled, verify `GET /api/auth/csrf` succeeds only for the allowed frontend origin and sets an HttpOnly CSRF seed cookie
-24. If a separate-site frontend is enabled, verify unsafe `/api/*` requests without `X-CSRF-Token` fail with `403` and a `csrf_*` reason
-25. If a separate-site frontend is enabled, verify the frontend pages point at the intended API origin through the `aigs-api-base-url` meta setting
-26. Review the latest capacity-baseline artifact and confirm the current auth/admin-write throughput is acceptable for the next user-testing round
-27. Verify one backup can be created with `backup-app-state.ps1` and the manifest records the intended state/output scope
-28. Verify one restore dry-run path or isolated restore rehearsal succeeds before calling the environment operationally safe
-29. Verify prune policy removes old audit logs and old backup folders intentionally without touching `output\runtime`
+16. Verify the current visual baseline set still matches the live capture plan:
+   - `auth-portal-card`
+   - `utility-cluster-authenticated`
+   - `account-center-security`
+   - `admin-console`
+   - `chat-card-dark`
+   - `chat-card-light`
+   - `lyrics-card-light`
+17. Verify repeated login bursts return `429` with `login_rate_limited`
+18. Verify repeated admin create-user bursts return `429` with `admin_user_create_rate_limited`
+19. Verify repeated admin password-reset bursts return `429` with `admin_password_reset_rate_limited`
+20. Verify successful admin create/disable/role-change/password-reset/invite/resend/revoke actions write audit records in SQLite and surface in the admin audit panel
+21. Verify `NOTIFICATION_FAILOVER_MODE=local_preview` only exposes fallback preview URLs on failed admin invitation responses, not on public forgot-password responses
+22. Verify `/api/health` returns `200` locally and through the chosen proxy path
+23. Verify proxy-facing responses include the baseline security headers and CSP
+24. Verify disallowed API origins return `403` with `origin_not_allowed`
+25. If a separate-site frontend is enabled, verify `GET /api/auth/csrf` succeeds only for the allowed frontend origin and sets an HttpOnly CSRF seed cookie
+26. If a separate-site frontend is enabled, verify unsafe `/api/*` requests without `X-CSRF-Token` fail with `403` and a `csrf_*` reason
+27. If a separate-site frontend is enabled, verify the frontend pages point at the intended API origin through the `aigs-api-base-url` meta setting
+28. Review the latest capacity-baseline artifact and confirm the current auth/admin-write throughput is acceptable for the next user-testing round
+29. Verify one backup can be created with `backup-app-state.ps1` and the manifest records the intended state/output scope
+30. Verify one restore dry-run path or isolated restore rehearsal succeeds before calling the environment operationally safe
+31. Verify prune policy removes old audit logs and old backup folders intentionally without touching `output\runtime`
 
 ## Support/Triage Notes
 
