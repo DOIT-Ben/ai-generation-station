@@ -633,6 +633,7 @@
               </div>
               <button class="btn btn-secondary btn-chat-new" id="btn-chat-new-conversation" type="button">新建对话</button>
             </div>
+            <div class="chat-sidebar-summary" id="chat-sidebar-summary"></div>
             <div class="chat-search-shell">
               <div class="chat-filter-bar" id="chat-filter-bar">
                 <button type="button" class="chat-filter-chip is-active" data-chat-filter="all">全部</button>
@@ -693,7 +694,7 @@
           </div>
           <button class="chat-scroll-to-latest" id="chat-scroll-to-latest" type="button" hidden>回到最新回复</button>
 
-          <div class="chat-input-area">
+            <div class="chat-input-area">
             <div id="chat-queue-indicator" hidden></div>
             <div class="chat-request-status" id="chat-request-status" hidden></div>
             <div class="chat-composer-meta">
@@ -702,6 +703,13 @@
                 <span id="chat-shortcut-hint">Enter 发送，Shift + Enter 换行</span>
               </div>
               <button class="chat-clear-input" id="btn-chat-clear" type="button" disabled>清空输入</button>
+            </div>
+            <div class="chat-quickstart-strip" id="chat-quickstart-strip" hidden>
+              <div class="chat-quickstart-copy">
+                <strong>还没想好第一句？</strong>
+                <span>先插入一个常见开头，再继续改成你自己的问题。</span>
+              </div>
+              <div class="chat-quickstart-actions" id="chat-quickstart-actions"></div>
             </div>
             <div class="chat-followup-strip" id="chat-followup-strip" hidden>
               <div class="chat-followup-copy">

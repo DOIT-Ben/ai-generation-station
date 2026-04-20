@@ -136,6 +136,7 @@
       prompt: '我遇到了一个具体问题。请你先帮我确认问题边界、可能原因，再给我一个从快到稳的解决顺序。'
     }
   ];
+  const CHAT_QUICKSTART_PROMPTS = CHAT_STARTER_PROMPTS.slice(0, 3);
   const CHAT_FOLLOW_UP_PROMPTS = [
     {
       label: '总结并给下一步',
@@ -441,6 +442,7 @@
         shortcutHint.textContent = 'Enter 发送，Shift + Enter 换行';
       }
     }
+    renderChatQuickstartStrip();
     renderChatFollowUpStrip();
     renderChatContextStrip();
   }
@@ -468,6 +470,9 @@
 
     pills.push({ tone: 'model', label: conversation.model || 'MiniMax-M2.7' });
     pills.push({ tone: 'count', label: `${conversation.messageCount || 0} 条消息` });
+    if (Number(conversation.messageCount || 0) <= 0) {
+      pills.push({ tone: 'empty', label: '空白会话，可直接开始新主题' });
+    }
     pills.push({ tone: 'time', label: `最近活跃 ${getActiveConversationLastActivityLabel(conversation)}` });
     if (draftLength > 0) {
       pills.push({ tone: 'draft', label: `未发送草稿 ${draftLength} 字` });
@@ -506,6 +511,37 @@
     return CHAT_FOLLOW_UP_PROMPTS.slice();
   }
 
+  function getChatQuickstartPrompts() {
+    const activeConversation = getActiveConversation();
+    const draftLength = getChatDraftLength();
+    const conversationMessageCount = Number(activeConversation?.messageCount || conversationState.messages.length || 0);
+    if (!currentUser || isChatGenerating || draftLength > 0 || conversationMessageCount > 0) return [];
+    return CHAT_QUICKSTART_PROMPTS.slice();
+  }
+
+  function renderChatQuickstartStrip() {
+    const strip = $('chat-quickstart-strip');
+    const actions = $('chat-quickstart-actions');
+    if (!strip || !actions) return;
+
+    const prompts = getChatQuickstartPrompts();
+    if (!prompts.length) {
+      strip.setAttribute('hidden', '');
+      actions.innerHTML = '';
+      return;
+    }
+
+    actions.innerHTML = prompts.map(item => `
+      <button
+        type="button"
+        class="chat-quickstart-chip"
+        data-chat-starter-prompt="${escapeHtml(item.prompt)}">
+        ${escapeHtml(item.label)}
+      </button>
+    `).join('');
+    strip.removeAttribute('hidden');
+  }
+
   function renderChatFollowUpStrip() {
     const strip = $('chat-followup-strip');
     const actions = $('chat-followup-actions');
@@ -530,6 +566,11 @@
   }
 
   function createChatStarterPanelMarkup() {
+    const starterMeta = [
+      `当前模型 ${getModelLabel($('chat-model')?.value || 'MiniMax-M2.7')}`,
+      '支持流式回复',
+      '草稿自动保存'
+    ];
     return `
       <div class="chat-starter-shell">
         <div class="chat-starter-copy">
@@ -537,16 +578,22 @@
           <h3>你好，我已经准备好了。</h3>
           <p>如果你还没想好第一句，可以直接从下面选一个方向开始，我会顺着你的上下文继续拆下去。</p>
         </div>
+        <div class="chat-starter-meta">
+          ${starterMeta.map(item => `<span class="chat-starter-meta-pill">${escapeHtml(item)}</span>`).join('')}
+        </div>
         <div class="chat-starter-grid">
-          ${CHAT_STARTER_PROMPTS.map(item => `
+          ${CHAT_STARTER_PROMPTS.map((item, index) => `
             <button
               type="button"
-              class="chat-starter-card"
+              class="chat-starter-card${index === 0 ? ' is-featured' : ''}"
               data-chat-starter-prompt="${escapeHtml(item.prompt)}">
               <strong>${escapeHtml(item.label)}</strong>
               <span>${escapeHtml(item.description)}</span>
             </button>
           `).join('')}
+        </div>
+        <div class="chat-starter-footer">
+          点一下会先填入输入框，你还可以继续补上下文再发送。
         </div>
       </div>
     `;
@@ -1529,6 +1576,7 @@
       list.innerHTML = '';
       empty.textContent = '暂无对话。';
       empty.removeAttribute('hidden');
+      renderConversationSidebarSummary();
       renderConversationSearchFeedback();
       renderConversationMeta();
       renderArchivedConversationList();
@@ -1539,6 +1587,7 @@
       list.innerHTML = '';
       empty.textContent = '没有匹配搜索条件的进行中会话。';
       empty.removeAttribute('hidden');
+      renderConversationSidebarSummary();
       renderConversationSearchFeedback();
       renderConversationMeta();
       renderArchivedConversationList();
@@ -1589,6 +1638,7 @@
         </div>
       </section>
     `).join('');
+    renderConversationSidebarSummary();
     renderConversationSearchFeedback();
     renderConversationMeta();
     renderArchivedConversationList();
@@ -1740,12 +1790,60 @@
       title.textContent = '暂无进行中的对话';
       subtitle.textContent = '新建一个对话后即可开始聊天。';
       renderChatContextStrip();
+      renderChatQuickstartStrip();
       return;
     }
 
     title.textContent = getConversationTitlePreview(activeConversation);
-    subtitle.textContent = `${getActiveConversationLastActivityLabel(activeConversation)} · ${getConversationPreview(activeConversation)}`;
+    subtitle.textContent = Number(activeConversation.messageCount || 0) <= 0
+      ? `${getActiveConversationLastActivityLabel(activeConversation)} · 还没有消息，可以直接从下方快速开始。`
+      : `${getActiveConversationLastActivityLabel(activeConversation)} · ${getConversationPreview(activeConversation)}`;
     renderChatContextStrip();
+    renderChatQuickstartStrip();
+  }
+
+  function renderConversationSidebarSummary() {
+    const summary = $('chat-sidebar-summary');
+    if (!summary) return;
+
+    const totalActive = conversationState.list.length;
+    const totalArchived = conversationState.archived.length;
+    const blankCount = conversationState.list.filter(item => matchesConversationFilter(item, 'blank')).length;
+    const todayCount = conversationState.list.filter(item => matchesConversationFilter(item, 'today')).length;
+    const filterLabels = {
+      all: '当前筛选：全部会话',
+      current: '当前筛选：仅当前会话',
+      blank: '当前筛选：仅空白会话',
+      today: '当前筛选：仅今日活跃'
+    };
+
+    if (!currentUser && totalActive <= 0 && totalArchived <= 0) {
+      summary.setAttribute('hidden', '');
+      summary.innerHTML = '';
+      return;
+    }
+
+    summary.innerHTML = `
+      <div class="chat-sidebar-summary-grid">
+        <div class="chat-sidebar-stat">
+          <strong>${totalActive}</strong>
+          <span>进行中</span>
+        </div>
+        <div class="chat-sidebar-stat">
+          <strong>${blankCount}</strong>
+          <span>空白会话</span>
+        </div>
+        <div class="chat-sidebar-stat">
+          <strong>${todayCount}</strong>
+          <span>今日活跃</span>
+        </div>
+      </div>
+      <div class="chat-sidebar-summary-foot">
+        <span>${filterLabels[getConversationFilterMode()] || filterLabels.all}</span>
+        <span>已归档 ${totalArchived} 条</span>
+      </div>
+    `;
+    summary.removeAttribute('hidden');
   }
 
   function renderConversationSearchFeedback() {
@@ -1775,22 +1873,27 @@
 
     if (!query) {
       feedback.innerHTML = `
-        <span class="chat-search-stat${filterMode !== 'all' ? ' is-active' : ''}">${filterLabels[filterMode] || filterLabels.all}</span>
-        <span class="chat-search-stat">进行中 ${totalActive} 条</span>
-        <span class="chat-search-stat">已归档 ${totalArchived} 条</span>
-        ${activeConversation ? '<button type="button" class="chat-search-action" data-chat-focus-current="true">定位当前对话</button>' : ''}
+        <div class="chat-search-feedback-main">
+          <strong>${filterLabels[filterMode] || filterLabels.all}</strong>
+          <span>支持按标题、摘要和模型快速搜索会话。</span>
+        </div>
+        <div class="chat-search-feedback-actions">
+          ${activeConversation ? '<button type="button" class="chat-search-action" data-chat-focus-current="true">定位当前对话</button>' : ''}
+        </div>
       `;
       feedback.removeAttribute('hidden');
       return;
     }
 
     feedback.innerHTML = `
-      <span class="chat-search-stat${filterMode !== 'all' ? ' is-active' : ''}">${filterLabels[filterMode] || filterLabels.all}</span>
-      <span class="chat-search-stat is-active">匹配 ${filteredActive.length} / ${totalActive} 条进行中</span>
-      <span class="chat-search-stat">匹配 ${filteredArchived.length} / ${totalArchived} 条已归档</span>
-      ${activeConversation && !activeVisible ? '<span class="chat-search-warning">当前对话未命中筛选</span>' : ''}
-      <button type="button" class="chat-search-action" data-chat-search-reset="true">清空筛选</button>
-      ${activeConversation ? '<button type="button" class="chat-search-action" data-chat-focus-current="true">回到当前对话</button>' : ''}
+      <div class="chat-search-feedback-main">
+        <strong>${filterLabels[filterMode] || filterLabels.all}</strong>
+        <span>进行中匹配 ${filteredActive.length}/${totalActive}，已归档匹配 ${filteredArchived.length}/${totalArchived}${activeConversation && !activeVisible ? '，当前对话未命中' : ''}</span>
+      </div>
+      <div class="chat-search-feedback-actions">
+        <button type="button" class="chat-search-action" data-chat-search-reset="true">清空筛选</button>
+        ${activeConversation ? '<button type="button" class="chat-search-action" data-chat-focus-current="true">回到当前对话</button>' : ''}
+      </div>
     `;
     feedback.removeAttribute('hidden');
   }
@@ -2109,6 +2212,10 @@
     const button = $('chat-scroll-to-latest');
     const container = $('chat-messages');
     if (!button || !container) return;
+    if (conversationState.messages.length === 0 && getConversationTransientEntries().length === 0) {
+      button.setAttribute('hidden', '');
+      return;
+    }
     if (chatScrollState.autoFollow || container.scrollHeight <= container.clientHeight + 12) {
       button.setAttribute('hidden', '');
       return;
@@ -2220,13 +2327,13 @@
       addChatMessage('chatbot', '', { rawHtml: createChatStarterPanelMarkup() });
       chatHistory = [];
       renderChatReadingOutline();
+      container.scrollTop = 0;
       if (options.forceFollow === false) {
         setChatAutoFollow(false);
-        updateChatScrollButton();
       } else {
         setChatAutoFollow(true);
-        followChatToBottom(true);
       }
+      updateChatScrollButton();
       return;
     }
     chatHistory = messages.slice();
@@ -3775,6 +3882,8 @@
     const msgDiv = document.createElement('div');
     const messageData = settings.message && typeof settings.message === 'object' ? settings.message : null;
     const messageId = String(messageData?.id || settings.messageId || '').trim();
+    const contentClassName = settings.rawHtml ? 'message-content is-panel' : 'message-content';
+    const bodyClassName = settings.rawHtml ? 'message-body is-panel-body' : 'message-body';
 
     if (role === 'user' && chatContainer && !chatContainer.classList.contains('has-messages')) {
       chatContainer.classList.add('has-messages');
@@ -3801,7 +3910,7 @@
     const formattedContent = settings.rawHtml || formatChatMessageHtml(content);
     const actionsHtml = role === 'chatbot' ? buildChatAssistantActions(messageData) : '';
     const metaHtml = settings.rawHtml ? '' : buildChatMessageMeta(messageData, role, settings);
-    msgDiv.innerHTML = `<div class="message-avatar">${avatar}</div><div class="message-content">${metaHtml}<div class="message-body">${formattedContent}</div>${actionsHtml}</div>`;
+    msgDiv.innerHTML = `<div class="message-avatar">${avatar}</div><div class="${contentClassName}">${metaHtml}<div class="${bodyClassName}">${formattedContent}</div>${actionsHtml}</div>`;
     annotateChatMessageHeadings(msgDiv, messageId);
     insertChatMessageNode(container, msgDiv, settings.insertAfterMessageId || '');
     followChatToBottom(settings.forceFollow !== false);
