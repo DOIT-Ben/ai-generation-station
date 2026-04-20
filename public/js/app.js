@@ -77,6 +77,8 @@
   let templatePreferenceEnvelope = {};
   let workspaceState = createDefaultWorkspaceState();
   const fieldInitialValues = {};
+  const CHAT_ARCHIVED_COLLAPSED_KEY = 'aigs.chat.archived.collapsed';
+  let chatArchivedCollapsed = false;
 
   const FEATURE_FIELDS = {
     lyrics: { prompt: 'lyrics-prompt', style: 'lyrics-style', structure: 'lyrics-structure' },
@@ -442,8 +444,7 @@
         shortcutHint.textContent = 'Enter 发送，Shift + Enter 换行';
       }
     }
-    renderChatQuickstartStrip();
-    renderChatFollowUpStrip();
+    renderChatSuggestionStrip();
     renderChatContextStrip();
   }
 
@@ -503,14 +504,6 @@
     strip.removeAttribute('hidden');
   }
 
-  function getChatFollowUpPrompts() {
-    const activeConversation = getActiveConversation();
-    const draftLength = getChatDraftLength();
-    if (!activeConversation || draftLength > 0) return [];
-    if (!Array.isArray(conversationState.messages) || conversationState.messages.length === 0) return [];
-    return CHAT_FOLLOW_UP_PROMPTS.slice();
-  }
-
   function getChatQuickstartPrompts() {
     const activeConversation = getActiveConversation();
     const draftLength = getChatDraftLength();
@@ -519,46 +512,64 @@
     return CHAT_QUICKSTART_PROMPTS.slice();
   }
 
-  function renderChatQuickstartStrip() {
-    const strip = $('chat-quickstart-strip');
-    const actions = $('chat-quickstart-actions');
-    if (!strip || !actions) return;
-
-    const prompts = getChatQuickstartPrompts();
-    if (!prompts.length) {
-      strip.setAttribute('hidden', '');
-      actions.innerHTML = '';
-      return;
-    }
-
-    actions.innerHTML = prompts.map(item => `
-      <button
-        type="button"
-        class="chat-quickstart-chip"
-        data-chat-starter-prompt="${escapeHtml(item.prompt)}">
-        ${escapeHtml(item.label)}
-      </button>
-    `).join('');
-    strip.removeAttribute('hidden');
+  function getChatFollowUpPrompts() {
+    const activeConversation = getActiveConversation();
+    const draftLength = getChatDraftLength();
+    if (!activeConversation || draftLength > 0) return [];
+    if (!Array.isArray(conversationState.messages) || conversationState.messages.length === 0) return [];
+    return CHAT_FOLLOW_UP_PROMPTS.slice();
   }
 
-  function renderChatFollowUpStrip() {
-    const strip = $('chat-followup-strip');
-    const actions = $('chat-followup-actions');
-    if (!strip || !actions) return;
+  function getChatSuggestionConfig() {
+    const activeConversation = getActiveConversation();
+    const draftLength = getChatDraftLength();
+    const conversationMessageCount = Number(activeConversation?.messageCount || conversationState.messages.length || 0);
+    if (!currentUser || isChatGenerating || draftLength > 0) return null;
 
-    const prompts = getChatFollowUpPrompts();
-    if (!prompts.length) {
+    if (conversationMessageCount > 0) {
+      const prompts = getChatFollowUpPrompts();
+      if (!prompts.length) return null;
+      return {
+        tone: 'followup',
+        title: '继续推进当前对话',
+        description: '常见追问先帮你备好，点一下就能接着聊。',
+        prompts
+      };
+    }
+
+    const prompts = getChatQuickstartPrompts();
+    if (!prompts.length) return null;
+    return {
+      tone: 'quickstart',
+      title: '还没想好第一句？',
+      description: '先插入一个常见开头，再继续改成你自己的问题。',
+      prompts
+    };
+  }
+
+  function renderChatSuggestionStrip() {
+    const strip = $('chat-suggestion-strip');
+    const title = $('chat-suggestion-title');
+    const description = $('chat-suggestion-description');
+    const actions = $('chat-suggestion-actions');
+    if (!strip || !title || !description || !actions) return;
+
+    const config = getChatSuggestionConfig();
+    if (!config) {
       strip.setAttribute('hidden', '');
+      strip.dataset.tone = '';
       actions.innerHTML = '';
       return;
     }
 
-    actions.innerHTML = prompts.map(item => `
+    strip.dataset.tone = config.tone || 'quickstart';
+    title.textContent = config.title || '';
+    description.textContent = config.description || '';
+    actions.innerHTML = config.prompts.map(item => `
       <button
         type="button"
-        class="chat-followup-chip"
-        data-chat-followup-prompt="${escapeHtml(item.prompt)}">
+        class="chat-suggestion-chip"
+        data-chat-suggestion-prompt="${escapeHtml(item.prompt)}">
         ${escapeHtml(item.label)}
       </button>
     `).join('');
@@ -1666,6 +1677,13 @@
 
     section.removeAttribute('hidden');
     count.textContent = String(totalArchivedConversations);
+    syncChatArchivedSectionState();
+
+    if (chatArchivedCollapsed) {
+      list.innerHTML = '';
+      empty.setAttribute('hidden', '');
+      return;
+    }
 
     if (!filteredArchivedConversations.length) {
       list.innerHTML = '';
@@ -1790,7 +1808,7 @@
       title.textContent = '暂无进行中的对话';
       subtitle.textContent = '新建一个对话后即可开始聊天。';
       renderChatContextStrip();
-      renderChatQuickstartStrip();
+      renderChatSuggestionStrip();
       return;
     }
 
@@ -1799,7 +1817,7 @@
       ? `${getActiveConversationLastActivityLabel(activeConversation)} · 还没有消息，可以直接从下方快速开始。`
       : `${getActiveConversationLastActivityLabel(activeConversation)} · ${getConversationPreview(activeConversation)}`;
     renderChatContextStrip();
-    renderChatQuickstartStrip();
+    renderChatSuggestionStrip();
   }
 
   function renderConversationSidebarSummary() {
@@ -1810,17 +1828,30 @@
     const totalArchived = conversationState.archived.length;
     const blankCount = conversationState.list.filter(item => matchesConversationFilter(item, 'blank')).length;
     const todayCount = conversationState.list.filter(item => matchesConversationFilter(item, 'today')).length;
+    const activeConversation = getActiveConversation();
+    const hasFilterState = Boolean(getConversationSearchQuery().trim()) || getConversationFilterMode() !== 'all';
     const filterLabels = {
       all: '当前筛选：全部会话',
       current: '当前筛选：仅当前会话',
       blank: '当前筛选：仅空白会话',
       today: '当前筛选：仅今日活跃'
     };
+    const utilityActions = [];
 
     if (!currentUser && totalActive <= 0 && totalArchived <= 0) {
       summary.setAttribute('hidden', '');
       summary.innerHTML = '';
       return;
+    }
+
+    if (activeConversation) {
+      utilityActions.push('<button type="button" class="chat-sidebar-tool" data-chat-focus-current="true">定位当前</button>');
+    }
+    if (hasFilterState) {
+      utilityActions.push('<button type="button" class="chat-sidebar-tool" data-chat-search-reset="true">清空筛选</button>');
+    }
+    if (totalArchived > 0) {
+      utilityActions.push(`<button type="button" class="chat-sidebar-tool" data-chat-archived-toggle="true">${chatArchivedCollapsed ? '展开归档' : '收起归档'}</button>`);
     }
 
     summary.innerHTML = `
@@ -1842,6 +1873,7 @@
         <span>${filterLabels[getConversationFilterMode()] || filterLabels.all}</span>
         <span>已归档 ${totalArchived} 条</span>
       </div>
+      ${utilityActions.length ? `<div class="chat-sidebar-utility">${utilityActions.join('')}</div>` : ''}
     `;
     summary.removeAttribute('hidden');
   }
@@ -1871,13 +1903,20 @@
       return;
     }
 
+    if (!query && filterMode === 'all') {
+      feedback.setAttribute('hidden', '');
+      feedback.innerHTML = '';
+      return;
+    }
+
     if (!query) {
       feedback.innerHTML = `
         <div class="chat-search-feedback-main">
           <strong>${filterLabels[filterMode] || filterLabels.all}</strong>
-          <span>支持按标题、摘要和模型快速搜索会话。</span>
+          <span>当前已切到快捷筛选状态，可随时回到全部会话。</span>
         </div>
         <div class="chat-search-feedback-actions">
+          <button type="button" class="chat-search-action" data-chat-search-reset="true">回到全部</button>
           ${activeConversation ? '<button type="button" class="chat-search-action" data-chat-focus-current="true">定位当前对话</button>' : ''}
         </div>
       `;
@@ -1903,6 +1942,45 @@
     if (!activeConversation?.id) return;
     const activeRow = document.querySelector(`.chat-conversation-item[data-conversation-id="${CSS.escape(activeConversation.id)}"]`);
     activeRow?.scrollIntoView({ block: 'nearest' });
+  }
+
+  function readChatArchivedCollapsedPreference() {
+    try {
+      return window.localStorage.getItem(CHAT_ARCHIVED_COLLAPSED_KEY) === '1';
+    } catch {
+      return false;
+    }
+  }
+
+  function persistChatArchivedCollapsedPreference(value) {
+    try {
+      window.localStorage.setItem(CHAT_ARCHIVED_COLLAPSED_KEY, value ? '1' : '0');
+    } catch {
+      // noop
+    }
+  }
+
+  function syncChatArchivedSectionState() {
+    const section = $('chat-archived-section');
+    if (section) {
+      section.dataset.collapsed = chatArchivedCollapsed ? 'true' : 'false';
+    }
+    document.querySelectorAll('[data-chat-archived-toggle]').forEach(button => {
+      if (button.classList.contains('chat-sidebar-tool')) {
+        button.textContent = chatArchivedCollapsed ? '展开归档' : '收起归档';
+      } else {
+        button.textContent = chatArchivedCollapsed ? '展开' : '收起';
+      }
+      button.setAttribute('aria-expanded', chatArchivedCollapsed ? 'false' : 'true');
+    });
+  }
+
+  function setChatArchivedCollapsed(nextValue) {
+    chatArchivedCollapsed = Boolean(nextValue);
+    persistChatArchivedCollapsedPreference(chatArchivedCollapsed);
+    syncChatArchivedSectionState();
+    renderConversationSidebarSummary();
+    renderArchivedConversationList();
   }
 
   async function selectConversation(conversationId) {
@@ -2560,9 +2638,9 @@
         applyChatStarterPrompt(chatStarterButton.dataset.chatStarterPrompt || '');
         return;
       }
-      const chatFollowUpButton = event.target.closest('[data-chat-followup-prompt]');
-      if (chatFollowUpButton) {
-        applyChatStarterPrompt(chatFollowUpButton.dataset.chatFollowupPrompt || '');
+      const chatSuggestionButton = event.target.closest('[data-chat-suggestion-prompt]');
+      if (chatSuggestionButton) {
+        applyChatStarterPrompt(chatSuggestionButton.dataset.chatSuggestionPrompt || '');
         return;
       }
       const searchResetButton = event.target.closest('[data-chat-search-reset]');
@@ -2592,6 +2670,11 @@
         } else {
           focusCurrentConversationInList();
         }
+        return;
+      }
+      const archivedToggleButton = event.target.closest('[data-chat-archived-toggle]');
+      if (archivedToggleButton) {
+        setChatArchivedCollapsed(!chatArchivedCollapsed);
         return;
       }
       const outlineButton = event.target.closest('[data-chat-outline-target]');
@@ -4855,6 +4938,9 @@
     bindQuotaToggle();
     loadQuota();
     setInterval(loadQuota, 30000);
+
+    chatArchivedCollapsed = readChatArchivedCollapsedPreference();
+    syncChatArchivedSectionState();
 
     // Keyboard shortcuts
     document.addEventListener('keydown', e => {

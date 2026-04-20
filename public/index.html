@@ -653,8 +653,11 @@
             <div class="chat-conversation-list" id="chat-conversation-list"></div>
             <section class="chat-archived-section" id="chat-archived-section" hidden>
               <div class="chat-archived-header">
-                <h3>已归档</h3>
-                <span id="chat-archived-count">0</span>
+                <div class="chat-archived-heading">
+                  <h3>已归档</h3>
+                  <span id="chat-archived-count">0</span>
+                </div>
+                <button class="chat-archived-toggle" type="button" data-chat-archived-toggle="true" aria-expanded="true">收起</button>
               </div>
               <div class="chat-archived-empty" id="chat-archived-empty">暂无已归档会话。</div>
               <div class="chat-archived-list" id="chat-archived-list"></div>
@@ -704,19 +707,12 @@
               </div>
               <button class="chat-clear-input" id="btn-chat-clear" type="button" disabled>清空输入</button>
             </div>
-            <div class="chat-quickstart-strip" id="chat-quickstart-strip" hidden>
-              <div class="chat-quickstart-copy">
-                <strong>还没想好第一句？</strong>
-                <span>先插入一个常见开头，再继续改成你自己的问题。</span>
+            <div class="chat-suggestion-strip" id="chat-suggestion-strip" hidden>
+              <div class="chat-suggestion-copy">
+                <strong id="chat-suggestion-title">还没想好第一句？</strong>
+                <span id="chat-suggestion-description">先插入一个常见开头，再继续改成你自己的问题。</span>
               </div>
-              <div class="chat-quickstart-actions" id="chat-quickstart-actions"></div>
-            </div>
-            <div class="chat-followup-strip" id="chat-followup-strip" hidden>
-              <div class="chat-followup-copy">
-                <strong>继续推进当前对话</strong>
-                <span>常见追问先帮你备好，点一下就能接着聊。</span>
-              </div>
-              <div class="chat-followup-actions" id="chat-followup-actions"></div>
+              <div class="chat-suggestion-actions" id="chat-suggestion-actions"></div>
             </div>
             <div class="chat-input-row">
               <div class="chat-model-select custom-dropdown" id="chat-model-dropdown">
