@@ -679,6 +679,13 @@
           <div class="chat-input-area">
             <div id="chat-queue-indicator" hidden></div>
             <div class="chat-request-status" id="chat-request-status" hidden></div>
+            <div class="chat-composer-meta">
+              <div class="chat-composer-copy">
+                <strong id="chat-draft-indicator">当前没有未发送内容</strong>
+                <span id="chat-shortcut-hint">Enter 发送，Shift + Enter 换行</span>
+              </div>
+              <button class="chat-clear-input" id="btn-chat-clear" type="button" disabled>清空输入</button>
+            </div>
             <div class="chat-input-row">
               <div class="chat-model-select custom-dropdown" id="chat-model-dropdown">
                 <div class="dropdown-trigger">
@@ -693,7 +700,7 @@
                 </div>
                 <input type="hidden" id="chat-model" value="MiniMax-M2.7">
               </div>
-              <textarea id="chat-input" rows="1" placeholder="输入消息..."></textarea>
+              <textarea id="chat-input" rows="1" placeholder="输入消息。支持 Shift + Enter 换行，Enter 发送。"></textarea>
               <button class="btn btn-secondary btn-chat-stop" id="btn-chat-stop" type="button" hidden>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   <rect x="6" y="6" width="12" height="12" rx="2"></rect>

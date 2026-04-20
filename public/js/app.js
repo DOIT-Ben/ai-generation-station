@@ -331,6 +331,62 @@
     }
 
     card.removeAttribute('hidden');
+    updateChatComposerState();
+  }
+
+  function autoResizeChatInput() {
+    const input = $('chat-input');
+    if (!input) return;
+    input.style.height = 'auto';
+    const nextHeight = Math.min(Math.max(input.scrollHeight, 56), 176);
+    input.style.height = `${nextHeight}px`;
+    input.style.overflowY = input.scrollHeight > 176 ? 'auto' : 'hidden';
+  }
+
+  function updateChatComposerState() {
+    const input = $('chat-input');
+    const sendButton = $('btn-chat-send');
+    const clearButton = $('btn-chat-clear');
+    const draftIndicator = $('chat-draft-indicator');
+    const shortcutHint = $('chat-shortcut-hint');
+    if (!input) return;
+
+    autoResizeChatInput();
+    const rawValue = String(input.value || '');
+    const trimmedValue = rawValue.trim();
+    const queuedCount = chatQueue.length;
+
+    if (sendButton) {
+      sendButton.disabled = !trimmedValue;
+      sendButton.setAttribute('aria-disabled', trimmedValue ? 'false' : 'true');
+    }
+    if (clearButton) {
+      clearButton.disabled = rawValue.length <= 0;
+    }
+
+    if (draftIndicator) {
+      if (isChatGenerating && queuedCount > 0) {
+        draftIndicator.textContent = `队列中还有 ${queuedCount} 条待发送消息`;
+      } else if (isChatGenerating && trimmedValue) {
+        draftIndicator.textContent = `已输入 ${trimmedValue.length} 字，发送后会加入队列`;
+      } else if (trimmedValue) {
+        draftIndicator.textContent = `未发送草稿 ${trimmedValue.length} 字`;
+      } else {
+        draftIndicator.textContent = '当前没有未发送内容';
+      }
+    }
+
+    if (shortcutHint) {
+      if (isChatGenerating) {
+        shortcutHint.textContent = queuedCount > 0
+          ? '当前回复中，新的 Enter 会继续加入队列'
+          : '当前回复中，可继续输入，按 Enter 会加入队列';
+      } else if (trimmedValue) {
+        shortcutHint.textContent = `${formatRelativeSavedAt(workspaceState.lastSavedAt)} · Enter 发送 / Shift + Enter 换行`;
+      } else {
+        shortcutHint.textContent = 'Enter 发送，Shift + Enter 换行';
+      }
+    }
   }
 
   function restoreWorkspaceDrafts() {
@@ -350,6 +406,7 @@
 
     switchTab(workspaceState.lastTab || 'chat');
     renderWorkspaceResumeCard();
+    updateChatComposerState();
   }
 
   function getResultArea(feature) {
@@ -2876,6 +2933,7 @@
       const input = $('chat-input');
       if (input) input.value = '';
       renderWorkspaceResumeCard();
+      updateChatComposerState();
       scheduleWorkspaceStateSave();
       return;
     }
@@ -3379,7 +3437,6 @@
     const btn = $('btn-chat-send');
     const stopBtn = $('btn-chat-stop');
     const input = $('chat-input');
-    if (btn) btn.disabled = false;
     btn?.classList.toggle('is-loading', Boolean(loading));
     btn?.setAttribute('aria-busy', loading ? 'true' : 'false');
     if (stopBtn) {
@@ -3392,6 +3449,7 @@
       }
     }
     if (input) input.disabled = false;
+    updateChatComposerState();
   }
 
   function updateQueueIndicator() {
@@ -3403,8 +3461,9 @@
       el.textContent = '';
     } else {
       el.removeAttribute('hidden');
-      el.textContent = `⏳ ${qLen} 条消息等待中...`;
+      el.textContent = `队列中 ${qLen} 条消息，当前回复完成后会自动继续发送。`;
     }
+    updateChatComposerState();
   }
 
   function describeChatFailure(error) {
@@ -3637,6 +3696,7 @@
       showToast(`消息已加入队列（还有 ${chatQueue.length} 条等待）`, 'info', 1800);
       if (input) input.value = '';
       renderWorkspaceResumeCard();
+      updateChatComposerState();
       scheduleWorkspaceStateSave();
       return;
     }
@@ -3646,6 +3706,7 @@
     renderArchivedConversationList();
     if (input) input.value = '';
     renderWorkspaceResumeCard();
+    updateChatComposerState();
     scheduleWorkspaceStateSave();
 
     try {
@@ -3659,6 +3720,7 @@
       updateQueueIndicator();
       renderConversationMeta();
       renderArchivedConversationList();
+      updateChatComposerState();
     }
   }
 
@@ -4093,6 +4155,13 @@
     // Chat
     $('btn-chat-send')?.addEventListener('click', sendChatMessage);
     $('btn-chat-stop')?.addEventListener('click', stopChatGeneration);
+    $('btn-chat-clear')?.addEventListener('click', () => {
+      clearFeatureDraft('chat', { clearResult: false });
+      $('chat-input')?.focus();
+    });
+    $('chat-input')?.addEventListener('input', () => {
+      updateChatComposerState();
+    });
     $('chat-input')?.addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.ctrlKey && !e.shiftKey && !e.altKey) { e.preventDefault(); sendChatMessage(); }
     });
@@ -4106,6 +4175,7 @@
     $('chat-model')?.addEventListener('change', () => {
       schedulePreferenceSave({ defaultModelChat: $('chat-model')?.value || 'MiniMax-M2.7' });
     });
+    updateChatComposerState();
     $('speech-voice')?.addEventListener('change', () => {
       schedulePreferenceSave({ defaultVoice: $('speech-voice')?.value || 'male-qn-qingse' });
     });

@@ -7,6 +7,7 @@
   let session = null;
   let adminUsers = [];
   let adminAuditState = getDefaultAuditState();
+  let adminUserSearchQuery = '';
 
   function getDefaultAuditState() {
     return {
@@ -60,6 +61,48 @@
     return expiryText ? `待激活 · ${expiryText} 前有效` : '待激活';
   }
 
+  function getFilteredAdminUsers() {
+    const query = String(adminUserSearchQuery || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (!query) return adminUsers.slice();
+    const terms = query.split(' ').filter(Boolean);
+    return adminUsers.filter(user => {
+      const haystack = [
+        user.username || '',
+        user.displayName || '',
+        user.email || '',
+        user.role || '',
+        user.planCode || '',
+        user.status || ''
+      ].join(' ').toLowerCase();
+      return terms.every(term => haystack.includes(term));
+    });
+  }
+
+  function renderAdminOverview() {
+    const totalUsers = adminUsers.length;
+    const activeUsers = adminUsers.filter(user => user.status === 'active').length;
+    const adminCount = adminUsers.filter(user => user.role === 'admin').length;
+    const pendingInvites = adminUsers.filter(user => user.invitation?.active).length;
+    const bindings = {
+      'admin-metric-total-users': totalUsers,
+      'admin-metric-active-users': activeUsers,
+      'admin-metric-admin-users': adminCount,
+      'admin-metric-pending-invites': pendingInvites
+    };
+    Object.entries(bindings).forEach(([id, value]) => {
+      const element = $(id);
+      if (element) element.textContent = String(value);
+    });
+  }
+
+  function renderAdminUserToolbarStat(totalUsers, visibleUsers) {
+    const element = $('admin-user-toolbar-stat');
+    if (!element) return;
+    element.textContent = adminUserSearchQuery
+      ? `匹配 ${visibleUsers} / ${totalUsers} 个用户`
+      : `共 ${totalUsers} 个用户`;
+  }
+
   function resetAdminCreateForm() {
     $('admin-create-user-form')?.reset();
     if ($('admin-create-role')) $('admin-create-role').value = 'user';
@@ -79,6 +122,7 @@
     const empty = $('admin-user-empty');
     const select = $('admin-reset-user-id');
     if (!list || !empty || !select) return;
+    const filteredUsers = getFilteredAdminUsers();
 
     const previousValue = select.value;
     select.innerHTML = ['<option value="">请选择用户</option>']
@@ -88,38 +132,72 @@
       select.value = previousValue;
     }
 
+    renderAdminOverview();
+    renderAdminUserToolbarStat(adminUsers.length, filteredUsers.length);
+
     if (!adminUsers.length) {
       list.innerHTML = '';
+      empty.textContent = '当前没有可管理的用户。';
+      empty.removeAttribute('hidden');
+      return;
+    }
+
+    if (!filteredUsers.length) {
+      list.innerHTML = '';
+      empty.textContent = '没有匹配搜索条件的用户。';
       empty.removeAttribute('hidden');
       return;
     }
 
     empty.setAttribute('hidden', '');
-    list.innerHTML = adminUsers.map(user => {
+    list.innerHTML = filteredUsers.map(user => {
       const isSelf = user.id === session?.id;
       const nextStatus = user.status === 'active' ? 'disabled' : 'active';
       const nextRole = user.role === 'admin' ? 'user' : 'admin';
       const nextPlan = user.planCode === 'pro' ? 'free' : 'pro';
       const hasActiveInvitation = Boolean(user.invitation?.active);
       return `
-        <article class="history-item">
-          <div class="history-item-header">
-            <strong>${SiteShell.escapeHtml(user.username)}</strong>
-            <time>${user.lastLoginAt ? SiteShell.formatTime(user.lastLoginAt) : '从未登录'}</time>
+        <article class="admin-user-card history-item">
+          <div class="admin-user-card-head">
+            <div class="admin-user-copy">
+              <strong>${SiteShell.escapeHtml(user.displayName || user.username)}</strong>
+              <p>@${SiteShell.escapeHtml(user.username)}</p>
+            </div>
+            <div class="admin-user-badges">
+              <span class="admin-user-badge">${SiteShell.escapeHtml(user.status === 'active' ? '启用中' : '已停用')}</span>
+              <span class="admin-user-badge">${SiteShell.escapeHtml(user.role === 'admin' ? '管理员' : '成员')}</span>
+              <span class="admin-user-badge">${SiteShell.escapeHtml(String(user.planCode || 'free').toUpperCase())}</span>
+              ${hasActiveInvitation ? '<span class="admin-user-badge is-invite">待激活</span>' : ''}
+              ${isSelf ? '<span class="admin-user-badge is-self">当前账号</span>' : ''}
+            </div>
           </div>
-          <p>显示名：${SiteShell.escapeHtml(user.displayName || user.username)}</p>
-          <p>状态：${SiteShell.escapeHtml(user.status)} · 角色：${SiteShell.escapeHtml(user.role)} · 套餐：${SiteShell.escapeHtml(user.planCode)}</p>
-          <p>邮箱：${SiteShell.escapeHtml(user.email || '未设置')}</p>
-          <p>邀请：${SiteShell.escapeHtml(formatInvitationStatus(user.invitation))}</p>
-          <div class="history-actions">
-            <button type="button" data-admin-invite-target="${user.id}" ${user.status !== 'active' || hasActiveInvitation ? 'disabled' : ''}>签发邀请</button>
-            <button type="button" data-admin-invite-resend-target="${user.id}" ${user.status !== 'active' || !hasActiveInvitation ? 'disabled' : ''}>重发邀请</button>
-            <button type="button" data-admin-invite-revoke-target="${user.id}" ${!hasActiveInvitation ? 'disabled' : ''}>撤销邀请</button>
-            <button type="button" data-admin-reset-target="${user.id}">重置密码</button>
-            <button type="button" data-admin-email-target="${user.id}">编辑邮箱</button>
-            <button type="button" data-admin-user="${user.id}" data-admin-status="${nextStatus}" ${isSelf ? 'disabled' : ''}>${nextStatus === 'disabled' ? '禁用' : '启用'}</button>
-            <button type="button" data-admin-user="${user.id}" data-admin-role="${nextRole}" ${isSelf ? 'disabled' : ''}>${nextRole === 'admin' ? '设为管理员' : '降为普通用户'}</button>
-            <button type="button" data-admin-user="${user.id}" data-admin-plan="${nextPlan}">${nextPlan === 'pro' ? '设为 Pro' : '设为 Free'}</button>
+          <div class="admin-user-grid">
+            <div class="admin-user-detail">
+              <span>邮箱</span>
+              <strong>${SiteShell.escapeHtml(user.email || '未设置')}</strong>
+            </div>
+            <div class="admin-user-detail">
+              <span>上次登录</span>
+              <strong>${SiteShell.escapeHtml(user.lastLoginAt ? SiteShell.formatTime(user.lastLoginAt) : '从未登录')}</strong>
+            </div>
+            <div class="admin-user-detail">
+              <span>邀请状态</span>
+              <strong>${SiteShell.escapeHtml(formatInvitationStatus(user.invitation))}</strong>
+            </div>
+          </div>
+          <div class="admin-user-actions-shell">
+            <div class="admin-user-actions">
+              <button type="button" data-admin-invite-target="${user.id}" ${user.status !== 'active' || hasActiveInvitation ? 'disabled' : ''}>签发邀请</button>
+              <button type="button" data-admin-invite-resend-target="${user.id}" ${user.status !== 'active' || !hasActiveInvitation ? 'disabled' : ''}>重发邀请</button>
+              <button type="button" data-admin-invite-revoke-target="${user.id}" ${!hasActiveInvitation ? 'disabled' : ''}>撤销邀请</button>
+              <button type="button" data-admin-reset-target="${user.id}">重置密码</button>
+            </div>
+            <div class="admin-user-actions">
+              <button type="button" data-admin-email-target="${user.id}">编辑邮箱</button>
+              <button type="button" data-admin-user="${user.id}" data-admin-status="${nextStatus}" ${isSelf ? 'disabled' : ''}>${nextStatus === 'disabled' ? '禁用' : '启用'}</button>
+              <button type="button" data-admin-user="${user.id}" data-admin-role="${nextRole}" ${isSelf ? 'disabled' : ''}>${nextRole === 'admin' ? '设为管理员' : '降为普通用户'}</button>
+              <button type="button" data-admin-user="${user.id}" data-admin-plan="${nextPlan}">${nextPlan === 'pro' ? '设为 Pro' : '设为 Free'}</button>
+            </div>
           </div>
         </article>
       `;
@@ -414,6 +492,10 @@
       nextPath: '/admin/'
     });
     $('portal-logout-button')?.addEventListener('click', () => SiteShell.logoutAndRedirect(persistence, '/auth/'));
+    $('admin-user-search')?.addEventListener('input', event => {
+      adminUserSearchQuery = String(event.target?.value || '');
+      renderUserList();
+    });
     $('admin-create-user-form')?.addEventListener('submit', createAdminUserFromForm);
     $('admin-reset-password-form')?.addEventListener('submit', resetAdminUserPasswordFromForm);
     $('admin-audit-form')?.addEventListener('submit', handleAuditFilterSubmit);

@@ -26,6 +26,31 @@
     element.removeAttribute('hidden');
   }
 
+  function setPasswordCheck(id, passed, pending = false) {
+    const element = $(id);
+    if (!element) return;
+    element.dataset.state = pending ? 'pending' : (passed ? 'success' : 'error');
+  }
+
+  function renderPasswordChecklist() {
+    const currentPassword = $('account-current-password')?.value || '';
+    const newPassword = $('account-new-password')?.value || '';
+    const confirmPassword = $('account-confirm-password')?.value || '';
+    const submitButton = $('account-password-submit');
+
+    const hasLength = newPassword.length >= 8;
+    const isDifferent = Boolean(newPassword) && newPassword !== currentPassword;
+    const isMatch = Boolean(newPassword) && Boolean(confirmPassword) && newPassword === confirmPassword;
+
+    setPasswordCheck('account-password-check-length', hasLength, !newPassword);
+    setPasswordCheck('account-password-check-different', isDifferent, !newPassword);
+    setPasswordCheck('account-password-check-match', isMatch, !confirmPassword);
+
+    if (submitButton) {
+      submitButton.disabled = !(currentPassword && hasLength && isDifferent && isMatch);
+    }
+  }
+
   function renderSessionProfile() {
     if (!session) return;
     const displayName = session.displayName || session.username || '-';
@@ -110,6 +135,7 @@
       $('account-password-form')?.reset();
       renderSessionProfile();
       renderResetBanner();
+      renderPasswordChecklist();
       setFeedback('密码已更新，当前会话已保留。', 'success');
       SiteShell.showToast('密码更新成功', 'success', 1800);
     } catch (error) {
@@ -132,9 +158,13 @@
     });
     $('portal-logout-button')?.addEventListener('click', () => SiteShell.logoutAndRedirect(persistence, '/auth/'));
     $('account-password-form')?.addEventListener('submit', handlePasswordSubmit);
+    ['account-current-password', 'account-new-password', 'account-confirm-password'].forEach(id => {
+      $(id)?.addEventListener('input', renderPasswordChecklist);
+    });
 
     renderSessionProfile();
     renderResetBanner();
+    renderPasswordChecklist();
   }
 
   if (document.readyState === 'loading') {
