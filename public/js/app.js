@@ -135,6 +135,24 @@
       prompt: '我遇到了一个具体问题。请你先帮我确认问题边界、可能原因，再给我一个从快到稳的解决顺序。'
     }
   ];
+  const CHAT_FOLLOW_UP_PROMPTS = [
+    {
+      label: '总结并给下一步',
+      prompt: '请先总结我们刚才的重点，再告诉我下一步最该做什么。'
+    },
+    {
+      label: '整理成 TODO',
+      prompt: '请把上面的内容整理成可以直接执行的 TODO 清单，按优先级排序。'
+    },
+    {
+      label: '补齐风险遗漏',
+      prompt: '请从风险、边界条件和容易遗漏的细节角度，再检查一遍上面的内容。'
+    },
+    {
+      label: '改成更具体方案',
+      prompt: '请把上面的建议改成更具体、更可落地的执行方案，尽量减少模糊表述。'
+    }
+  ];
 
   function safeParseJson(value, fallback) {
     if (!value) return fallback;
@@ -261,6 +279,17 @@
   function formatRelativeSavedAt(timestamp) {
     if (!timestamp) return '尚未自动保存';
     return `最后自动保存：${formatTime(timestamp)}`;
+  }
+
+  function formatChatRelativeTime(timestamp) {
+    if (!timestamp) return '';
+    const dayLabel = getDayBucketLabel(timestamp);
+    const timeLabel = formatTimeOfDay(timestamp) || formatTime(timestamp);
+    if (!timeLabel) return '';
+    if (dayLabel === '更早') {
+      return formatTime(timestamp);
+    }
+    return `${dayLabel} ${timeLabel}`;
   }
 
   function countMeaningfulDraftItems(feature, draft) {
@@ -409,6 +438,92 @@
         shortcutHint.textContent = 'Enter 发送，Shift + Enter 换行';
       }
     }
+    renderChatFollowUpStrip();
+    renderChatContextStrip();
+  }
+
+  function getChatDraftLength() {
+    const input = $('chat-input');
+    return String(input?.value || '').trim().length;
+  }
+
+  function getActiveConversationLastActivityLabel(conversation) {
+    if (!conversation) return '暂无活跃记录';
+    const timestamp = getConversationTimestamp(conversation);
+    return timestamp ? formatChatRelativeTime(timestamp) : '暂无活跃记录';
+  }
+
+  function getChatContextPills(conversation = getActiveConversation()) {
+    const pills = [];
+    const draftLength = getChatDraftLength();
+    if (!conversation) {
+      if (draftLength > 0) {
+        pills.push({ tone: 'draft', label: `未发送草稿 ${draftLength} 字` });
+      }
+      return pills;
+    }
+
+    pills.push({ tone: 'model', label: conversation.model || 'MiniMax-M2.7' });
+    pills.push({ tone: 'count', label: `${conversation.messageCount || 0} 条消息` });
+    pills.push({ tone: 'time', label: `最近活跃 ${getActiveConversationLastActivityLabel(conversation)}` });
+    if (draftLength > 0) {
+      pills.push({ tone: 'draft', label: `未发送草稿 ${draftLength} 字` });
+    } else if (workspaceState.lastSavedAt) {
+      pills.push({ tone: 'saved', label: formatRelativeSavedAt(workspaceState.lastSavedAt) });
+    }
+    if (isChatGenerating) {
+      pills.push({ tone: 'live', label: chatQueue.length > 0 ? `正在回复中，队列 ${chatQueue.length} 条` : '正在回复中' });
+    }
+    return pills;
+  }
+
+  function renderChatContextStrip() {
+    const strip = $('chat-context-strip');
+    const pillsContainer = $('chat-context-pills');
+    if (!strip || !pillsContainer) return;
+
+    const pills = getChatContextPills();
+    if (!pills.length) {
+      strip.setAttribute('hidden', '');
+      pillsContainer.innerHTML = '';
+      return;
+    }
+
+    pillsContainer.innerHTML = pills.map(pill => `
+      <span class="chat-context-pill tone-${escapeHtml(pill.tone || 'neutral')}">${escapeHtml(pill.label)}</span>
+    `).join('');
+    strip.removeAttribute('hidden');
+  }
+
+  function getChatFollowUpPrompts() {
+    const activeConversation = getActiveConversation();
+    const draftLength = getChatDraftLength();
+    if (!activeConversation || draftLength > 0) return [];
+    if (!Array.isArray(conversationState.messages) || conversationState.messages.length === 0) return [];
+    return CHAT_FOLLOW_UP_PROMPTS.slice();
+  }
+
+  function renderChatFollowUpStrip() {
+    const strip = $('chat-followup-strip');
+    const actions = $('chat-followup-actions');
+    if (!strip || !actions) return;
+
+    const prompts = getChatFollowUpPrompts();
+    if (!prompts.length) {
+      strip.setAttribute('hidden', '');
+      actions.innerHTML = '';
+      return;
+    }
+
+    actions.innerHTML = prompts.map(item => `
+      <button
+        type="button"
+        class="chat-followup-chip"
+        data-chat-followup-prompt="${escapeHtml(item.prompt)}">
+        ${escapeHtml(item.label)}
+      </button>
+    `).join('');
+    strip.removeAttribute('hidden');
   }
 
   function createChatStarterPanelMarkup() {
@@ -1474,11 +1589,13 @@
     if (!currentUser || !activeConversation) {
       title.textContent = '暂无进行中的对话';
       subtitle.textContent = '新建一个对话后即可开始聊天。';
+      renderChatContextStrip();
       return;
     }
 
     title.textContent = getConversationTitlePreview(activeConversation);
-    subtitle.textContent = `${activeConversation.messageCount || 0} 条消息 · ${activeConversation.model || 'MiniMax-M2.7'} · ${getConversationPreview(activeConversation)}`;
+    subtitle.textContent = `${getActiveConversationLastActivityLabel(activeConversation)} · ${getConversationPreview(activeConversation)}`;
+    renderChatContextStrip();
   }
 
   async function selectConversation(conversationId) {
@@ -2121,6 +2238,11 @@
       const chatStarterButton = event.target.closest('[data-chat-starter-prompt]');
       if (chatStarterButton) {
         applyChatStarterPrompt(chatStarterButton.dataset.chatStarterPrompt || '');
+        return;
+      }
+      const chatFollowUpButton = event.target.closest('[data-chat-followup-prompt]');
+      if (chatFollowUpButton) {
+        applyChatStarterPrompt(chatFollowUpButton.dataset.chatFollowupPrompt || '');
         return;
       }
       const conversationButton = event.target.closest('[data-conversation-id]');
@@ -3236,6 +3358,29 @@
     return null;
   }
 
+  function buildChatMessageMeta(message, role, settings = {}) {
+    const metaItems = [];
+    const isUser = role === 'user';
+    const isStreaming = Boolean(settings.isStreaming);
+    const roleLabel = isUser ? '你' : 'AI 助手';
+    metaItems.push(`<span class="message-meta-pill tone-role">${escapeHtml(roleLabel)}</span>`);
+
+    if (message?.transient) {
+      metaItems.push('<span class="message-meta-pill tone-transient">临时结果</span>');
+    }
+    if (isStreaming) {
+      metaItems.push('<span class="message-meta-pill tone-live">流式输出中</span>');
+    }
+
+    const timeLabel = formatChatRelativeTime(message?.createdAt || message?.updatedAt || message?.timestamp || 0);
+    if (timeLabel) {
+      metaItems.push(`<span class="message-meta-time">${escapeHtml(timeLabel)}</span>`);
+    }
+
+    if (!metaItems.length) return '';
+    return `<div class="message-meta-row">${metaItems.join('')}</div>`;
+  }
+
   function buildChatAssistantActions(message) {
     if (!message?.id) return '';
     const versions = Array.isArray(message.versions) ? message.versions : [];
@@ -3325,7 +3470,8 @@
     }
 
     if (role === 'chatbot' && settings.isStreaming) {
-      msgDiv.innerHTML = `<div class="message-avatar">${avatar}</div><div class="message-content"><div class="message-body streaming-content"></div></div>`;
+      const metaHtml = buildChatMessageMeta(messageData, role, settings);
+      msgDiv.innerHTML = `<div class="message-avatar">${avatar}</div><div class="message-content">${metaHtml}<div class="message-body streaming-content"></div></div>`;
       insertChatMessageNode(container, msgDiv, settings.insertAfterMessageId || '');
       followChatToBottom(settings.forceFollow !== false);
       return { msgDiv, contentEl: msgDiv.querySelector('.streaming-content') };
@@ -3333,7 +3479,8 @@
 
     const formattedContent = settings.rawHtml || formatChatMessageHtml(content);
     const actionsHtml = role === 'chatbot' ? buildChatAssistantActions(messageData) : '';
-    msgDiv.innerHTML = `<div class="message-avatar">${avatar}</div><div class="message-content"><div class="message-body">${formattedContent}</div>${actionsHtml}</div>`;
+    const metaHtml = settings.rawHtml ? '' : buildChatMessageMeta(messageData, role, settings);
+    msgDiv.innerHTML = `<div class="message-avatar">${avatar}</div><div class="message-content">${metaHtml}<div class="message-body">${formattedContent}</div>${actionsHtml}</div>`;
     insertChatMessageNode(container, msgDiv, settings.insertAfterMessageId || '');
     followChatToBottom(settings.forceFollow !== false);
     return null;
@@ -3382,7 +3529,7 @@
     let msgDiv = null;
     if (pendingMessage?.contentWrap) {
       msgDiv = pendingMessage.msgDiv;
-      pendingMessage.contentWrap.innerHTML = '<div class="message-body streaming-content"></div>';
+      pendingMessage.contentWrap.innerHTML = `${buildChatMessageMeta(null, 'chatbot', { isStreaming: true })}<div class="message-body streaming-content"></div>`;
       contentEl = pendingMessage.contentWrap.querySelector('.streaming-content');
       msgDiv.classList.remove('is-thinking');
     } else {

@@ -664,6 +664,9 @@
                 <button class="btn btn-secondary btn-chat-manage" id="btn-chat-archive-conversation" type="button">归档</button>
               </div>
             </div>
+            <div class="chat-context-strip" id="chat-context-strip" hidden>
+              <div class="chat-context-pills" id="chat-context-pills"></div>
+            </div>
             <div class="chat-messages" id="chat-messages">
             <div class="chat-message chatbot">
               <div class="message-avatar">🤖</div>
@@ -685,6 +688,13 @@
                 <span id="chat-shortcut-hint">Enter 发送，Shift + Enter 换行</span>
               </div>
               <button class="chat-clear-input" id="btn-chat-clear" type="button" disabled>清空输入</button>
+            </div>
+            <div class="chat-followup-strip" id="chat-followup-strip" hidden>
+              <div class="chat-followup-copy">
+                <strong>继续推进当前对话</strong>
+                <span>常见追问先帮你备好，点一下就能接着聊。</span>
+              </div>
+              <div class="chat-followup-actions" id="chat-followup-actions"></div>
             </div>
             <div class="chat-input-row">
               <div class="chat-model-select custom-dropdown" id="chat-model-dropdown">
