@@ -23,11 +23,14 @@ function main() {
   assert.ok(html.includes('id="chat-archived-section"'), 'index should contain archived conversation section');
   assert.ok(html.includes('id="chat-archived-list"'), 'index should contain archived conversation list');
   assert.ok(html.includes('id="chat-conversation-title"'), 'index should contain active conversation title');
+  assert.ok(html.includes('id="workspace-resume-card"'), 'index should contain the workspace resume card');
+  assert.ok(html.includes('id="workspace-clear-draft"'), 'index should contain the workspace clear-draft action');
   assert.ok(html.includes('id="btn-chat-new-conversation"'), 'index should contain new conversation button');
   assert.ok(html.includes('id="btn-chat-rename-conversation"'), 'index should contain rename conversation button');
   assert.ok(html.includes('id="btn-chat-archive-conversation"'), 'index should contain archive conversation button');
   assert.ok(html.includes('id="covervoice-result"'), 'voice result id should be aligned with app logic');
   assert.ok(html.includes('会话列表'), 'chat conversation sidebar title should be localized to Chinese');
+  assert.ok(html.includes('继续上次工作'), 'workspace should surface the personal resume card copy');
   assert.ok(html.includes('新建对话'), 'chat new conversation button should be localized to Chinese');
   assert.ok(html.includes('搜索会话'), 'conversation search should be localized to Chinese');
   assert.ok(html.includes('已归档'), 'archived conversation section should be localized to Chinese');

@@ -856,6 +856,97 @@ body::after {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 253, 248, 0.92));
 }
 
+.workspace-resume-card {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.03));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.workspace-resume-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at top right, rgba(0, 212, 255, 0.14), transparent 38%),
+    radial-gradient(circle at bottom left, rgba(255, 45, 149, 0.14), transparent 36%);
+}
+
+.workspace-resume-kicker,
+.workspace-resume-card strong,
+.workspace-resume-card p,
+.workspace-resume-card span,
+.workspace-resume-action {
+  position: relative;
+  z-index: 1;
+}
+
+.workspace-resume-kicker {
+  color: var(--accent-cyan);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.workspace-resume-card strong {
+  color: var(--fg-primary);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.workspace-resume-card p {
+  color: var(--fg-secondary);
+  font-size: 0.8rem;
+  line-height: 1.55;
+}
+
+.workspace-resume-card span {
+  color: var(--fg-muted);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.workspace-resume-action {
+  min-height: 34px;
+  margin-top: 4px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--fg-secondary);
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.22s ease;
+}
+
+.workspace-resume-action:hover:not(:disabled) {
+  color: var(--fg-primary);
+  border-color: rgba(0, 212, 255, 0.24);
+  background: linear-gradient(90deg, rgba(0, 212, 255, 0.12), rgba(255, 45, 149, 0.08));
+}
+
+.workspace-resume-action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+[data-theme="light"] .workspace-resume-card {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(247, 241, 232, 0.96));
+  border-color: rgba(24, 32, 51, 0.08);
+  box-shadow: var(--shadow-sm);
+}
+
+[data-theme="light"] .workspace-resume-action {
+  border-color: rgba(24, 32, 51, 0.08);
+  background: rgba(255, 255, 255, 0.78);
+}
+
 /* ---- Main Content ---- */
 .main {
   flex: 1;

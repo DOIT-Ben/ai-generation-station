@@ -160,6 +160,7 @@ async function assertWorkspaceAuthenticated(page, username, options = {}) {
   await page.locator('#sidebar').waitFor({ state: 'visible' });
   await page.locator('#theme-toggle').waitFor({ state: 'visible' });
   await page.locator('#btn-logout').waitFor({ state: 'visible' });
+  await page.locator('#workspace-resume-card').waitFor({ state: 'visible' });
   const userPanelText = await page.locator('#user-panel').innerText();
   assert.ok(userPanelText.includes(username), `workspace user panel should render ${username}`);
   if (options.isAdmin === true) {
@@ -185,6 +186,77 @@ async function assertWorkspaceNavigation(page) {
     const nav = document.querySelector('.nav-item[data-tab="lyrics"]');
     return Boolean(tab?.classList.contains('active') && nav?.classList.contains('active'));
   });
+}
+
+async function renameActiveWorkspaceConversation(page, title) {
+  await page.evaluate(nextTitle => {
+    window.prompt = () => nextTitle;
+  }, title);
+  const [response] = await Promise.all([
+    page.waitForResponse(item => item.url().includes('/api/conversations/') && item.request().method() === 'POST'),
+    page.click('#btn-chat-rename-conversation')
+  ]);
+
+  assert.equal(response.status(), 200, 'conversation rename should succeed');
+  await page.waitForFunction(expected => {
+    const title = document.getElementById('chat-conversation-title');
+    return Boolean(title?.textContent?.includes(expected));
+  }, title);
+}
+
+async function assertWorkspaceResumePersistence(page, uniqueSeed) {
+  const firstConversationMessage = `polish-first-${uniqueSeed}`;
+  const secondConversationMessage = `polish-second-${uniqueSeed}`;
+  const lyricsDraft = `每日使用草稿 ${uniqueSeed}`;
+
+  await page.locator('.nav-item[data-tab="chat"]').click();
+  await page.waitForFunction(() => document.getElementById('tab-chat')?.classList.contains('active'));
+  await page.click('#btn-chat-new-conversation');
+  await page.waitForFunction(() => {
+    const title = document.getElementById('chat-conversation-title');
+    return Boolean(title?.textContent?.includes('新对话'));
+  });
+  await renameActiveWorkspaceConversation(page, firstConversationMessage);
+  await page.click('#btn-chat-new-conversation');
+  await page.waitForFunction(() => {
+    const title = document.getElementById('chat-conversation-title');
+    return Boolean(title?.textContent?.includes('新对话'));
+  });
+  await renameActiveWorkspaceConversation(page, secondConversationMessage);
+
+  await page.locator(`.chat-conversation-item:has-text("${firstConversationMessage}")`).click();
+  await page.waitForFunction(expected => {
+    const title = document.getElementById('chat-conversation-title');
+    return Boolean(title?.textContent?.includes(expected));
+  }, firstConversationMessage);
+
+  await page.locator('.nav-item[data-tab="lyrics"]').click();
+  await page.waitForFunction(() => document.getElementById('tab-lyrics')?.classList.contains('active'));
+  await page.fill('#lyrics-prompt', lyricsDraft);
+  await page.waitForResponse(item => item.url().includes('/api/preferences') && item.request().method() === 'POST');
+  await page.waitForTimeout(900);
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await assertWorkspaceAuthenticated(page, 'studio', { isAdmin: true });
+  await page.waitForFunction(expected => {
+    const tab = document.getElementById('tab-lyrics');
+    const nav = document.querySelector('.nav-item[data-tab="lyrics"]');
+    const input = document.getElementById('lyrics-prompt');
+    const resumeCard = document.getElementById('workspace-resume-card');
+    return Boolean(
+      tab?.classList.contains('active') &&
+      nav?.classList.contains('active') &&
+      input?.value === expected &&
+      resumeCard &&
+      !resumeCard.hasAttribute('hidden')
+    );
+  }, lyricsDraft);
+
+  await page.locator('.nav-item[data-tab="chat"]').click();
+  await page.waitForFunction(expected => {
+    const title = document.getElementById('chat-conversation-title');
+    return Boolean(title?.textContent?.includes(expected));
+  }, firstConversationMessage);
 }
 
 async function logoutFromWorkspace(page) {
@@ -403,6 +475,7 @@ async function runDesktopFlow(browser, baseUrl) {
     await assertWorkspaceAuthenticated(page, 'studio', { isAdmin: true });
     await assertWorkspaceNavigation(page);
     await assertThemeToggleWorks(page);
+    await assertWorkspaceResumePersistence(page, uniqueSuffix);
 
     await page.goto(`${baseUrl}/account/`, { waitUntil: 'domcontentloaded' });
     await assertAccountPage(page, {

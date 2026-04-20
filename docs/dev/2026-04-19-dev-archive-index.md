@@ -12,7 +12,7 @@ Historical context still exists under `docs/开发过程文档`, but new active 
 - `Email Delivery, Operator Controls, And Release Hardening`
 - `State Durability And Retention Baseline`
 - `Separate-Site Browser Security Baseline`
-- `Next Recommended Mainline: Auth/Write-Path Scaling And Multi-Node Readiness`
+- `Personal Daily-Use Polish`
 
 ## Latest Extension Read Order
 
@@ -38,11 +38,13 @@ Read these first for the latest round:
 18. `2026-04-20-p22-notification-failover-execution.md`
 19. `2026-04-20-operator-readiness-closeout-plan.md`
 20. `2026-04-20-operator-readiness-closeout-execution.md`
-21. `2026-04-20-git-write-blocker-note.md`
-22. `2026-04-19-user-facing-auth-rules.md`
-23. `2026-04-19-production-env-matrix.md`
-24. `2026-04-19-local-service-runbook.md`
-25. `2026-04-19-release-readiness-checklist.md`
+21. `2026-04-20-personal-usage-polish-plan.md`
+22. `2026-04-20-personal-usage-polish-execution.md`
+23. `2026-04-20-git-write-blocker-note.md`
+24. `2026-04-19-user-facing-auth-rules.md`
+25. `2026-04-19-production-env-matrix.md`
+26. `2026-04-19-local-service-runbook.md`
+27. `2026-04-19-release-readiness-checklist.md`
 
 ## Active Read Order
 
@@ -137,6 +139,7 @@ Read these first for the latest round:
 - fully refreshed the multi-page visual regression baseline and removed the retired baseline artifacts
 - added a bounded notification failover baseline for manual admin invitation fallback during provider outage
 - aligned release/operator entry points around one browser-assisted release gate and one intentional visual-baseline refresh command
+- added a personal daily-use workspace continuity layer with last-tab restore, last-conversation restore, account-scoped draft autosave, and explicit draft discard
 
 ## Historical Context Still Relevant
 

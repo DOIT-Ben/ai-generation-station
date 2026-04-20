@@ -61,7 +61,12 @@
   };
   let usageToday = null;
   let preferenceSaveTimer = null;
+  let workspaceStateSaveTimer = null;
   let authRecoveryLocked = false;
+  let workspaceStateReady = false;
+  let templatePreferenceEnvelope = {};
+  let workspaceState = createDefaultWorkspaceState();
+  const fieldInitialValues = {};
 
   const FEATURE_FIELDS = {
     lyrics: { prompt: 'lyrics-prompt', style: 'lyrics-style', structure: 'lyrics-structure' },
@@ -83,6 +88,260 @@
     'voice-prompt': 'voice-char',
     'speech-text': 'speech-char'
   };
+
+  const TRACKED_WORKSPACE_INPUT_IDS = new Set([
+    'chat-input',
+    'lyrics-prompt', 'lyrics-style', 'lyrics-structure',
+    'cover-prompt', 'cover-ratio', 'cover-style',
+    'speech-text', 'speech-voice', 'speech-emotion', 'speech-speed', 'speech-pitch', 'speech-vol', 'speech-format',
+    'music-prompt', 'music-style', 'music-bpm', 'music-key', 'music-duration',
+    'voice-prompt', 'voice-timbre', 'voice-pitch', 'voice-audio-url'
+  ]);
+
+  const PREFERENCE_BACKED_FIELD_DEFAULTS = {
+    'chat-model': 'defaultModelChat',
+    'speech-voice': 'defaultVoice',
+    'music-style': 'defaultMusicStyle',
+    'cover-ratio': 'defaultCoverRatio'
+  };
+
+  function safeParseJson(value, fallback) {
+    if (!value) return fallback;
+    try {
+      return JSON.parse(value);
+    } catch {
+      return fallback;
+    }
+  }
+
+  function createDefaultWorkspaceState() {
+    return {
+      lastTab: 'chat',
+      lastConversationId: null,
+      drafts: {},
+      lastSavedAt: null
+    };
+  }
+
+  function normalizeWorkspaceState(rawState) {
+    const raw = rawState && typeof rawState === 'object' ? rawState : {};
+    const nextLastTab = (raw.lastTab && (featureMeta[raw.lastTab] || raw.lastTab === 'chat'))
+      ? raw.lastTab
+      : 'chat';
+    return {
+      ...createDefaultWorkspaceState(),
+      ...raw,
+      lastTab: nextLastTab,
+      lastConversationId: raw.lastConversationId ? String(raw.lastConversationId) : null,
+      drafts: raw.drafts && typeof raw.drafts === 'object' ? raw.drafts : {},
+      lastSavedAt: raw.lastSavedAt ? Number(raw.lastSavedAt) : null
+    };
+  }
+
+  function updateWorkspaceStateFromPreferences(preferences = userPreferences) {
+    templatePreferenceEnvelope = safeParseJson(preferences?.templatePreferencesJson, {}) || {};
+    workspaceState = normalizeWorkspaceState(templatePreferenceEnvelope.workspace);
+  }
+
+  function getWorkspaceStateDraft(feature) {
+    const drafts = workspaceState?.drafts && typeof workspaceState.drafts === 'object'
+      ? workspaceState.drafts
+      : {};
+    const draft = drafts[feature];
+    return draft && typeof draft === 'object' ? draft : null;
+  }
+
+  function captureInitialFieldValues() {
+    TRACKED_WORKSPACE_INPUT_IDS.forEach(inputId => {
+      const input = $(inputId);
+      if (!input) return;
+      if (Object.prototype.hasOwnProperty.call(fieldInitialValues, inputId)) return;
+      fieldInitialValues[inputId] = input.value;
+    });
+  }
+
+  function getFieldDefaultValue(inputId) {
+    const preferenceKey = PREFERENCE_BACKED_FIELD_DEFAULTS[inputId];
+    if (preferenceKey) {
+      return userPreferences[preferenceKey] != null ? String(userPreferences[preferenceKey]) : '';
+    }
+    return Object.prototype.hasOwnProperty.call(fieldInitialValues, inputId)
+      ? String(fieldInitialValues[inputId] ?? '')
+      : '';
+  }
+
+  function getVoiceSourceMode() {
+    return document.querySelector('.voice-source-tabs .source-tab.active')?.dataset.source === 'url' ? 'url' : 'file';
+  }
+
+  function applyVoiceSourceMode(sourceMode) {
+    const nextSourceMode = sourceMode === 'url' ? 'url' : 'file';
+    document.querySelectorAll('.voice-source-tabs .source-tab').forEach(tab => {
+      tab.classList.toggle('active', tab.dataset.source === nextSourceMode);
+    });
+    $('voice-source-file')?.toggleAttribute('hidden', nextSourceMode !== 'file');
+    $('voice-source-url')?.toggleAttribute('hidden', nextSourceMode !== 'url');
+  }
+
+  function hasMeaningfulDraftValue(feature, key, value) {
+    if (key === 'sourceMode') return false;
+    const normalizedValue = String(value ?? '');
+    if (!normalizedValue) return false;
+    if (feature === 'chat' && key === 'message') return Boolean(normalizedValue.trim());
+
+    const inputId = FEATURE_FIELDS[feature]?.[key];
+    const input = inputId ? $(inputId) : null;
+    if (!input) return Boolean(normalizedValue.trim());
+
+    if (input.tagName === 'TEXTAREA' || input.type === 'text' || input.type === 'url') {
+      return Boolean(normalizedValue.trim());
+    }
+
+    return normalizedValue !== String(getFieldDefaultValue(inputId));
+  }
+
+  function hasMeaningfulFeatureDraft(feature, draft) {
+    if (!draft || typeof draft !== 'object') return false;
+    return Object.entries(draft).some(([key, value]) => hasMeaningfulDraftValue(feature, key, value));
+  }
+
+  function buildWorkspaceDraftSnapshot() {
+    const drafts = {};
+    const chatDraft = {
+      message: $('chat-input')?.value || ''
+    };
+    if (hasMeaningfulFeatureDraft('chat', chatDraft)) {
+      drafts.chat = chatDraft;
+    }
+
+    Object.keys(FEATURE_FIELDS).forEach(feature => {
+      const values = getFeatureInputs(feature);
+      if (feature === 'covervoice') {
+        values.sourceMode = getVoiceSourceMode();
+      }
+      if (hasMeaningfulFeatureDraft(feature, values)) {
+        drafts[feature] = values;
+      }
+    });
+
+    return drafts;
+  }
+
+  function formatRelativeSavedAt(timestamp) {
+    if (!timestamp) return '尚未自动保存';
+    return `最后自动保存：${formatTime(timestamp)}`;
+  }
+
+  function countMeaningfulDraftItems(feature, draft) {
+    if (!draft || typeof draft !== 'object') return 0;
+    return Object.entries(draft).filter(([key, value]) => hasMeaningfulDraftValue(feature, key, value)).length;
+  }
+
+  async function persistWorkspaceState() {
+    if (!currentUser || !workspaceStateReady || !persistence?.savePreferences) return;
+    workspaceState.lastTab = currentTab;
+    workspaceState.lastConversationId = conversationState.activeId || workspaceState.lastConversationId || null;
+    workspaceState.drafts = buildWorkspaceDraftSnapshot();
+    workspaceState.lastSavedAt = Date.now();
+    templatePreferenceEnvelope = {
+      ...(templatePreferenceEnvelope || {}),
+      workspace: workspaceState
+    };
+    const patch = {
+      templatePreferencesJson: JSON.stringify(templatePreferenceEnvelope)
+    };
+    userPreferences = {
+      ...userPreferences,
+      ...patch
+    };
+
+    try {
+      const preferences = await persistence.savePreferences(patch);
+      userPreferences = {
+        ...userPreferences,
+        ...(preferences || {})
+      };
+      updateWorkspaceStateFromPreferences(userPreferences);
+      renderWorkspaceResumeCard();
+    } catch (error) {
+      if (isProtectedSessionError(error)) return;
+      showToast('工作台续接状态保存失败', 'error', 1800);
+    }
+  }
+
+  function scheduleWorkspaceStateSave() {
+    if (!currentUser || !workspaceStateReady) return;
+    clearTimeout(workspaceStateSaveTimer);
+    workspaceStateSaveTimer = setTimeout(() => {
+      persistWorkspaceState();
+    }, 650);
+  }
+
+  function renderWorkspaceResumeCard() {
+    const card = $('workspace-resume-card');
+    if (!card) return;
+
+    if (!currentUser) {
+      card.setAttribute('hidden', '');
+      return;
+    }
+
+    const featureTitle = featureMeta[currentTab]?.title || 'AI 对话';
+    const activeConversation = getActiveConversation();
+    const liveDrafts = buildWorkspaceDraftSnapshot();
+    const activeDraft = liveDrafts[currentTab === 'chat' ? 'chat' : currentTab] || null;
+    const draftCount = countMeaningfulDraftItems(currentTab === 'chat' ? 'chat' : currentTab, activeDraft);
+    const featureLine = $('workspace-resume-feature');
+    const contextLine = $('workspace-resume-context');
+    const metaLine = $('workspace-resume-meta');
+    const clearButton = $('workspace-clear-draft');
+
+    if (featureLine) featureLine.textContent = `当前页：${featureTitle}`;
+
+    if (contextLine) {
+      if (currentTab === 'chat' && activeConversation?.title) {
+        contextLine.textContent = `最近会话：${truncateText(activeConversation.title, 28)}`;
+      } else if (draftCount > 0) {
+        contextLine.textContent = `已保存草稿：${draftCount} 项内容`;
+      } else {
+        contextLine.textContent = '当前页没有未完成草稿';
+      }
+    }
+
+    if (metaLine) {
+      if (currentTab === 'chat' && activeDraft?.message?.trim()) {
+        metaLine.textContent = `${formatRelativeSavedAt(workspaceState.lastSavedAt)} · 未发送消息 ${activeDraft.message.trim().length} 字`;
+      } else {
+        metaLine.textContent = formatRelativeSavedAt(workspaceState.lastSavedAt);
+      }
+    }
+
+    if (clearButton) {
+      clearButton.disabled = draftCount === 0;
+      clearButton.textContent = currentTab === 'chat' ? '清空未发送消息' : '清空当前草稿';
+    }
+
+    card.removeAttribute('hidden');
+  }
+
+  function restoreWorkspaceDrafts() {
+    const chatDraft = getWorkspaceStateDraft('chat');
+    if (chatDraft?.message != null && $('chat-input')) {
+      $('chat-input').value = String(chatDraft.message || '');
+    }
+
+    Object.keys(FEATURE_FIELDS).forEach(feature => {
+      const draft = getWorkspaceStateDraft(feature);
+      if (!draft) return;
+      applyFeatureInputs(feature, draft);
+      if (feature === 'covervoice') {
+        applyVoiceSourceMode(draft.sourceMode || 'file');
+      }
+    });
+
+    switchTab(workspaceState.lastTab || 'chat');
+    renderWorkspaceResumeCard();
+  }
 
   function getResultArea(feature) {
     return $(RESULT_IDS[feature] || `${feature}-result`);
@@ -192,6 +451,7 @@
         ...userPreferences,
         ...preferences
       };
+      updateWorkspaceStateFromPreferences(userPreferences);
       applyUserPreferences();
     } catch (error) {
       if (isProtectedSessionError(error)) return;
@@ -209,7 +469,9 @@
     preferenceSaveTimer = setTimeout(async () => {
       try {
         userPreferences = await persistence.savePreferences(userPreferences);
+        updateWorkspaceStateFromPreferences(userPreferences);
         renderUserPanel();
+        renderWorkspaceResumeCard();
       } catch (error) {
         if (isProtectedSessionError(error)) return;
         showToast('偏好保存失败', 'error', 1800);
@@ -288,6 +550,9 @@
   function resetAuthenticatedWorkspaceState() {
     currentUser = null;
     currentUserProfile = null;
+    workspaceStateReady = false;
+    workspaceState = createDefaultWorkspaceState();
+    templatePreferenceEnvelope = {};
     conversationState.list = [];
     conversationState.archived = [];
     conversationState.activeId = null;
@@ -297,6 +562,8 @@
     currentResult = {};
     clearTimeout(preferenceSaveTimer);
     preferenceSaveTimer = null;
+    clearTimeout(workspaceStateSaveTimer);
+    workspaceStateSaveTimer = null;
     historyState.chat = [];
     Object.keys(featureMeta).forEach(feature => { historyState[feature] = []; renderHistory(feature); });
     templates = appShell?.TEMPLATE_LIBRARY || {};
@@ -305,6 +572,7 @@
     renderUserPanel();
     renderConversationList();
     renderTemplateLibraries();
+    renderWorkspaceResumeCard();
   }
 
   function handleProtectedSessionLoss(message = '登录状态已失效，请重新登录') {
@@ -351,6 +619,9 @@
     await loadTemplateLibraries();
     await loadConversations();
     await loadAllHistories();
+    restoreWorkspaceDrafts();
+    workspaceStateReady = true;
+    renderWorkspaceResumeCard();
   }
 
   async function completeAuthenticatedBootstrap({ showWelcomeToast = false } = {}) {
@@ -639,6 +910,7 @@
   function applyConversationPayload(conversation, messages = [], options = {}) {
     if (conversation?.id) {
       conversationState.activeId = conversation.id;
+      workspaceState.lastConversationId = conversation.id;
       upsertConversationSummary(conversation);
       setArchivedConversationList(conversationState.archived.filter(item => item.id !== conversation.id));
     }
@@ -652,6 +924,10 @@
       restoreChatMessages(chatHistory);
     }
     renderConversationList();
+    renderWorkspaceResumeCard();
+    if (options.persist !== false) {
+      scheduleWorkspaceStateSave();
+    }
   }
 
   function _legacyRenderConversationMeta() {
@@ -952,6 +1228,9 @@
           conversationState.archived.filter(item => item.id !== activeConversation.id)
         )
       );
+      if (workspaceState.lastConversationId === activeConversation.id) {
+        workspaceState.lastConversationId = null;
+      }
       conversationState.activeId = null;
       conversationState.messages = [];
       chatHistory = [];
@@ -965,6 +1244,7 @@
         await createConversationAndSelect();
       }
 
+      scheduleWorkspaceStateSave();
       showToast('会话已归档', 'success', 1400);
     } catch (error) {
       if (isProtectedSessionError(error)) return;
@@ -992,6 +1272,7 @@
       );
       renderConversationList();
       await selectConversation(restoredConversation.id);
+      scheduleWorkspaceStateSave();
       showToast('会话已恢复', 'success', 1400);
     } catch (error) {
       if (isProtectedSessionError(error)) return;
@@ -1014,10 +1295,14 @@
 
     try {
       const result = await persistence.deleteArchivedConversation(conversationId);
+      if (workspaceState.lastConversationId === conversationId) {
+        workspaceState.lastConversationId = null;
+      }
       setArchivedConversationList(
         result?.archivedConversations || conversationState.archived.filter(item => item.id !== conversationId)
       );
       renderConversationList();
+      scheduleWorkspaceStateSave();
       showToast('已归档会话已删除', 'success', 1400);
     } catch (error) {
       if (isProtectedSessionError(error)) return;
@@ -1053,7 +1338,9 @@
       if (created) return;
     }
 
-    const preferredConversation = conversationState.list.find(item => item.id === conversationState.activeId) || conversationState.list[0];
+    const preferredConversation = conversationState.list.find(item => item.id === workspaceState.lastConversationId)
+      || conversationState.list.find(item => item.id === conversationState.activeId)
+      || conversationState.list[0];
     if (preferredConversation) {
       await selectConversation(preferredConversation.id);
     } else {
@@ -1208,18 +1495,18 @@
       if (action === 'reuse') {
         $('chat-input')?.focus();
       }
+      renderWorkspaceResumeCard();
       return;
     }
     applyFeatureInputs(feature, entry.state?.inputs || {});
     if (feature === 'covervoice' && entry.state?.inputs?.audio_url) {
-      document.querySelectorAll('.voice-source-tabs .source-tab').forEach(t => t.classList.remove('active'));
-      document.querySelector('.voice-source-tabs .source-tab[data-source="url"]')?.classList.add('active');
-      $('voice-source-file')?.setAttribute('hidden', '');
-      $('voice-source-url')?.removeAttribute('hidden');
+      applyVoiceSourceMode('url');
     }
     if (entry.state?.result) {
       renderFeatureResult(feature, entry.state.result, entry.state.inputs || {});
     }
+    scheduleWorkspaceStateSave();
+    renderWorkspaceResumeCard();
     showToast(`${featureMeta[feature]?.title || feature} 历史已恢复`, 'success', 1600);
   }
 
@@ -1233,16 +1520,17 @@
         input.value = template.message;
         input.focus();
       }
+      scheduleWorkspaceStateSave();
+      renderWorkspaceResumeCard();
       sendChatMessage(template.message);
       return;
     }
     applyFeatureInputs(feature, template.values || {});
     if (feature === 'covervoice') {
-      document.querySelectorAll('.voice-source-tabs .source-tab').forEach(t => t.classList.remove('active'));
-      document.querySelector('.voice-source-tabs .source-tab[data-source="url"]')?.classList.add('active');
-      $('voice-source-file')?.setAttribute('hidden', '');
-      $('voice-source-url')?.removeAttribute('hidden');
+      applyVoiceSourceMode('url');
     }
+    scheduleWorkspaceStateSave();
+    renderWorkspaceResumeCard();
     showToast(`${template.label} 模板已应用`, 'success', 1400);
   }
 
@@ -1273,6 +1561,11 @@
         archiveActiveConversation();
         return;
       }
+      const clearDraftButton = event.target.closest('#workspace-clear-draft');
+      if (clearDraftButton) {
+        clearCurrentWorkspaceDraft();
+        return;
+      }
       const conversationButton = event.target.closest('[data-conversation-id]');
       if (conversationButton) {
         selectConversation(conversationButton.dataset.conversationId);
@@ -1301,8 +1594,22 @@
 
     document.addEventListener('input', event => {
       const searchInput = event.target.closest?.('#chat-conversation-search');
-      if (!searchInput) return;
-      updateConversationSearch(searchInput.value, { syncInput: false });
+      if (searchInput) {
+        updateConversationSearch(searchInput.value, { syncInput: false });
+        return;
+      }
+
+      const inputId = event.target?.id;
+      if (!TRACKED_WORKSPACE_INPUT_IDS.has(inputId)) return;
+      renderWorkspaceResumeCard();
+      scheduleWorkspaceStateSave();
+    });
+
+    document.addEventListener('change', event => {
+      const inputId = event.target?.id;
+      if (!TRACKED_WORKSPACE_INPUT_IDS.has(inputId)) return;
+      renderWorkspaceResumeCard();
+      scheduleWorkspaceStateSave();
     });
   }
 
@@ -1319,6 +1626,9 @@
     $$('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
     $$('.tab-content').forEach(c => c.classList.toggle('active', c.id === `tab-${tab}`));
     currentTab = tab;
+    workspaceState.lastTab = tab;
+    renderWorkspaceResumeCard();
+    scheduleWorkspaceStateSave();
   }
 
   // ============================================
@@ -2022,23 +2332,77 @@
     lyrics:     [{ id: 'lyrics-prompt', tag: 'textarea' }, { id: 'lyrics-style' }, { id: 'lyrics-structure' }, { id: 'lyrics-char', val: '0' }],
     cover:      [{ id: 'cover-prompt', tag: 'textarea' }, { id: 'cover-ratio' }, { id: 'cover-style' }, { id: 'cover-char', val: '0' }],
     covervoice: [{ id: 'voice-audio-file' }, { id: 'voice-audio-url' }, { id: 'voice-prompt', tag: 'textarea' }, { id: 'voice-timbre' }, { id: 'voice-pitch' }, { id: 'voice-char', val: '0' }],
+    speech:     [{ id: 'speech-text', tag: 'textarea' }, { id: 'speech-voice' }, { id: 'speech-emotion' }, { id: 'speech-speed' }, { id: 'speech-pitch' }, { id: 'speech-vol' }, { id: 'speech-format' }, { id: 'speech-char', val: '0' }]
   };
+
+  function resetFieldToDefault(inputId) {
+    if (inputId === 'voice-audio-file') {
+      const fileInput = $('voice-audio-file');
+      if (fileInput) fileInput.value = '';
+      if ($('voice-file-name')) $('voice-file-name').textContent = '';
+      return;
+    }
+
+    const input = $(inputId);
+    if (!input) return;
+    setFieldValue(inputId, getFieldDefaultValue(inputId));
+  }
+
+  function clearFeatureDraft(feature, { clearResult = true } = {}) {
+    if (feature === 'chat') {
+      const input = $('chat-input');
+      if (input) input.value = '';
+      renderWorkspaceResumeCard();
+      scheduleWorkspaceStateSave();
+      return;
+    }
+
+    (RESET_MAPS[feature] || []).forEach(item => {
+      const el = $(item.id);
+      if (!el) return;
+      if (item.id === 'voice-audio-file') {
+        resetFieldToDefault(item.id);
+        return;
+      }
+      if (item.val !== undefined) {
+        if (item.id.endsWith('-char')) {
+          el.textContent = item.val;
+          return;
+        }
+        resetFieldToDefault(item.id);
+        return;
+      }
+      resetFieldToDefault(item.id);
+    });
+
+    if (feature === 'covervoice') {
+      applyVoiceSourceMode('file');
+    }
+
+    if (clearResult) {
+      getResultArea(feature)?.setAttribute('hidden', '');
+      $(`${feature}-generating`)?.setAttribute('hidden', '');
+      currentResult[feature] = null;
+    }
+
+    renderWorkspaceResumeCard();
+    scheduleWorkspaceStateSave();
+  }
 
   // file input 需要手动清空
   function resetTab(tab) {
-    (RESET_MAPS[tab] || []).forEach(item => {
-      const el = $(item.id);
-      if (!el) return;
-      if (item.id === 'voice-audio-file') { el.value = ''; $('voice-file-name').textContent = ''; return; }
-      if (item.val !== undefined) {
-        if (el.tagName === 'SELECT') el.selectedIndex = 0;
-        else if (item.id.endsWith('-char')) el.textContent = item.val;
-        else el.value = item.val;
-      }
-    });
-    $(`${tab}-result`)?.setAttribute('hidden', '');
-    $(`${tab}-generating`)?.setAttribute('hidden', '');
-    currentResult[tab] = null;
+    clearFeatureDraft(tab);
+  }
+
+  function clearCurrentWorkspaceDraft() {
+    if (currentTab === 'chat') {
+      clearFeatureDraft('chat', { clearResult: false });
+      showToast('未发送消息已清空', 'success', 1400);
+      return;
+    }
+
+    clearFeatureDraft(currentTab);
+    showToast(`${featureMeta[currentTab]?.title || '当前页'}草稿已清空`, 'success', 1400);
   }
 
   // ============================================
@@ -2333,6 +2697,8 @@
       updateQueueIndicator();
       showToast(`消息已加入队列（还有 ${chatQueue.length} 条等待）`, 'info', 1800);
       if (input) input.value = '';
+      renderWorkspaceResumeCard();
+      scheduleWorkspaceStateSave();
       return;
     }
 
@@ -2340,6 +2706,8 @@
     renderConversationMeta();
     renderArchivedConversationList();
     if (input) input.value = '';
+    renderWorkspaceResumeCard();
+    scheduleWorkspaceStateSave();
 
     try {
       await performChatSend(message);
@@ -2542,6 +2910,7 @@
     bindEnhancementEvents();
     initTabs();
     initTheme();
+    captureInitialFieldValues();
     bootstrapAuth();
 
     // Char counters
@@ -2583,16 +2952,15 @@
     $('voice-audio-file')?.addEventListener('change', e => {
       const file = e.target.files?.[0];
       $('voice-file-name').textContent = file ? file.name : '';
+      renderWorkspaceResumeCard();
     });
 
     // 歌声翻唱来源 Tab 切换
     document.querySelectorAll('.voice-source-tabs .source-tab').forEach(tab => {
       tab.addEventListener('click', () => {
-        document.querySelectorAll('.voice-source-tabs .source-tab').forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
-        const source = tab.dataset.source;
-        $('voice-source-file')?.toggleAttribute('hidden', source !== 'file');
-        $('voice-source-url')?.toggleAttribute('hidden', source !== 'url');
+        applyVoiceSourceMode(tab.dataset.source);
+        renderWorkspaceResumeCard();
+        scheduleWorkspaceStateSave();
       });
     });
 
@@ -2617,10 +2985,8 @@
           $('voice-audio-file').files = dt.files;
           $('voice-file-name').textContent = file.name;
           // 自动切换到文件模式
-          document.querySelectorAll('.voice-source-tabs .source-tab').forEach(t => t.classList.remove('active'));
-          document.querySelector('.voice-source-tabs .source-tab[data-source="file"]')?.classList.add('active');
-          $('voice-source-file')?.removeAttribute('hidden');
-          $('voice-source-url')?.setAttribute('hidden', '');
+          applyVoiceSourceMode('file');
+          renderWorkspaceResumeCard();
         } else {
           showToast('请拖拽音频文件', 'error');
         }
@@ -2656,7 +3022,12 @@
       if (!lyrics) return;
       switchTab('music');
       const el = $('music-prompt');
-      if (el) { el.value = lyrics; $('music-char').textContent = lyrics.length; }
+      if (el) {
+        el.value = lyrics;
+        $('music-char').textContent = lyrics.length;
+      }
+      renderWorkspaceResumeCard();
+      scheduleWorkspaceStateSave();
       showToast('歌词已导入到音乐生成', 'success');
     });
 
@@ -2944,6 +3315,9 @@
     newNav?.classList.add('active');
 
     currentTab = tab;
+    workspaceState.lastTab = tab;
+    renderWorkspaceResumeCard();
+    scheduleWorkspaceStateSave();
   }
 
   // Initialize
