@@ -10,6 +10,7 @@ Historical context still exists under `docs/开发过程文档`, but new active 
 
 - `User-Facing Productization Baseline`
 - `Email Delivery, Operator Controls, And Release Hardening`
+- `Next Recommended Mainline: State Durability And Retention Baseline`
 
 ## Latest Extension Read Order
 
@@ -22,10 +23,11 @@ Read these first for the latest round:
 5. `2026-04-20-email-delivery-operator-release-plan.md`
 6. `2026-04-20-email-delivery-operator-release-execution.md`
 7. `2026-04-20-email-delivery-operator-release-summary.md`
-8. `2026-04-19-user-facing-auth-rules.md`
-9. `2026-04-19-production-env-matrix.md`
-10. `2026-04-19-local-service-runbook.md`
-11. `2026-04-19-release-readiness-checklist.md`
+8. `2026-04-20-next-state-durability-mainline-granular-todo.md`
+9. `2026-04-19-user-facing-auth-rules.md`
+10. `2026-04-19-production-env-matrix.md`
+11. `2026-04-19-local-service-runbook.md`
+12. `2026-04-19-release-readiness-checklist.md`
 
 ## Active Read Order
 
