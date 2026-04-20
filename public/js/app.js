@@ -113,6 +113,28 @@
     'music-style': 'defaultMusicStyle',
     'cover-ratio': 'defaultCoverRatio'
   };
+  const CHAT_STARTER_PROMPTS = [
+    {
+      label: '规划今天的工作',
+      description: '让 AI 帮你把今天最重要的 3 件事拆成可执行步骤。',
+      prompt: '请按“现在就能开始”的标准，帮我把今天最重要的 3 件事拆成具体执行步骤，并指出第一步该做什么。'
+    },
+    {
+      label: '整理思路',
+      description: '适合脑子里有很多想法，但还没形成结构的时候。',
+      prompt: '我脑子里有很多零散想法，请先帮我把问题结构化，再给我一个清晰的分析框架。'
+    },
+    {
+      label: '润色内容',
+      description: '把一段中文改得更专业、更自然，适合直接发布或发送。',
+      prompt: '接下来我会发一段中文，请帮我在不改变核心意思的前提下改得更专业、更自然、更利于直接发出去。'
+    },
+    {
+      label: '解决问题',
+      description: '遇到 bug、卡点或选择困难时，先把问题讲清楚再逐步解决。',
+      prompt: '我遇到了一个具体问题。请你先帮我确认问题边界、可能原因，再给我一个从快到稳的解决顺序。'
+    }
+  ];
 
   function safeParseJson(value, fallback) {
     if (!value) return fallback;
@@ -386,6 +408,43 @@
       } else {
         shortcutHint.textContent = 'Enter 发送，Shift + Enter 换行';
       }
+    }
+  }
+
+  function createChatStarterPanelMarkup() {
+    return `
+      <div class="chat-starter-shell">
+        <div class="chat-starter-copy">
+          <span class="chat-starter-kicker">开始一段新对话</span>
+          <h3>你好，我已经准备好了。</h3>
+          <p>如果你还没想好第一句，可以直接从下面选一个方向开始，我会顺着你的上下文继续拆下去。</p>
+        </div>
+        <div class="chat-starter-grid">
+          ${CHAT_STARTER_PROMPTS.map(item => `
+            <button
+              type="button"
+              class="chat-starter-card"
+              data-chat-starter-prompt="${escapeHtml(item.prompt)}">
+              <strong>${escapeHtml(item.label)}</strong>
+              <span>${escapeHtml(item.description)}</span>
+            </button>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  function applyChatStarterPrompt(promptText) {
+    const input = $('chat-input');
+    if (!input) return;
+    input.value = String(promptText || '');
+    renderWorkspaceResumeCard();
+    updateChatComposerState();
+    scheduleWorkspaceStateSave();
+    input.focus();
+    const caretPosition = input.value.length;
+    if (typeof input.setSelectionRange === 'function') {
+      input.setSelectionRange(caretPosition, caretPosition);
     }
   }
 
@@ -1834,7 +1893,7 @@
     chatContainer?.classList.remove('has-messages');
     tabChat?.classList.remove('has-messages');
     if (!Array.isArray(messages) || messages.length === 0) {
-      addChatMessage('chatbot', '你好！我是 AI 对话助手，有什么我可以帮你的吗？');
+      addChatMessage('chatbot', '', { rawHtml: createChatStarterPanelMarkup() });
       chatHistory = [];
       if (options.forceFollow === false) {
         setChatAutoFollow(false);
@@ -2054,6 +2113,11 @@
       const clearDraftButton = event.target.closest('#workspace-clear-draft');
       if (clearDraftButton) {
         clearCurrentWorkspaceDraft();
+        return;
+      }
+      const chatStarterButton = event.target.closest('[data-chat-starter-prompt]');
+      if (chatStarterButton) {
+        applyChatStarterPrompt(chatStarterButton.dataset.chatStarterPrompt || '');
         return;
       }
       const conversationButton = event.target.closest('[data-conversation-id]');
@@ -3264,7 +3328,7 @@
       return { msgDiv, contentEl: msgDiv.querySelector('.streaming-content') };
     }
 
-    const formattedContent = formatChatMessageHtml(content);
+    const formattedContent = settings.rawHtml || formatChatMessageHtml(content);
     const actionsHtml = role === 'chatbot' ? buildChatAssistantActions(messageData) : '';
     msgDiv.innerHTML = `<div class="message-avatar">${avatar}</div><div class="message-content"><div class="message-body">${formattedContent}</div>${actionsHtml}</div>`;
     insertChatMessageNode(container, msgDiv, settings.insertAfterMessageId || '');

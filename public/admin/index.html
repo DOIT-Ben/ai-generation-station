@@ -118,6 +118,20 @@
             </label>
             <div class="admin-user-toolbar-stat" id="admin-user-toolbar-stat">正在整理用户列表...</div>
           </div>
+          <div class="admin-bulk-toolbar">
+            <div class="admin-bulk-copy">
+              <strong id="admin-bulk-selection-summary">尚未选择用户</strong>
+              <span id="admin-bulk-selection-note">先搜索目标范围，再多选需要批量处理的账号。</span>
+            </div>
+            <div class="admin-bulk-actions">
+              <button class="btn btn-reset" id="admin-select-filtered" type="button">全选当前筛选</button>
+              <button class="btn btn-reset" id="admin-clear-selection" type="button">清空选择</button>
+              <button class="btn btn-secondary" id="admin-bulk-activate" type="button">批量启用</button>
+              <button class="btn btn-secondary" id="admin-bulk-disable" type="button">批量禁用</button>
+              <button class="btn btn-secondary" id="admin-bulk-pro" type="button">批量设为 Pro</button>
+              <button class="btn btn-secondary" id="admin-bulk-free" type="button">批量设为 Free</button>
+            </div>
+          </div>
           <div id="admin-user-list" class="history-list"></div>
           <div id="admin-user-empty" class="history-empty">当前没有可管理的用户。</div>
           <div id="admin-invite-feedback" class="admin-form-feedback" hidden></div>

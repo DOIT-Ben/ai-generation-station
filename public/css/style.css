@@ -2257,6 +2257,83 @@ input[type="range"]::-webkit-slider-thumb:active {
   color: #c8f4ff;
 }
 
+.chat-starter-shell {
+  display: grid;
+  gap: 16px;
+}
+
+.chat-starter-copy {
+  display: grid;
+  gap: 8px;
+}
+
+.chat-starter-kicker {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(0, 212, 255, 0.12);
+  color: var(--accent-cyan);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.chat-starter-copy h3 {
+  margin: 0;
+  color: var(--fg-primary);
+  font-family: var(--font-display);
+  font-size: 1.12rem;
+  line-height: 1.2;
+}
+
+.chat-starter-copy p {
+  margin: 0;
+  color: var(--fg-secondary);
+  font-size: 0.88rem;
+  line-height: 1.65;
+}
+
+.chat-starter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.chat-starter-card {
+  padding: 14px 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  display: grid;
+  gap: 8px;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+}
+
+.chat-starter-card strong {
+  color: var(--fg-primary);
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.chat-starter-card span {
+  color: var(--fg-secondary);
+  font-size: 0.8rem;
+  line-height: 1.55;
+}
+
+.chat-starter-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(0, 212, 255, 0.22);
+  background: rgba(0, 212, 255, 0.08);
+  box-shadow: 0 14px 30px rgba(3, 7, 18, 0.18);
+}
+
 .message-actions {
   margin-top: 14px;
   padding-top: 12px;
@@ -2501,6 +2578,12 @@ input[type="range"]::-webkit-slider-thumb:active {
   background: rgba(36, 93, 255, 0.06);
   border-left-color: rgba(36, 93, 255, 0.32);
   color: var(--fg-secondary);
+}
+
+[data-theme="light"] .chat-starter-card {
+  background: rgba(255, 255, 255, 0.82);
+  border-color: rgba(24, 32, 51, 0.08);
+  box-shadow: var(--shadow-sm);
 }
 
 [data-theme="light"] .message-body a {
@@ -3920,6 +4003,10 @@ input[type="range"]::-webkit-slider-thumb:active {
   .chat-message {
     gap: 8px;
   }
+
+  .chat-starter-grid {
+    grid-template-columns: 1fr;
+  }
   
   .message-avatar {
     width: 32px;
@@ -5086,6 +5173,57 @@ input[type="range"]::-webkit-slider-thumb:active {
   font-size: 0.76rem;
 }
 
+.admin-bulk-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  margin-bottom: 16px;
+  padding: 14px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.admin-bulk-copy {
+  display: grid;
+  gap: 5px;
+}
+
+.admin-bulk-copy strong {
+  color: var(--fg-primary);
+  font-size: 0.88rem;
+}
+
+.admin-bulk-copy span {
+  color: var(--fg-muted);
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+
+.admin-bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.admin-user-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg-muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.admin-user-select input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
 .admin-user-card {
   padding: 18px;
   border-radius: 22px;
@@ -5343,6 +5481,7 @@ input[type="range"]::-webkit-slider-thumb:active {
 }
 
 [data-theme="light"] .admin-overview-card,
+[data-theme="light"] .admin-bulk-toolbar,
 [data-theme="light"] .admin-user-card,
 [data-theme="light"] .admin-user-detail,
 [data-theme="light"] .admin-user-search,
@@ -6196,10 +6335,19 @@ input[type="range"]::-webkit-slider-thumb:active {
   }
 
   .chat-composer-meta,
+  .admin-bulk-toolbar,
   .admin-user-toolbar,
   .admin-user-card-head {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .admin-bulk-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-bulk-actions {
+    justify-content: flex-start;
   }
 
   .admin-overview-grid,

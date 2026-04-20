@@ -8,6 +8,7 @@
   let adminUsers = [];
   let adminAuditState = getDefaultAuditState();
   let adminUserSearchQuery = '';
+  let adminSelectedUserIds = new Set();
 
   function getDefaultAuditState() {
     return {
@@ -78,6 +79,69 @@
     });
   }
 
+  function syncAdminSelection() {
+    const validIds = new Set(adminUsers.map(user => user.id));
+    adminSelectedUserIds = new Set(
+      Array.from(adminSelectedUserIds).filter(userId => validIds.has(userId))
+    );
+  }
+
+  function getSelectedAdminUsers() {
+    return adminUsers.filter(user => adminSelectedUserIds.has(user.id));
+  }
+
+  function renderAdminSelectionState() {
+    const summary = $('admin-bulk-selection-summary');
+    const note = $('admin-bulk-selection-note');
+    const selectedUsers = getSelectedAdminUsers();
+    const selectedCount = selectedUsers.length;
+    const filteredCount = getFilteredAdminUsers().length;
+    const actionButtons = [
+      'admin-clear-selection',
+      'admin-bulk-activate',
+      'admin-bulk-disable',
+      'admin-bulk-pro',
+      'admin-bulk-free'
+    ];
+
+    if (summary) {
+      summary.textContent = selectedCount > 0
+        ? `已选择 ${selectedCount} 个用户`
+        : '尚未选择用户';
+    }
+    if (note) {
+      note.textContent = selectedCount > 0
+        ? `当前筛选结果 ${filteredCount} 个，其中 ${selectedCount} 个会参与批量动作。`
+        : '先搜索目标范围，再多选需要批量处理的账号。';
+    }
+    actionButtons.forEach(id => {
+      const element = $(id);
+      if (element) element.disabled = selectedCount <= 0;
+    });
+    if ($('admin-select-filtered')) {
+      $('admin-select-filtered').disabled = filteredCount <= 0;
+    }
+  }
+
+  function setAdminSelectedUsers(ids = []) {
+    adminSelectedUserIds = new Set((Array.isArray(ids) ? ids : []).filter(Boolean));
+    syncAdminSelection();
+    renderUserList();
+  }
+
+  function toggleAdminUserSelection(userId, forceSelected) {
+    if (!userId) return;
+    const nextSelection = new Set(adminSelectedUserIds);
+    const shouldSelect = typeof forceSelected === 'boolean' ? forceSelected : !nextSelection.has(userId);
+    if (shouldSelect) {
+      nextSelection.add(userId);
+    } else {
+      nextSelection.delete(userId);
+    }
+    adminSelectedUserIds = nextSelection;
+    renderUserList();
+  }
+
   function renderAdminOverview() {
     const totalUsers = adminUsers.length;
     const activeUsers = adminUsers.filter(user => user.status === 'active').length;
@@ -123,6 +187,7 @@
     const select = $('admin-reset-user-id');
     if (!list || !empty || !select) return;
     const filteredUsers = getFilteredAdminUsers();
+    syncAdminSelection();
 
     const previousValue = select.value;
     select.innerHTML = ['<option value="">请选择用户</option>']
@@ -139,6 +204,7 @@
       list.innerHTML = '';
       empty.textContent = '当前没有可管理的用户。';
       empty.removeAttribute('hidden');
+      renderAdminSelectionState();
       return;
     }
 
@@ -146,6 +212,7 @@
       list.innerHTML = '';
       empty.textContent = '没有匹配搜索条件的用户。';
       empty.removeAttribute('hidden');
+      renderAdminSelectionState();
       return;
     }
 
@@ -159,6 +226,10 @@
       return `
         <article class="admin-user-card history-item">
           <div class="admin-user-card-head">
+            <label class="admin-user-select">
+              <input type="checkbox" data-admin-select-user="${user.id}" ${adminSelectedUserIds.has(user.id) ? 'checked' : ''} />
+              <span>选择</span>
+            </label>
             <div class="admin-user-copy">
               <strong>${SiteShell.escapeHtml(user.displayName || user.username)}</strong>
               <p>@${SiteShell.escapeHtml(user.username)}</p>
@@ -202,6 +273,7 @@
         </article>
       `;
     }).join('');
+    renderAdminSelectionState();
   }
 
   function renderAuditPanel() {
@@ -353,6 +425,62 @@
     SiteShell.showToast(Object.prototype.hasOwnProperty.call(patch || {}, 'email') ? '邮箱已更新' : '用户状态已更新', 'success', 1500);
   }
 
+  async function runBulkAdminAction(action) {
+    const selectedUsers = getSelectedAdminUsers();
+    if (!selectedUsers.length) {
+      SiteShell.showToast('请先选择要批量处理的用户', 'info', 1600);
+      return;
+    }
+
+    const actionMap = {
+      activate: {
+        patch: { status: 'active' },
+        label: '启用'
+      },
+      disable: {
+        patch: { status: 'disabled' },
+        label: '禁用'
+      },
+      pro: {
+        patch: { planCode: 'pro' },
+        label: '设为 Pro'
+      },
+      free: {
+        patch: { planCode: 'free' },
+        label: '设为 Free'
+      }
+    };
+    const config = actionMap[action];
+    if (!config) return;
+
+    const targets = selectedUsers.filter(user => {
+      if (action === 'disable' && user.id === session?.id) return false;
+      return true;
+    });
+    if (!targets.length) {
+      SiteShell.showToast('当前选择中没有可执行批量动作的用户', 'info', 1600);
+      return;
+    }
+
+    const confirmed = window.confirm(`确认批量${config.label} ${targets.length} 个用户吗？`);
+    if (!confirmed) return;
+
+    let successCount = 0;
+    for (const user of targets) {
+      try {
+        await persistence.updateAdminUser(user.id, config.patch);
+        successCount += 1;
+      } catch {
+        // 单个失败不打断整批，统一在结尾重新拉取最新状态
+      }
+    }
+
+    await loadAdminUsers();
+    await loadAdminAuditLogs({ page: 1 });
+    setAdminSelectedUsers([]);
+    SiteShell.showToast(`批量${config.label}完成：${successCount}/${targets.length}`, successCount > 0 ? 'success' : 'error', 1800);
+  }
+
   async function editAdminUserEmail(userId) {
     const targetUser = adminUsers.find(user => user.id === userId);
     if (!targetUser) {
@@ -472,6 +600,11 @@
         issueInvitation('revoke', revokeButton.dataset.adminInviteRevokeTarget);
       }
     });
+    document.addEventListener('change', event => {
+      const selectUserCheckbox = event.target.closest('[data-admin-select-user]');
+      if (!selectUserCheckbox) return;
+      toggleAdminUserSelection(selectUserCheckbox.dataset.adminSelectUser, selectUserCheckbox.checked);
+    });
   }
 
   async function init() {
@@ -496,6 +629,14 @@
       adminUserSearchQuery = String(event.target?.value || '');
       renderUserList();
     });
+    $('admin-select-filtered')?.addEventListener('click', () => {
+      setAdminSelectedUsers(getFilteredAdminUsers().map(user => user.id));
+    });
+    $('admin-clear-selection')?.addEventListener('click', () => setAdminSelectedUsers([]));
+    $('admin-bulk-activate')?.addEventListener('click', () => runBulkAdminAction('activate'));
+    $('admin-bulk-disable')?.addEventListener('click', () => runBulkAdminAction('disable'));
+    $('admin-bulk-pro')?.addEventListener('click', () => runBulkAdminAction('pro'));
+    $('admin-bulk-free')?.addEventListener('click', () => runBulkAdminAction('free'));
     $('admin-create-user-form')?.addEventListener('submit', createAdminUserFromForm);
     $('admin-reset-password-form')?.addEventListener('submit', resetAdminUserPasswordFromForm);
     $('admin-audit-form')?.addEventListener('submit', handleAuditFilterSubmit);
