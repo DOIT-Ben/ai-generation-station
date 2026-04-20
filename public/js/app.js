@@ -51,6 +51,7 @@
   let templates = appShell?.TEMPLATE_LIBRARY || {};
   const featureMeta = appShell?.FEATURE_META || {};
   const historyState = {};
+  const templateSearchState = {};
   const conversationState = {
     list: [],
     archived: [],
@@ -740,8 +741,18 @@
       wrapper.dataset.featureShell = feature;
       wrapper.innerHTML = `
         <section class="feature-card">
-          <h3>${featureMeta[feature].title}模板库</h3>
-          <p>按场景套用模板，也可以把当前输入直接保存成你自己的模板。</p>
+          <div class="feature-card-head">
+            <div>
+              <h3>${featureMeta[feature].title}模板库</h3>
+              <p>按场景套用模板，也可以把当前输入直接保存成你自己的模板。</p>
+            </div>
+            <div class="template-library-toolbar">
+              <div class="template-library-stat" id="template-stat-${feature}">正在整理模板库...</div>
+              <label class="template-search-shell" for="template-search-${feature}">
+                <input id="template-search-${feature}" class="template-search-input" type="search" placeholder="搜索模板 / 场景 / 提示词" aria-label="搜索${featureMeta[feature].title}模板">
+              </label>
+            </div>
+          </div>
           <div class="template-creator">
             <input id="template-label-${feature}" type="text" maxlength="24" placeholder="模板名称" />
             <input id="template-desc-${feature}" type="text" maxlength="60" placeholder="一句话描述（可选）" />
@@ -757,36 +768,107 @@
         </aside>
       `;
       section.appendChild(wrapper);
+      $(`template-search-${feature}`)?.addEventListener('input', event => {
+        templateSearchState[feature] = String(event.target?.value || '').trim();
+        renderTemplateLibraries();
+      });
     });
+  }
+
+  function getTemplateRawPreview(item = {}) {
+    if (item.message) return String(item.message);
+    if (item.values?.prompt) return String(item.values.prompt);
+    if (item.values?.text) return String(item.values.text);
+    return item.description ? String(item.description) : '';
+  }
+
+  function getTemplatePreviewSnippet(item = {}) {
+    return truncateText(getTemplateRawPreview(item).replace(/\s+/g, ' ').trim(), 108) || '暂无模板预览';
+  }
+
+  function getTemplateSearchQuery(feature) {
+    return String(templateSearchState[feature] || '').trim().toLowerCase();
+  }
+
+  function filterTemplateGroups(feature, groups = []) {
+    const query = getTemplateSearchQuery(feature);
+    const terms = query.split(/\s+/).filter(Boolean);
+    return groups
+      .map((group, groupIndex) => ({
+        ...group,
+        items: (group.items || [])
+          .map((item, itemIndex) => ({
+            ...item,
+            originalGroupIndex: groupIndex,
+            originalItemIndex: itemIndex
+          }))
+          .filter(item => {
+            if (!terms.length) return true;
+          const haystack = [
+            group.category || '',
+            item.label || '',
+            item.description || '',
+            getTemplateRawPreview(item)
+          ].join(' ').toLowerCase();
+          return terms.every(term => haystack.includes(term));
+          })
+      }))
+      .filter(group => group.items.length > 0);
+  }
+
+  function renderTemplateLibraryStat(feature, totalGroups = [], visibleGroups = []) {
+    const stat = $(`template-stat-${feature}`);
+    if (!stat) return;
+    const totalCount = (totalGroups || []).reduce((sum, group) => sum + (group.items?.length || 0), 0);
+    const visibleCount = (visibleGroups || []).reduce((sum, group) => sum + (group.items?.length || 0), 0);
+    const query = getTemplateSearchQuery(feature);
+    stat.textContent = query
+      ? `匹配 ${visibleCount} / ${totalCount} 个模板`
+      : `共 ${totalCount} 个模板，覆盖常见工作场景`;
   }
 
   function renderTemplateLibraries() {
     Object.entries(templates).forEach(([feature, groups]) => {
       const container = $(`template-groups-${feature}`);
       if (!container) return;
+      const filteredGroups = filterTemplateGroups(feature, groups);
+      renderTemplateLibraryStat(feature, groups, filteredGroups);
       if (!groups.length) {
         container.innerHTML = '<div class="history-empty">当前还没有模板。</div>';
         return;
       }
-      container.innerHTML = groups.map((group, groupIndex) => `
+      if (!filteredGroups.length) {
+        container.innerHTML = '<div class="history-empty">没有匹配的模板，换个关键词试试。</div>';
+        return;
+      }
+      container.innerHTML = filteredGroups.map(group => `
         <div class="template-category">
           <div class="template-category-header">
-            <div class="template-category-title">${group.category}</div>
+            <div class="template-category-title">${escapeHtml(group.category || '未分类')}</div>
             <div class="template-category-meta">${group.items.length} 个模板</div>
           </div>
           <div class="template-list">
-            ${group.items.map((item, itemIndex) => `
+            ${group.items.map(item => `
               <article class="template-item${item.favorite ? ' is-favorite' : ''}">
                 <div class="template-item-meta">
                   <span>${item.source === 'user' ? '我的模板' : '系统模板'}</span>
                   ${item.id ? `<button type="button" class="template-favorite-btn" data-template-favorite="${feature}" data-template-id="${item.id}">${item.favorite ? '已收藏' : '收藏'}</button>` : ''}
                 </div>
-                <strong>${item.label}</strong>
-                <span>${item.description || '暂无描述'}</span>
-                <div class="template-actions">
-                  <button type="button" data-template-feature="${feature}" data-template-group="${groupIndex}" data-template-item="${itemIndex}">
+                <strong>${escapeHtml(item.label || '未命名模板')}</strong>
+                <span class="template-item-description">${escapeHtml(item.description || '暂无描述')}</span>
+                <p class="template-item-preview">${escapeHtml(getTemplatePreviewSnippet(item))}</p>
+                <div class="template-item-footer">
+                  <span class="template-item-stat">${Math.max(1, getTemplateRawPreview(item).replace(/\s+/g, '').length)} 字内容</span>
+                  <div class="template-actions">
+                    <button
+                      type="button"
+                      data-template-feature="${feature}"
+                      data-template-group="${item.originalGroupIndex}"
+                      data-template-item="${item.originalItemIndex}"
+                      data-template-label="${escapeHtml(item.label || '未命名模板')}">
                     ${feature === 'chat' ? '一键发送' : '应用模板'}
-                  </button>
+                    </button>
+                  </div>
                 </div>
               </article>
             `).join('')}
@@ -889,6 +971,17 @@
       return '还没有消息，适合开始一个新主题。';
     }
     return `${conversation?.messageCount || 0} 条消息 · ${conversation?.model || 'MiniMax-M2.7'}`;
+  }
+
+  function getConversationRowPillsMarkup(conversation) {
+    const pills = [];
+    if (conversation?.id === conversationState.activeId) {
+      pills.push('<span class="chat-conversation-pill is-current">当前</span>');
+    }
+    if (Number(conversation?.messageCount || 0) <= 0) {
+      pills.push('<span class="chat-conversation-pill">空白</span>');
+    }
+    return pills.join('');
   }
 
   function getConversationTimestamp(conversation) {
@@ -1082,20 +1175,39 @@
         <div class="chat-conversation-group-label">${group.label}</div>
         <div class="chat-conversation-group-list">
           ${group.items.map(item => `
-            <button
-              type="button"
-              class="chat-conversation-item${item.id === conversationState.activeId ? ' active' : ''}"
-              data-conversation-id="${item.id}">
-              <div class="chat-conversation-item-top">
-                <strong>${escapeHtml(getConversationTitlePreview(item))}</strong>
-                <time>${escapeHtml(getConversationTimeLabel(item))}</time>
+            <article class="chat-conversation-row${item.id === conversationState.activeId ? ' is-active' : ''}">
+              <button
+                type="button"
+                class="chat-conversation-item${item.id === conversationState.activeId ? ' active' : ''}"
+                data-conversation-id="${item.id}">
+                <div class="chat-conversation-item-top">
+                  <strong>${escapeHtml(getConversationTitlePreview(item))}</strong>
+                  <time>${escapeHtml(getConversationTimeLabel(item))}</time>
+                </div>
+                <p class="chat-conversation-preview">${escapeHtml(getConversationPreview(item))}</p>
+                <div class="chat-conversation-meta">
+                  <span>${item.messageCount || 0} 条消息</span>
+                  <span>${escapeHtml(item.model || 'MiniMax-M2.7')}</span>
+                </div>
+                <div class="chat-conversation-flags">${getConversationRowPillsMarkup(item)}</div>
+              </button>
+              <div class="chat-conversation-inline-actions">
+                <button
+                  type="button"
+                  class="chat-conversation-mini-action"
+                  data-conversation-rename-id="${item.id}"
+                  ${isChatGenerating ? 'disabled' : ''}>
+                  改名
+                </button>
+                <button
+                  type="button"
+                  class="chat-conversation-mini-action is-danger"
+                  data-conversation-archive-id="${item.id}"
+                  ${isChatGenerating ? 'disabled' : ''}>
+                  归档
+                </button>
               </div>
-              <p class="chat-conversation-preview">${escapeHtml(getConversationPreview(item))}</p>
-              <div class="chat-conversation-meta">
-                <span>${item.messageCount || 0} 条消息</span>
-                <span>${escapeHtml(item.model || 'MiniMax-M2.7')}</span>
-              </div>
-            </button>
+            </article>
           `).join('')}
         </div>
       </section>
@@ -1298,15 +1410,19 @@
   }
 
   async function renameActiveConversation() {
-    const activeConversation = getActiveConversation();
-    if (!currentUser || !activeConversation || !persistence?.updateConversation) return;
+    return renameConversationById(getActiveConversation()?.id);
+  }
+
+  async function renameConversationById(conversationId) {
+    const targetConversation = conversationState.list.find(item => item.id === conversationId) || null;
+    if (!currentUser || !targetConversation || !persistence?.updateConversation) return;
     if (isChatGenerating) {
       showToast('请等待当前回复完成后再重命名。', 'info', 1800);
       return;
     }
 
     const nextTitleRaw = typeof window !== 'undefined' && typeof window.prompt === 'function'
-      ? window.prompt('重命名会话', getConversationTitlePreview(activeConversation))
+      ? window.prompt('重命名会话', getConversationTitlePreview(targetConversation))
       : null;
     if (nextTitleRaw == null) return;
 
@@ -1315,10 +1431,10 @@
       showToast('会话标题不能为空。', 'error', 1800);
       return;
     }
-    if (nextTitle === activeConversation.title) return;
+    if (nextTitle === targetConversation.title) return;
 
     try {
-      const result = await persistence.updateConversation(activeConversation.id, { title: nextTitle });
+      const result = await persistence.updateConversation(targetConversation.id, { title: nextTitle });
       const updatedConversation = result?.conversation || null;
       if (!updatedConversation?.id) return;
       upsertConversationSummary(updatedConversation);
@@ -1331,41 +1447,54 @@
 
   async function archiveActiveConversation() {
     const activeConversation = getActiveConversation();
-    if (!currentUser || !activeConversation || !persistence?.archiveConversation) return;
+    if (!activeConversation) return;
+    return archiveConversationById(activeConversation.id, {
+      confirmationMessage: `确认归档“${getConversationTitlePreview(activeConversation)}”吗？`
+    });
+  }
+
+  async function archiveConversationById(conversationId, options = {}) {
+    const targetConversation = conversationState.list.find(item => item.id === conversationId) || null;
+    if (!currentUser || !targetConversation || !persistence?.archiveConversation) return;
     if (isChatGenerating) {
       showToast('请等待当前回复完成后再归档。', 'info', 1800);
       return;
     }
 
     const confirmed = typeof window !== 'undefined' && typeof window.confirm === 'function'
-      ? window.confirm(`确认归档“${getConversationTitlePreview(activeConversation)}”吗？`)
+      ? window.confirm(
+        options.confirmationMessage || `确认归档“${getConversationTitlePreview(targetConversation)}”吗？`
+      )
       : true;
     if (!confirmed) return;
 
     try {
-      const result = await persistence.archiveConversation(activeConversation.id);
-      setConversationList(result?.conversations || conversationState.list.filter(item => item.id !== activeConversation.id));
+      const result = await persistence.archiveConversation(targetConversation.id);
+      setConversationList(result?.conversations || conversationState.list.filter(item => item.id !== targetConversation.id));
       setArchivedConversationList(
-        result?.archivedConversations || [result?.archivedConversation].filter(Boolean).concat(
-          conversationState.archived.filter(item => item.id !== activeConversation.id)
+        result?.archivedConversations || [result?.archivedConversation || targetConversation].filter(Boolean).concat(
+          conversationState.archived.filter(item => item.id !== targetConversation.id)
         )
       );
-      if (workspaceState.lastConversationId === activeConversation.id) {
+      if (workspaceState.lastConversationId === targetConversation.id) {
         workspaceState.lastConversationId = null;
       }
-      conversationState.activeId = null;
-      conversationState.messages = [];
-      chatHistory = [];
-      restoreChatMessages([]);
       renderConversationList();
+      if (conversationState.activeId === targetConversation.id) {
+        conversationState.activeId = null;
+        conversationState.messages = [];
+        chatHistory = [];
+        restoreChatMessages([]);
 
-      const nextConversation = conversationState.list[0] || null;
-      if (nextConversation?.id) {
-        await selectConversation(nextConversation.id);
-      } else {
-        await createConversationAndSelect();
+        const nextConversation = conversationState.list[0] || null;
+        if (nextConversation?.id) {
+          await selectConversation(nextConversation.id);
+        } else {
+          await createConversationAndSelect();
+        }
       }
 
+      renderWorkspaceResumeCard();
       scheduleWorkspaceStateSave();
       showToast('会话已归档', 'success', 1400);
     } catch (error) {
@@ -1815,6 +1944,16 @@
       const archiveConversationButton = event.target.closest('#btn-chat-archive-conversation');
       if (archiveConversationButton) {
         archiveActiveConversation();
+        return;
+      }
+      const inlineRenameConversationButton = event.target.closest('[data-conversation-rename-id]');
+      if (inlineRenameConversationButton) {
+        renameConversationById(inlineRenameConversationButton.dataset.conversationRenameId);
+        return;
+      }
+      const inlineArchiveConversationButton = event.target.closest('[data-conversation-archive-id]');
+      if (inlineArchiveConversationButton) {
+        archiveConversationById(inlineArchiveConversationButton.dataset.conversationArchiveId);
         return;
       }
       const copyMessageButton = event.target.closest('[data-chat-copy-id]');
