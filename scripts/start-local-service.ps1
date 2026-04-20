@@ -18,6 +18,14 @@ if ($status.ProcessFound -and $status.Healthy -and -not $Restart) {
     exit 0
 }
 
+if ($status.ProcessFound -and -not $status.Healthy -and -not $Restart) {
+    Write-Output "Managed local service is present on port $Port but readiness checks failed."
+    Write-Output "API health:         $($status.ApiHealthy) (HTTP $($status.ApiStatusCode))"
+    Write-Output "Auth contract ready:$($status.AuthContractHealthy) (HTTP $($status.AuthContractStatusCode))"
+    Stop-AigsManagedProcess -Port $Port -Force | Out-Null
+    $status = Get-AigsServerStatus -Port $Port
+}
+
 if ($status.ListenerPid -and -not $status.ProcessFound) {
     throw "Port $Port is already occupied by PID $($status.ListenerPid), but it is not recognized as the managed repo server. Refusing to launch a duplicate."
 }
@@ -36,8 +44,8 @@ $process = Start-Process `
     -RedirectStandardError $paths.StderrLog `
     -PassThru
 
-$health = Wait-AigsHealth -Port $Port -TimeoutSec 20
-if (-not $health.Healthy) {
+$ready = Wait-AigsReady -Port $Port -TimeoutSec 20
+if (-not $ready.Healthy) {
     try {
         Stop-AigsManagedProcess -Port $Port -Force | Out-Null
     } catch {
@@ -48,7 +56,7 @@ if (-not $health.Healthy) {
     } catch {
         # Ignore wrapper cleanup failures.
     }
-    throw "Local service failed to become healthy on $($paths.HealthUrl). Check $($paths.StdoutLog) and $($paths.StderrLog)."
+    throw "Local service failed readiness checks on $($paths.HealthUrl) and $($paths.AuthContractUrl). Check $($paths.StdoutLog) and $($paths.StderrLog)."
 }
 
 $finalStatus = Get-AigsServerStatus -Port $Port

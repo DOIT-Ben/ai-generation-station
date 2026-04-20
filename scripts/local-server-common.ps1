@@ -2,6 +2,7 @@ $script:RepoRoot = Split-Path -Parent $PSScriptRoot
 $script:ProfilePath = 'D:\document\PowerShell\profile.ps1'
 $script:ServerEntry = Join-Path $script:RepoRoot 'server\index.js'
 $script:HealthPath = '/api/health'
+$script:AuthContractPath = '/api/auth/csrf'
 
 function Get-AigsRuntimePaths {
     param(
@@ -16,6 +17,7 @@ function Get-AigsRuntimePaths {
         StderrLog = Join-Path $runtimeDir "local-server-$Port.stderr.log"
         Url = "http://127.0.0.1:$Port/"
         HealthUrl = "http://127.0.0.1:$Port$script:HealthPath"
+        AuthContractUrl = "http://127.0.0.1:$Port$script:AuthContractPath"
     }
 }
 
@@ -164,6 +166,80 @@ function Wait-AigsHealth {
     return $lastHealth
 }
 
+function Invoke-AigsAuthContractCheck {
+    param(
+        [int]$Port = 18791,
+        [int]$TimeoutSec = 5
+    )
+
+    $paths = Get-AigsRuntimePaths -Port $Port
+    try {
+        $response = Invoke-WebRequest -Uri $paths.AuthContractUrl -UseBasicParsing -TimeoutSec $TimeoutSec
+        $statusCode = [int]$response.StatusCode
+        $payload = $null
+        $parseError = $null
+
+        try {
+            $payload = $response.Content | ConvertFrom-Json -ErrorAction Stop
+        } catch {
+            $parseError = $_.Exception.Message
+        }
+
+        $hasToken = -not [string]::IsNullOrWhiteSpace([string]$payload.csrfToken)
+        $hasHeader = -not [string]::IsNullOrWhiteSpace([string]$payload.headerName)
+        $healthy = ($statusCode -eq 200) -and $hasToken -and $hasHeader
+        $error = $null
+
+        if (-not $healthy) {
+            if ($parseError) {
+                $error = "auth contract payload parse failed: $parseError"
+            } elseif ($statusCode -ne 200) {
+                $error = "unexpected auth contract status: $statusCode"
+            } elseif (-not $hasToken -or -not $hasHeader) {
+                $error = 'auth contract response is missing csrfToken or headerName'
+            }
+        }
+
+        return [pscustomobject]@{
+            Healthy = [bool]$healthy
+            StatusCode = $statusCode
+            Error = $error
+            Url = $paths.AuthContractUrl
+        }
+    } catch {
+        $statusCode = $null
+        if ($_.Exception.Response -and $_.Exception.Response.StatusCode) {
+            $statusCode = [int]$_.Exception.Response.StatusCode
+        }
+        return [pscustomobject]@{
+            Healthy = $false
+            StatusCode = $statusCode
+            Error = $_.Exception.Message
+            Url = $paths.AuthContractUrl
+        }
+    }
+}
+
+function Wait-AigsReady {
+    param(
+        [int]$Port = 18791,
+        [int]$TimeoutSec = 20,
+        [int]$PollMs = 500
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSec)
+    $lastStatus = $null
+    do {
+        $lastStatus = Get-AigsServerStatus -Port $Port
+        if ($lastStatus.Healthy) {
+            return $lastStatus
+        }
+        Start-Sleep -Milliseconds $PollMs
+    } while ((Get-Date) -lt $deadline)
+
+    return $lastStatus
+}
+
 function New-AigsLaunchCommand {
     param(
         [int]$Port = 18791
@@ -204,19 +280,27 @@ function Get-AigsServerStatus {
     }
 
     $health = Invoke-AigsHealthCheck -Port $Port -TimeoutSec 5
+    $authContract = Invoke-AigsAuthContractCheck -Port $Port -TimeoutSec 5
+    $ready = [bool]($health.Healthy -and $authContract.Healthy)
     return [pscustomobject]@{
         Port = $Port
         Url = $paths.Url
         HealthUrl = $paths.HealthUrl
+        AuthContractUrl = $paths.AuthContractUrl
         PidFile = $paths.PidFile
         StdoutLog = $paths.StdoutLog
         StderrLog = $paths.StderrLog
         ManagedPid = $managedPid
         ListenerPid = $listenerPid
         ProcessFound = [bool]$managedPid
-        Healthy = [bool]$health.Healthy
-        StatusCode = $health.StatusCode
+        Healthy = $ready
+        StatusCode = if ($ready) { 200 } else { $null }
+        ApiHealthy = [bool]$health.Healthy
+        ApiStatusCode = $health.StatusCode
         HealthError = $health.Error
+        AuthContractHealthy = [bool]$authContract.Healthy
+        AuthContractStatusCode = $authContract.StatusCode
+        AuthContractError = $authContract.Error
     }
 }
 

@@ -81,6 +81,8 @@ Optional overrides:
   - `http://localhost:18791`
 - local health endpoint:
   - `http://localhost:18791/api/health`
+- local auth-contract endpoint:
+  - `http://localhost:18791/api/auth/csrf`
 
 ## Runtime Files
 
@@ -130,9 +132,14 @@ If testing real delivery locally:
 
 - `check-local-service.ps1` reports:
   - `healthy: true`
-  - `statusCode: 200`
   - `healthUrl` points to:
     - `http://127.0.0.1:18791/api/health`
+  - `authContractUrl` points to:
+    - `http://127.0.0.1:18791/api/auth/csrf`
+  - `apiHealthy: true`
+  - `apiStatusCode: 200`
+  - `authContractHealthy: true`
+  - `authContractStatusCode: 200`
   - the same PID for:
     - `managedPid`
     - `listenerPid`
@@ -172,6 +179,25 @@ Check:
 1. `output/runtime/local-server-18791.stdout.log`
 2. `output/runtime/local-server-18791.stderr.log`
 3. `powershell -ExecutionPolicy Bypass -File .\scripts\check-local-service.ps1 -Port 18791 -Json`
+
+Meaning:
+
+- the process may be listening and still fail browser auth readiness
+- current local readiness now requires both:
+  - `/api/health`
+  - `/api/auth/csrf`
+
+Common example:
+
+- a stale local runtime can still answer `/api/health`
+- but if `/api/auth/csrf` is missing or broken, auth/logout flows can fail with browser errors such as:
+  - `CSRF token bootstrap failed`
+
+Handling:
+
+1. use the repo-owned start script again:
+   - `powershell -ExecutionPolicy Bypass -File .\scripts\start-local-service.ps1 -Port 18791`
+2. if the running process is the managed repo server but fails the auth-contract check, the start script now recycles it automatically
 
 ### Environment Bootstrap Issues
 
