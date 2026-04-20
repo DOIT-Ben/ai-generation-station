@@ -60,6 +60,9 @@ function main() {
   assert.ok(appJs.includes('确认归档“${getConversationTitlePreview(activeConversation)}”吗？'), 'conversation archive confirmation should be localized to Chinese');
   assert.ok(appJs.includes('请等待当前回复完成后再切换会话。'), 'conversation switch guard should be localized to Chinese');
   assert.ok(appJs.includes('已归档会话已删除'), 'archived conversation delete success toast should be localized to Chinese');
+  assert.ok(html.includes('class="message-body"'), 'chat welcome message should use structured message-body markup');
+  assert.ok(appJs.includes('正在思考'), 'workspace should surface a visible thinking state before chat replies stream in');
+  assert.ok(appJs.includes('formatChatMessageHtml'), 'workspace should format chat replies with structured rich text rendering');
   assert.ok(authPageJs.includes('注册成功，正在进入工作台'), 'auth page should contain a register success flow');
   assert.ok(authPageJs.includes('账号激活成功'), 'auth page should contain an invite-activation success flow');
   assert.ok(accountPageJs.includes('密码已更新，当前会话已保留。'), 'account page should surface password update success feedback');

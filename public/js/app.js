@@ -539,9 +539,9 @@
           <strong>${currentUser}</strong>
           <span>${summaryLabel}</span>
         </div>
-        <a href="/account/" class="topbar-account-action"><span>个人中心</span></a>
+        <a href="/account/" class="topbar-account-action topbar-account-action--account"><span>个人中心</span></a>
         ${currentUserProfile?.role === 'admin' ? '<a href="/admin/" class="topbar-account-action"><span>后台</span></a>' : ''}
-        <button id="btn-logout" class="topbar-account-action" type="button"><span>退出</span></button>
+        <button id="btn-logout" class="topbar-account-action topbar-account-action--logout" type="button"><span>退出</span></button>
       </div>
     `;
     $('btn-logout')?.addEventListener('click', logout);
@@ -2421,8 +2421,21 @@
   // ============================================
   let chatHistory = [];
 
-  // Simple Markdown parser for chat messages
-  function parseMarkdown(text) {
+  function normalizeChatMarkdownText(value) {
+    return String(value || '').replace(/\r\n/g, '\n');
+  }
+
+  function renderChatCodeBlock(language, code) {
+    const langLabel = String(language || '').trim();
+    return `
+      <div class="chat-code-block">
+        ${langLabel ? `<div class="chat-code-header">${langLabel}</div>` : ''}
+        <pre><code>${code}</code></pre>
+      </div>
+    `;
+  }
+
+  function applyInlineMarkdown(text) {
     const sanitizeLinkUrl = (rawUrl) => {
       try {
         const parsed = new URL(rawUrl, window.location.origin);
@@ -2433,16 +2446,135 @@
     };
 
     return text
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, href) => `<a href="${sanitizeLinkUrl(href)}" target="_blank" rel="noopener noreferrer">${label}</a>`)
       // Bold: **text** or __text__
       .replace(/\*\*(.+?)\*\*|__(.+?)__/g, '<strong>$1$2</strong>')
       // Italic: *text* or _text_
       .replace(/\*(.+?)\*|_(.+?)_/g, '<em>$1$2</em>')
       // Inline code: `text`
-      .replace(/`(.+?)`/g, '<code style="background:var(--bg-secondary);padding:2px 6px;border-radius:4px;font-family:var(--font-mono);font-size:0.9em;color:var(--accent-cyan);">$1</code>')
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
       // Strikethrough: ~~text~~
-      .replace(/~~(.+?)~~/g, '<del>$1</del>')
-      // Links: [text](url)
-      .replace(/\[(.+?)\]\((.+?)\)/g, (_, label, href) => `<a href="${sanitizeLinkUrl(href)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent-cyan);text-decoration:underline;">${label}</a>`);
+      .replace(/~~(.+?)~~/g, '<del>$1</del>');
+  }
+
+  function formatChatMessageHtml(text) {
+    const normalizedText = normalizeChatMarkdownText(text);
+    const escapedText = escapeHtml(normalizedText);
+    const codeBlocks = [];
+    const placeholderPrefix = '__CHAT_CODE_BLOCK_';
+    const withPlaceholders = escapedText.replace(/```([\w-]+)?\n?([\s\S]*?)```/g, (_, language, code) => {
+      const placeholder = `${placeholderPrefix}${codeBlocks.length}__`;
+      codeBlocks.push(renderChatCodeBlock(language, String(code || '').replace(/\n$/, '')));
+      return placeholder;
+    });
+
+    const lines = withPlaceholders.split('\n');
+    const blocks = [];
+    let index = 0;
+
+    const isSpecialBlockStart = line => {
+      const trimmed = String(line || '').trim();
+      return Boolean(
+        trimmed.startsWith(placeholderPrefix) ||
+        /^#{1,3}\s+/.test(trimmed) ||
+        /^&gt;\s?/.test(trimmed) ||
+        /^[-*]\s+/.test(trimmed) ||
+        /^\d+\.\s+/.test(trimmed)
+      );
+    };
+
+    while (index < lines.length) {
+      const currentLine = lines[index];
+      const trimmed = String(currentLine || '').trim();
+
+      if (!trimmed) {
+        index += 1;
+        continue;
+      }
+
+      if (trimmed.startsWith(placeholderPrefix)) {
+        blocks.push(trimmed);
+        index += 1;
+        continue;
+      }
+
+      const headingMatch = trimmed.match(/^(#{1,3})\s+(.+)$/);
+      if (headingMatch) {
+        const level = Math.min(3, headingMatch[1].length);
+        blocks.push(`<h${level}>${applyInlineMarkdown(headingMatch[2])}</h${level}>`);
+        index += 1;
+        continue;
+      }
+
+      if (/^&gt;\s?/.test(trimmed)) {
+        const quoteLines = [];
+        while (index < lines.length && /^&gt;\s?/.test(String(lines[index] || '').trim())) {
+          quoteLines.push(String(lines[index] || '').trim().replace(/^&gt;\s?/, ''));
+          index += 1;
+        }
+        blocks.push(`<blockquote>${quoteLines.map(line => applyInlineMarkdown(line)).join('<br>')}</blockquote>`);
+        continue;
+      }
+
+      if (/^[-*]\s+/.test(trimmed)) {
+        const items = [];
+        while (index < lines.length && /^[-*]\s+/.test(String(lines[index] || '').trim())) {
+          items.push(String(lines[index] || '').trim().replace(/^[-*]\s+/, ''));
+          index += 1;
+        }
+        blocks.push(`<ul>${items.map(item => `<li>${applyInlineMarkdown(item)}</li>`).join('')}</ul>`);
+        continue;
+      }
+
+      if (/^\d+\.\s+/.test(trimmed)) {
+        const items = [];
+        while (index < lines.length && /^\d+\.\s+/.test(String(lines[index] || '').trim())) {
+          items.push(String(lines[index] || '').trim().replace(/^\d+\.\s+/, ''));
+          index += 1;
+        }
+        blocks.push(`<ol>${items.map(item => `<li>${applyInlineMarkdown(item)}</li>`).join('')}</ol>`);
+        continue;
+      }
+
+      const paragraphLines = [];
+      while (index < lines.length) {
+        const line = String(lines[index] || '');
+        if (!line.trim()) break;
+        if (paragraphLines.length > 0 && isSpecialBlockStart(line)) break;
+        paragraphLines.push(line.trim());
+        index += 1;
+      }
+      blocks.push(`<p>${paragraphLines.map(line => applyInlineMarkdown(line)).join('<br>')}</p>`);
+    }
+
+    let html = blocks.join('');
+    codeBlocks.forEach((codeBlockHtml, codeIndex) => {
+      html = html.replace(`${placeholderPrefix}${codeIndex}__`, codeBlockHtml);
+    });
+    return html || '<p></p>';
+  }
+
+  function createThinkingMessage() {
+    const container = $('chat-messages');
+    if (!container) return null;
+
+    const msgDiv = document.createElement('div');
+    msgDiv.className = 'chat-message chatbot is-thinking';
+    msgDiv.innerHTML = `
+      <div class="message-avatar">🤖</div>
+      <div class="message-content">
+        <div class="thinking-indicator" aria-live="polite">
+          <span class="thinking-label">正在思考</span>
+          <span class="thinking-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        </div>
+      </div>
+    `;
+    container.appendChild(msgDiv);
+    container.scrollTop = container.scrollHeight;
+    return {
+      msgDiv,
+      contentWrap: msgDiv.querySelector('.message-content')
+    };
   }
 
   function addChatMessage(role, content, isStreaming = false) {
@@ -2461,24 +2593,31 @@
     msgDiv.className = `chat-message ${role}`;
 
     if (role === 'chatbot' && isStreaming) {
-      // Create streaming message container
-      msgDiv.innerHTML = `<div class="message-avatar">${avatar}</div><div class="message-content"><p class="streaming-content" style="margin:0;line-height:1.5;white-space:normal;word-break:break-word;color:var(--fg-primary);"></p></div>`;
+      msgDiv.innerHTML = `<div class="message-avatar">${avatar}</div><div class="message-content"><div class="message-body streaming-content"></div></div>`;
       container.appendChild(msgDiv);
       container.scrollTop = container.scrollHeight;
       return { msgDiv, contentEl: msgDiv.querySelector('.streaming-content') };
     }
 
-    // Parse markdown then handle line breaks
-    const formattedContent = parseMarkdown(escapeHtml(content)).replace(/\n/g, '<br>');
-    msgDiv.innerHTML = `<div class="message-avatar">${avatar}</div><div class="message-content"><p style="margin:0;line-height:1.5;white-space:normal;word-break:break-word;color:var(--fg-primary);">${formattedContent}</p></div>`;
+    const formattedContent = formatChatMessageHtml(content);
+    msgDiv.innerHTML = `<div class="message-avatar">${avatar}</div><div class="message-content"><div class="message-body">${formattedContent}</div></div>`;
     container.appendChild(msgDiv);
     container.scrollTop = container.scrollHeight;
     return null;
   }
 
   // Stream text with typing effect
-  async function streamChatMessage(content, onComplete) {
-    const { contentEl, msgDiv } = addChatMessage('chatbot', '', true);
+  async function streamChatMessage(content, onComplete, pendingMessage = null) {
+    let contentEl = null;
+    let msgDiv = null;
+    if (pendingMessage?.contentWrap) {
+      msgDiv = pendingMessage.msgDiv;
+      pendingMessage.contentWrap.innerHTML = '<div class="message-body streaming-content"></div>';
+      contentEl = pendingMessage.contentWrap.querySelector('.streaming-content');
+      msgDiv.classList.remove('is-thinking');
+    } else {
+      ({ contentEl, msgDiv } = addChatMessage('chatbot', '', true));
+    }
     const container = $('chat-messages');
 
     const chars = content.split('');
@@ -2492,7 +2631,7 @@
       function typeNext() {
         if (index >= chars.length) {
           // Streaming complete - finalize content
-          const finalContent = parseMarkdown(escapeHtml(content)).replace(/\n/g, '<br>');
+          const finalContent = formatChatMessageHtml(content);
           contentEl.innerHTML = finalContent;
           contentEl.classList.remove('streaming-content');
           container.scrollTop = container.scrollHeight;
@@ -2522,6 +2661,7 @@
     const btn = $('btn-chat-send');
     const input = $('chat-input');
     if (btn) btn.disabled = loading;
+    btn?.classList.toggle('is-loading', Boolean(loading));
     // 输入框始终保持可输入，支持排队发送
     if (input) input.disabled = false;
   }
@@ -2646,6 +2786,7 @@
 
     const model = $('chat-model')?.value || 'MiniMax-M2.7';
     addChatMessage('user', message);
+    const thinkingMessage = createThinkingMessage();
     setChatLoading(true);
 
     try {
@@ -2669,7 +2810,7 @@
       await streamChatMessage(data.reply || '', () => {
         loadQuota();
         refreshUsageToday();
-      });
+      }, thinkingMessage);
       applyConversationPayload(data.conversation, data.messages, { restoreMessages: false });
     } catch (error) {
       restoreChatMessages(chatHistory);

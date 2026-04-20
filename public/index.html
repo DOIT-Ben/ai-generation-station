@@ -82,13 +82,6 @@
     </nav>
 
     <div class="sidebar-footer">
-      <section class="workspace-resume-card" id="workspace-resume-card" hidden>
-        <div class="workspace-resume-kicker">继续上次工作</div>
-        <strong id="workspace-resume-feature">当前页：AI 对话</strong>
-        <p id="workspace-resume-context">当前页没有未完成草稿</p>
-        <span id="workspace-resume-meta">尚未自动保存</span>
-        <button class="workspace-resume-action" id="workspace-clear-draft" type="button">清空当前草稿</button>
-      </section>
       <div id="quota-info" class="quota-card">
         <div class="quota-loading">加载中...</div>
       </div>
@@ -97,6 +90,15 @@
 
   <!-- Main Content -->
   <main class="main">
+    <section class="workspace-resume-strip" id="workspace-resume-card" hidden>
+      <div class="workspace-resume-copy">
+        <span class="workspace-resume-kicker">继续上次工作</span>
+        <strong id="workspace-resume-feature">当前页：AI 对话</strong>
+        <p id="workspace-resume-context">当前页没有未完成草稿</p>
+      </div>
+      <span class="workspace-resume-meta" id="workspace-resume-meta">尚未自动保存</span>
+      <button class="workspace-resume-action" id="workspace-clear-draft" type="button">清空当前草稿</button>
+    </section>
 
     <!-- Music Tab -->
     <section id="tab-music" class="tab-content">
@@ -661,7 +663,9 @@
             <div class="chat-message chatbot">
               <div class="message-avatar">🤖</div>
               <div class="message-content">
-                <p>你好！我是 AI 对话助手，有什么我可以帮你的吗？</p>
+                <div class="message-body">
+                  <p>你好！我是 AI 对话助手，有什么我可以帮你的吗？</p>
+                </div>
               </div>
             </div>
           </div>
