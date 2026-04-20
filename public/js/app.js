@@ -1849,6 +1849,9 @@
         }
       }, Number(patch.expiresInMs));
     }
+    if (patch.renderNow && conversationState.activeId) {
+      restoreChatMessages(conversationState.messages, { forceFollow: false });
+    }
   }
 
   function setChatRequestStatus(text = '', tone = 'info') {
@@ -2081,12 +2084,12 @@
       }
       const rewriteMessageButton = event.target.closest('[data-chat-rewrite-id]');
       if (rewriteMessageButton) {
-        rewriteAssistantMessage(rewriteMessageButton.dataset.chatRewriteId);
+        rewriteAssistantMessage(rewriteMessageButton.dataset.chatRewriteId, rewriteMessageButton);
         return;
       }
       const versionNavButton = event.target.closest('[data-chat-version-nav]');
       if (versionNavButton) {
-        switchAssistantVersion(versionNavButton.dataset.chatMessageId, versionNavButton.dataset.chatVersionNav)
+        switchAssistantVersion(versionNavButton.dataset.chatMessageId, versionNavButton.dataset.chatVersionNav, versionNavButton)
           .catch(error => {
             showToast(error.message || '切换版本失败，请重试。', 'error', 1600);
           });
@@ -3814,21 +3817,69 @@
     });
   }
 
-  async function rewriteAssistantMessage(messageId) {
+  function setActionButtonState(button, nextLabel, options = {}) {
+    if (!button) {
+      return () => {};
+    }
+    const defaultLabel = button.dataset.defaultLabel || button.textContent || '';
+    const defaultDisabled = button.dataset.defaultDisabled || (button.disabled ? 'true' : 'false');
+    button.dataset.defaultLabel = defaultLabel;
+    button.dataset.defaultDisabled = defaultDisabled;
+    button.textContent = nextLabel;
+    if (options.tone) {
+      button.dataset.feedbackTone = options.tone;
+    } else {
+      delete button.dataset.feedbackTone;
+    }
+    if (options.pending) {
+      button.dataset.pending = 'true';
+    } else {
+      delete button.dataset.pending;
+    }
+    button.disabled = options.disabled !== undefined ? Boolean(options.disabled) : true;
+    return () => {
+      if (!button) return;
+      button.textContent = button.dataset.defaultLabel || defaultLabel;
+      button.disabled = (button.dataset.defaultDisabled || defaultDisabled) === 'true';
+      delete button.dataset.feedbackTone;
+      delete button.dataset.pending;
+    };
+  }
+
+  async function rewriteAssistantMessage(messageId, triggerButton = null) {
     if (!messageId) return;
     if (isChatGenerating) {
       showToast('请等待当前回复完成后再重写。', 'info', 1800);
       return;
     }
 
+    const resetButtonState = setActionButtonState(triggerButton, '重写中…', {
+      tone: 'info',
+      pending: true,
+      disabled: true
+    });
     isChatGenerating = true;
+    setChatMessageUiState(messageId, {
+      label: '正在生成新的回复版本…',
+      tone: 'info',
+      renderNow: true
+    });
     renderConversationMeta();
     renderArchivedConversationList();
 
     try {
       await performChatSend(undefined, { rewriteMessageId: messageId });
+      resetButtonState();
+      flashButtonFeedback(triggerButton, '已生成新版', 1600, 'success');
       showToast('已生成新的回复版本', 'success', 1400);
     } catch (error) {
+      resetButtonState();
+      setChatMessageUiState(messageId, {
+        label: '重写失败，请稍后重试',
+        tone: 'error',
+        expiresInMs: 2200,
+        renderNow: true
+      });
       const failure = describeChatFailure(error);
       showToast(failure.toast, failure.tone === 'warning' ? 'info' : 'error', 2200);
     } finally {
@@ -3839,15 +3890,14 @@
     }
   }
 
-  function flashButtonFeedback(button, nextLabel, timeoutMs = 1400) {
+  function flashButtonFeedback(button, nextLabel, timeoutMs = 1400, tone = 'success') {
     if (!button) return;
-    const defaultLabel = button.dataset.defaultLabel || button.textContent || '';
-    button.dataset.defaultLabel = defaultLabel;
-    button.textContent = nextLabel;
-    button.disabled = true;
+    const reset = setActionButtonState(button, nextLabel, {
+      tone,
+      disabled: true
+    });
     window.setTimeout(() => {
-      button.textContent = button.dataset.defaultLabel || defaultLabel;
-      button.disabled = false;
+      reset();
     }, timeoutMs);
   }
 
@@ -3866,7 +3916,7 @@
     flashButtonFeedback(button, '已复制');
   }
 
-  async function switchAssistantVersion(messageId, direction) {
+  async function switchAssistantVersion(messageId, direction, triggerButton = null) {
     const message = getConversationMessageById(messageId);
     const versions = Array.isArray(message?.versions) ? message.versions : [];
     if (!versions.length) return;
@@ -3876,12 +3926,36 @@
     const nextVersion = versions[nextIndex];
     if (!nextVersion?.id) return;
 
-    await activateAssistantVersion(nextVersion.id);
-    setChatMessageUiState(nextVersion.id, {
-      label: `已切换到第 ${nextIndex + 1} 版`,
-      tone: 'success',
-      expiresInMs: 2200
+    const resetButtonState = setActionButtonState(triggerButton, '切换中…', {
+      tone: 'info',
+      pending: true,
+      disabled: true
     });
+    setChatMessageUiState(messageId, {
+      label: '正在切换版本…',
+      tone: 'info',
+      renderNow: true
+    });
+
+    try {
+      await activateAssistantVersion(nextVersion.id);
+      resetButtonState();
+      flashButtonFeedback(triggerButton, direction === 'prev' ? '已切上一版' : '已切下一版', 1400, 'success');
+      setChatMessageUiState(nextVersion.id, {
+        label: `已切换到第 ${nextIndex + 1} 版`,
+        tone: 'success',
+        expiresInMs: 2200
+      });
+    } catch (error) {
+      resetButtonState();
+      setChatMessageUiState(messageId, {
+        label: '版本切换失败，请重试',
+        tone: 'error',
+        expiresInMs: 2200,
+        renderNow: true
+      });
+      throw error;
+    }
   }
 
   // ============================================

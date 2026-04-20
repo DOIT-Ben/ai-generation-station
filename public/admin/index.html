@@ -167,6 +167,17 @@
               <button class="btn btn-reset" id="admin-audit-reset" type="button">重置筛选</button>
             </div>
           </form>
+          <div class="audit-filter-toolbar">
+            <div class="audit-filter-presets" aria-label="审计日志快捷筛选">
+              <button class="audit-filter-preset" type="button" data-audit-preset="today">今天</button>
+              <button class="audit-filter-preset" type="button" data-audit-preset="last7Days">最近 7 天</button>
+              <button class="audit-filter-preset" type="button" data-audit-preset="passwordReset">密码重置</button>
+              <button class="audit-filter-preset" type="button" data-audit-preset="inviteIssue">签发邀请</button>
+            </div>
+            <div id="admin-audit-active-filters" class="audit-filter-active">
+              <span class="audit-filter-empty">当前未启用筛选，正在展示全部日志。</span>
+            </div>
+          </div>
           <div id="admin-audit-summary" class="history-empty">正在准备审计日志…</div>
           <div class="audit-log-table-wrap">
             <table class="audit-log-table" aria-label="管理员审计日志">

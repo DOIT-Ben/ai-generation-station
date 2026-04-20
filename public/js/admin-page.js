@@ -9,6 +9,33 @@
   let adminAuditState = getDefaultAuditState();
   let adminUserSearchQuery = '';
   let adminSelectedUserIds = new Set();
+  const AUDIT_FILTER_FIELDS = ['action', 'actorUsername', 'targetUsername', 'from', 'to'];
+  const AUDIT_PRESET_CONFIG = {
+    today: {
+      label: '今天',
+      buildFilters: () => {
+        const today = toInputDateValue(new Date());
+        return { action: '', actorUsername: '', targetUsername: '', from: today, to: today };
+      }
+    },
+    last7Days: {
+      label: '最近 7 天',
+      buildFilters: () => {
+        const today = new Date();
+        const start = new Date(today);
+        start.setDate(start.getDate() - 6);
+        return { action: '', actorUsername: '', targetUsername: '', from: toInputDateValue(start), to: toInputDateValue(today) };
+      }
+    },
+    passwordReset: {
+      label: '密码重置',
+      buildFilters: () => ({ action: 'user_password_reset', actorUsername: '', targetUsername: '', from: '', to: '' })
+    },
+    inviteIssue: {
+      label: '签发邀请',
+      buildFilters: () => ({ action: 'user_invite_issue', actorUsername: '', targetUsername: '', from: '', to: '' })
+    }
+  };
 
   function getDefaultAuditState() {
     return {
@@ -27,6 +54,25 @@
         from: '',
         to: ''
       }
+    };
+  }
+
+  function toInputDateValue(value) {
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  function normalizeAuditFilters(filters = {}) {
+    return {
+      action: String(filters.action || ''),
+      actorUsername: String(filters.actorUsername || '').trim(),
+      targetUsername: String(filters.targetUsername || '').trim(),
+      from: String(filters.from || ''),
+      to: String(filters.to || '')
     };
   }
 
@@ -60,6 +106,97 @@
     if (!invitation?.active) return '无待激活邀请';
     const expiryText = SiteShell.formatTime(invitation.expiresAt);
     return expiryText ? `待激活 · ${expiryText} 前有效` : '待激活';
+  }
+
+  function getActiveAuditFilterEntries(filters = adminAuditState.filters) {
+    const normalized = normalizeAuditFilters(filters);
+    return AUDIT_FILTER_FIELDS.reduce((entries, field) => {
+      const value = normalized[field];
+      if (!value) return entries;
+      let label = '';
+      let displayValue = value;
+      if (field === 'action') {
+        label = '动作';
+        displayValue = getAuditActionLabel(value);
+      } else if (field === 'actorUsername') {
+        label = '操作者';
+      } else if (field === 'targetUsername') {
+        label = '目标用户';
+      } else if (field === 'from') {
+        label = '开始日期';
+      } else if (field === 'to') {
+        label = '结束日期';
+      }
+      entries.push({ field, label, value: displayValue });
+      return entries;
+    }, []);
+  }
+
+  function syncAuditFilterInputs(filters = adminAuditState.filters) {
+    const normalized = normalizeAuditFilters(filters);
+    if ($('admin-audit-action')) $('admin-audit-action').value = normalized.action;
+    if ($('admin-audit-actor')) $('admin-audit-actor').value = normalized.actorUsername;
+    if ($('admin-audit-target')) $('admin-audit-target').value = normalized.targetUsername;
+    if ($('admin-audit-from')) $('admin-audit-from').value = normalized.from;
+    if ($('admin-audit-to')) $('admin-audit-to').value = normalized.to;
+  }
+
+  function getMatchedAuditPresetKey(filters = adminAuditState.filters) {
+    const normalized = normalizeAuditFilters(filters);
+    return Object.entries(AUDIT_PRESET_CONFIG).find(([, config]) => {
+      const presetFilters = normalizeAuditFilters(config.buildFilters());
+      return AUDIT_FILTER_FIELDS.every(field => presetFilters[field] === normalized[field]);
+    })?.[0] || '';
+  }
+
+  function renderAuditFilterState() {
+    const chipsContainer = $('admin-audit-active-filters');
+    const activeEntries = getActiveAuditFilterEntries(adminAuditState.filters);
+    const matchedPresetKey = getMatchedAuditPresetKey(adminAuditState.filters);
+
+    document.querySelectorAll('[data-audit-preset]').forEach(button => {
+      button.classList.toggle('is-active', button.dataset.auditPreset === matchedPresetKey);
+    });
+
+    if (!chipsContainer) return;
+    if (!activeEntries.length) {
+      chipsContainer.innerHTML = '<span class="audit-filter-empty">当前未启用筛选，正在展示全部日志。</span>';
+      return;
+    }
+
+    chipsContainer.innerHTML = activeEntries.map(entry => `
+      <button class="audit-filter-chip" type="button" data-audit-clear-field="${SiteShell.escapeHtml(entry.field)}" aria-label="移除${SiteShell.escapeHtml(entry.label)}筛选">
+        <span>${SiteShell.escapeHtml(entry.label)}：${SiteShell.escapeHtml(entry.value)}</span>
+        <strong>清除</strong>
+      </button>
+    `).join('') + '<button class="audit-filter-chip audit-filter-chip--ghost" type="button" data-audit-clear-all="true">清空全部</button>';
+  }
+
+  function applyAuditFilters(filters = {}, options = {}) {
+    const nextFilters = normalizeAuditFilters({
+      ...(adminAuditState.filters || {}),
+      ...filters
+    });
+    adminAuditState.filters = nextFilters;
+    if (options.syncInputs !== false) {
+      syncAuditFilterInputs(nextFilters);
+    }
+    renderAuditFilterState();
+    return loadAdminAuditLogs({
+      page: Math.max(1, Number(options.page || 1)),
+      filters: nextFilters
+    });
+  }
+
+  function applyAuditPreset(presetKey) {
+    const preset = AUDIT_PRESET_CONFIG[presetKey];
+    if (!preset) return;
+    applyAuditFilters(preset.buildFilters(), { page: 1 });
+  }
+
+  function clearAuditFilterField(field) {
+    if (!AUDIT_FILTER_FIELDS.includes(field)) return;
+    applyAuditFilters({ [field]: '' }, { page: 1 });
   }
 
   function getFilteredAdminUsers() {
@@ -299,7 +436,8 @@
       return;
     }
 
-    summary.textContent = `共 ${adminAuditState.total || 0} 条审计日志，当前显示第 ${adminAuditState.page || 1} 页。`;
+    const activeFilterCount = getActiveAuditFilterEntries(adminAuditState.filters).length;
+    summary.textContent = `共 ${adminAuditState.total || 0} 条审计日志，当前显示第 ${adminAuditState.page || 1} 页。${activeFilterCount > 0 ? `已启用 ${activeFilterCount} 个筛选条件。` : ''}`;
     if (!adminAuditState.items.length) {
       tableBody.innerHTML = '<tr><td colspan="6" class="audit-log-empty">当前筛选条件下没有审计日志。</td></tr>';
       return;
@@ -532,28 +670,23 @@
 
   function handleAuditFilterSubmit(event) {
     event.preventDefault();
-    adminAuditState.filters = {
+    applyAuditFilters({
       action: $('admin-audit-action')?.value || '',
       actorUsername: $('admin-audit-actor')?.value?.trim() || '',
       targetUsername: $('admin-audit-target')?.value?.trim() || '',
       from: $('admin-audit-from')?.value || '',
       to: $('admin-audit-to')?.value || ''
-    };
-    loadAdminAuditLogs({ page: 1, filters: adminAuditState.filters });
+    }, { page: 1, syncInputs: false });
   }
 
   function resetAuditFilters() {
-    adminAuditState.filters = {
+    applyAuditFilters({
       action: '',
       actorUsername: '',
       targetUsername: '',
       from: '',
       to: ''
-    };
-    ['admin-audit-action', 'admin-audit-actor', 'admin-audit-target', 'admin-audit-from', 'admin-audit-to'].forEach(id => {
-      if ($(id)) $(id).value = '';
-    });
-    loadAdminAuditLogs({ page: 1, filters: adminAuditState.filters });
+    }, { page: 1 });
   }
 
   function changeAuditPage(delta) {
@@ -598,6 +731,21 @@
       const revokeButton = event.target.closest('[data-admin-invite-revoke-target]');
       if (revokeButton) {
         issueInvitation('revoke', revokeButton.dataset.adminInviteRevokeTarget);
+        return;
+      }
+      const presetButton = event.target.closest('[data-audit-preset]');
+      if (presetButton) {
+        applyAuditPreset(presetButton.dataset.auditPreset);
+        return;
+      }
+      const clearFilterButton = event.target.closest('[data-audit-clear-field]');
+      if (clearFilterButton) {
+        clearAuditFilterField(clearFilterButton.dataset.auditClearField);
+        return;
+      }
+      const clearAllFiltersButton = event.target.closest('[data-audit-clear-all]');
+      if (clearAllFiltersButton) {
+        resetAuditFilters();
       }
     });
     document.addEventListener('change', event => {
@@ -644,6 +792,8 @@
     $('admin-audit-prev')?.addEventListener('click', () => changeAuditPage(-1));
     $('admin-audit-next')?.addEventListener('click', () => changeAuditPage(1));
     bindListActions();
+    syncAuditFilterInputs(adminAuditState.filters);
+    renderAuditFilterState();
 
     await loadAdminUsers();
     await loadAdminAuditLogs({ page: 1 });

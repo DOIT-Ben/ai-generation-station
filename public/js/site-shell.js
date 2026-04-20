@@ -158,6 +158,49 @@
     return true;
   }
 
+  function setPortalNavCollapsed(container, collapsed) {
+    if (!container) return;
+    const nextCollapsed = Boolean(collapsed);
+    const toggleButton = container.querySelector('[data-portal-nav-toggle]');
+    const panel = container.querySelector('.portal-user-nav-panel');
+    container.classList.toggle('is-collapsed', nextCollapsed);
+    if (toggleButton) {
+      toggleButton.setAttribute('aria-expanded', String(!nextCollapsed));
+      toggleButton.setAttribute('aria-label', nextCollapsed ? '展开页面导航' : '收起页面导航');
+      toggleButton.textContent = nextCollapsed ? '菜单' : '收起';
+    }
+    if (panel) {
+      if (nextCollapsed) {
+        panel.setAttribute('hidden', '');
+      } else {
+        panel.removeAttribute('hidden');
+      }
+    }
+  }
+
+  function bindPortalUserNavResponsiveState(container) {
+    if (!container) return;
+    if (typeof container._portalNavResizeHandler === 'function') {
+      window.removeEventListener('resize', container._portalNavResizeHandler);
+    }
+
+    const syncState = () => {
+      const isMobile = window.matchMedia('(max-width: 767px)').matches;
+      if (!isMobile) {
+        setPortalNavCollapsed(container, false);
+        return;
+      }
+      if (!container.dataset.mobileNavInitialized) {
+        container.dataset.mobileNavInitialized = 'true';
+        setPortalNavCollapsed(container, true);
+      }
+    };
+
+    container._portalNavResizeHandler = syncState;
+    window.addEventListener('resize', syncState);
+    syncState();
+  }
+
   function renderPortalUserNav(containerId, session, options = {}) {
     const container = document.getElementById(containerId);
     if (!container) return;
@@ -172,30 +215,41 @@
 
     container.className = 'portal-user-nav';
     container.innerHTML = `
-      <a class="portal-brand" href="/">
-        <span class="portal-brand-mark">AI</span>
-        <span class="portal-brand-copy">
-          <strong>AI Generation</strong>
-          <span>创作工作台</span>
-        </span>
-      </a>
-      <div class="portal-nav-links">
-        <a class="portal-nav-link${currentPage === 'workspace' ? ' is-active' : ''}" href="/">工作台</a>
-        ${session ? `<a class="portal-nav-link${currentPage === 'account' ? ' is-active' : ''}" href="/account/">个人中心</a>` : ''}
-        ${showAdmin ? `<a class="portal-nav-link${currentPage === 'admin' ? ' is-active' : ''}" href="/admin/">管理后台</a>` : ''}
+      <div class="portal-user-nav-main">
+        <a class="portal-brand" href="/">
+          <span class="portal-brand-mark">AI</span>
+          <span class="portal-brand-copy">
+            <strong>AI Generation</strong>
+            <span>创作工作台</span>
+          </span>
+        </a>
+        <button class="portal-nav-toggle" type="button" data-portal-nav-toggle aria-expanded="true" aria-label="收起页面导航">收起</button>
       </div>
-      <div class="portal-user-meta">
-        ${session ? `
-          <div class="portal-user-copy">
-            <strong>${escapeHtml(session.displayName || session.username)}</strong>
-            <span>${escapeHtml(summary)}</span>
-          </div>
-          ${showLogout ? '<button id="portal-logout-button" class="portal-nav-button" type="button">退出</button>' : ''}
-        ` : `
-          <a class="portal-nav-button portal-nav-button--primary" href="${escapeHtml(buildUrl('/auth/', { next: nextForAuth }))}">登录 / 注册</a>
-        `}
+      <div class="portal-user-nav-panel">
+        <div class="portal-nav-links">
+          <a class="portal-nav-link${currentPage === 'workspace' ? ' is-active' : ''}" href="/">工作台</a>
+          ${session ? `<a class="portal-nav-link${currentPage === 'account' ? ' is-active' : ''}" href="/account/">个人中心</a>` : ''}
+          ${showAdmin ? `<a class="portal-nav-link${currentPage === 'admin' ? ' is-active' : ''}" href="/admin/">管理后台</a>` : ''}
+        </div>
+        <div class="portal-user-meta">
+          ${session ? `
+            <div class="portal-user-copy">
+              <strong>${escapeHtml(session.displayName || session.username)}</strong>
+              <span>${escapeHtml(summary)}</span>
+            </div>
+            ${showLogout ? '<button id="portal-logout-button" class="portal-nav-button" type="button">退出</button>' : ''}
+          ` : `
+            <a class="portal-nav-button portal-nav-button--primary" href="${escapeHtml(buildUrl('/auth/', { next: nextForAuth }))}">登录 / 注册</a>
+          `}
+        </div>
       </div>
     `;
+
+    container.querySelector('[data-portal-nav-toggle]')?.addEventListener('click', () => {
+      const nextCollapsed = !container.classList.contains('is-collapsed');
+      setPortalNavCollapsed(container, nextCollapsed);
+    });
+    bindPortalUserNavResponsiveState(container);
   }
 
   return {
