@@ -2,6 +2,10 @@
    AI 内容生成站 - Vaporwave Dark UI
    ======================================== */
 
+[hidden] {
+  display: none !important;
+}
+
 :root {
   /* Core palette */
   --bg-deep: #07070e;
@@ -2646,6 +2650,7 @@ input[type="range"]::-webkit-slider-thumb:active {
   
   .sidebar-overlay.show {
     display: block;
+    left: 280px;
   }
   
   .main {
@@ -3001,7 +3006,18 @@ input[type="range"]::-webkit-slider-thumb:active {
   }
 
   .topbar-account-copy {
+    display: flex;
+    min-width: 0;
+  }
+
+  .topbar-account-copy span {
     display: none;
+  }
+
+  .topbar-account-copy strong {
+    max-width: 68px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .topbar-account {

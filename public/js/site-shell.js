@@ -163,31 +163,30 @@
       ? `${getRoleDisplayName(session.role)} · ${getPlanDisplayName(session.planCode)}`
       : '访问工作台前请先登录';
 
+    container.className = 'portal-user-nav';
     container.innerHTML = `
-      <div class="portal-user-nav">
-        <a class="portal-brand" href="/">
-          <span class="portal-brand-mark">AI</span>
-          <span class="portal-brand-copy">
-            <strong>AI Generation</strong>
-            <span>创作工作台</span>
-          </span>
-        </a>
-        <div class="portal-nav-links">
-          <a class="portal-nav-link${currentPage === 'workspace' ? ' is-active' : ''}" href="/">工作台</a>
-          ${session ? `<a class="portal-nav-link${currentPage === 'account' ? ' is-active' : ''}" href="/account/">个人中心</a>` : ''}
-          ${showAdmin ? `<a class="portal-nav-link${currentPage === 'admin' ? ' is-active' : ''}" href="/admin/">管理后台</a>` : ''}
-        </div>
-        <div class="portal-user-meta">
-          ${session ? `
-            <div class="portal-user-copy">
-              <strong>${escapeHtml(session.displayName || session.username)}</strong>
-              <span>${escapeHtml(summary)}</span>
-            </div>
-            ${showLogout ? '<button id="portal-logout-button" class="portal-nav-button" type="button">退出</button>' : ''}
-          ` : `
-            <a class="portal-nav-button portal-nav-button--primary" href="${escapeHtml(buildUrl('/auth/', { next: nextForAuth }))}">登录 / 注册</a>
-          `}
-        </div>
+      <a class="portal-brand" href="/">
+        <span class="portal-brand-mark">AI</span>
+        <span class="portal-brand-copy">
+          <strong>AI Generation</strong>
+          <span>创作工作台</span>
+        </span>
+      </a>
+      <div class="portal-nav-links">
+        <a class="portal-nav-link${currentPage === 'workspace' ? ' is-active' : ''}" href="/">工作台</a>
+        ${session ? `<a class="portal-nav-link${currentPage === 'account' ? ' is-active' : ''}" href="/account/">个人中心</a>` : ''}
+        ${showAdmin ? `<a class="portal-nav-link${currentPage === 'admin' ? ' is-active' : ''}" href="/admin/">管理后台</a>` : ''}
+      </div>
+      <div class="portal-user-meta">
+        ${session ? `
+          <div class="portal-user-copy">
+            <strong>${escapeHtml(session.displayName || session.username)}</strong>
+            <span>${escapeHtml(summary)}</span>
+          </div>
+          ${showLogout ? '<button id="portal-logout-button" class="portal-nav-button" type="button">退出</button>' : ''}
+        ` : `
+          <a class="portal-nav-button portal-nav-button--primary" href="${escapeHtml(buildUrl('/auth/', { next: nextForAuth }))}">登录 / 注册</a>
+        `}
       </div>
     `;
   }
