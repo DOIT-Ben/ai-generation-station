@@ -73,6 +73,9 @@ Run these in addition to the release-core lane before calling the build fully re
 21. Verify proxy-facing responses include the baseline security headers and CSP
 22. Verify disallowed API origins return `403` with `origin_not_allowed`
 23. Review the latest capacity-baseline artifact and confirm the current auth/admin-write throughput is acceptable for the next user-testing round
+24. Verify one backup can be created with `backup-app-state.ps1` and the manifest records the intended state/output scope
+25. Verify one restore dry-run path or isolated restore rehearsal succeeds before calling the environment operationally safe
+26. Verify prune policy removes old audit logs and old backup folders intentionally without touching `output\runtime`
 
 ## Support/Triage Notes
 
@@ -138,6 +141,7 @@ Run these in addition to the release-core lane before calling the build fully re
 - repeated create-user bursts should return `429`
 - repeated password-reset bursts should return `429`
 - successful create/disable/role-change/password-reset/invite/resend/revoke actions should be auditable
+- audit-log retention should now be judged intentionally instead of assuming logs grow forever
 - secure cookie behavior should be verified behind the real proxy
 - audit logs should capture the real client IP when `TRUST_PROXY=true`
 - auth/admin-write throughput is currently much lower than read-route throughput and should be judged explicitly
@@ -170,5 +174,6 @@ Ready for user-facing testing only if:
 5. temporary-password rotation behaves intentionally
 6. abuse throttling and admin audit logging behave intentionally
 7. gateway/origin/security-header behavior behaves intentionally
+8. state backup/restore/prune behavior is documented and manually sanity-checked
 
 If any of these fail, the round is not ready.

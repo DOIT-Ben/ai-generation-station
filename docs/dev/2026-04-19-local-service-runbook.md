@@ -27,6 +27,54 @@ Run:
 1. `powershell -ExecutionPolicy Bypass -File .\scripts\stop-local-service.ps1 -Port 18791`
 2. `powershell -ExecutionPolicy Bypass -File .\scripts\start-local-service.ps1 -Port 18791`
 
+## State Maintenance Commands
+
+Run from the repo root:
+
+### Summary
+
+`node .\scripts\state-maintenance.js summary`
+
+JSON summary:
+
+`node .\scripts\state-maintenance.js summary --json`
+
+### Backup
+
+`powershell -ExecutionPolicy Bypass -File .\scripts\backup-app-state.ps1 -Port 18791`
+
+Notes:
+
+- safe default backup scope includes:
+  - `APP_STATE_DB`
+  - SQLite side files when present
+  - `OUTPUT_DIR`
+- excludes:
+  - `output\runtime`
+- if the managed local service is running on the selected port, the backup script stops it first unless `-NoServiceStop` is used
+
+### Restore
+
+`powershell -ExecutionPolicy Bypass -File .\scripts\restore-app-state.ps1 -BackupId <timestamp> -Port 18791`
+
+Notes:
+
+- restore expects a backup created under `STATE_BACKUP_DIR`
+- restore replaces:
+  - live state DB files
+  - backed-up output entries
+- restore keeps:
+  - `output\runtime`
+
+### Prune
+
+`powershell -ExecutionPolicy Bypass -File .\scripts\prune-app-state.ps1`
+
+Optional overrides:
+
+- `-AuditLogRetentionDays <days>`
+- `-BackupRetentionDays <days>`
+
 ## Address
 
 - local frontend:
@@ -135,3 +183,18 @@ Current handling:
 Reason:
 
 - this remains the current local fix for the Codex/PowerShell environment bootstrap issue recorded in historical docs
+
+## State Maintenance Defaults
+
+- backup root:
+  - `data\backups`
+- default audit-log retention:
+  - `90` days
+- default backup retention:
+  - `14` days
+
+Current recommendation:
+
+1. run a state backup before destructive local cleanup or large auth/admin test rounds
+2. keep restore targeted to known backup IDs instead of guessing “latest”
+3. keep maintenance CLI/script usage local and operator-driven for this phase

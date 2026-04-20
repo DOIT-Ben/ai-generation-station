@@ -26,6 +26,9 @@ List the backend environment variables that matter for the current release candi
 | `OUTPUT_DIR` | generated output path | stable mounted path |
 | `HEALTHCHECK_PATH` | readiness endpoint | `/api/health` |
 | `NOTIFICATION_DELIVERY_MODE` | invitation/recovery delivery mode | `resend` in real operator environments, `local_preview` only for local/dev |
+| `STATE_BACKUP_DIR` | backup storage root for app-state maintenance scripts | stable absolute path or repo-local data path with enough disk space |
+| `AUDIT_LOG_RETENTION_DAYS` | default audit-log retention for prune operations | `90` |
+| `STATE_BACKUP_RETENTION_DAYS` | default backup-folder retention for prune operations | `14` |
 
 ## Optional Rate-Limit Overrides
 
@@ -68,3 +71,5 @@ Server default policy allows:
 3. do not add extra origins unless there is a real browser entry point that requires them
 4. if `SESSION_COOKIE_SAME_SITE=None` is ever chosen, keep `SESSION_COOKIE_SECURE=true`
 5. do not enable `NOTIFICATION_DELIVERY_MODE=resend` without configuring both `NOTIFICATION_FROM_EMAIL` and `RESEND_API_KEY`
+6. do not point `STATE_BACKUP_DIR` inside `OUTPUT_DIR`
+7. do not treat `output\runtime` logs as durable recoverable user state

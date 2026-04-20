@@ -16,6 +16,7 @@
     "test:regression": "node test-regression.js",
     "test:regression-core": "node test-regression.js --skip-live --skip-browser",
     "test:release-core": "node test-regression.js --skip-live --skip-browser && node test-capacity-baseline.js",
+    "test:state-maintenance": "node test-state-maintenance.js",
     "test:failures": "node test-failures.js",
     "test:lyrics": "node test-lyrics.js",
     "test:music": "node test-music.js",

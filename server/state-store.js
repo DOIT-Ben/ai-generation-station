@@ -473,8 +473,34 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
             LIMIT ?
           )
     `);
+    const countUsersStmt = db.prepare(`
+        SELECT COUNT(*) AS count
+        FROM users
+        WHERE deleted_at IS NULL
+    `);
     const countSessionsStmt = db.prepare(`SELECT COUNT(*) AS count FROM user_sessions`);
+    const countActiveSessionsStmt = db.prepare(`
+        SELECT COUNT(*) AS count
+        FROM user_sessions
+        WHERE revoked_at IS NULL AND expires_at > ?
+    `);
+    const countAuthTokensStmt = db.prepare(`SELECT COUNT(*) AS count FROM auth_tokens`);
+    const countActiveAuthTokensStmt = db.prepare(`
+        SELECT COUNT(*) AS count
+        FROM auth_tokens
+        WHERE used_at IS NULL AND expires_at > ?
+    `);
+    const countRateLimitEventsStmt = db.prepare(`SELECT COUNT(*) AS count FROM rate_limit_events`);
     const countHistoryStmt = db.prepare(`SELECT COUNT(*) AS count FROM user_history_entries`);
+    const countTasksStmt = db.prepare(`SELECT COUNT(*) AS count FROM tasks`);
+    const countAuditLogsSummaryStmt = db.prepare(`
+        SELECT COUNT(*) AS count, MIN(created_at) AS oldestCreatedAt, MAX(created_at) AS newestCreatedAt
+        FROM audit_logs
+    `);
+    const deleteAuditLogsBeforeStmt = db.prepare(`
+        DELETE FROM audit_logs
+        WHERE created_at < ?
+    `);
     const selectConversationByIdStmt = db.prepare(`
         SELECT id, user_id AS userId, feature, title, model, message_count AS messageCount,
                last_message_at AS lastMessageAt, created_at AS createdAt, updated_at AS updatedAt,
@@ -1049,6 +1075,43 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
 
     function cleanupExpiredRateLimitEvents(now = Date.now()) {
         cleanupExpiredRateLimitEventsStmt.run(now);
+    }
+
+    function getMaintenanceSummary(now = Date.now()) {
+        const auditLogs = countAuditLogsSummaryStmt.get() || {};
+        return {
+            users: Number(countUsersStmt.get()?.count || 0),
+            sessions: {
+                total: Number(countSessionsStmt.get()?.count || 0),
+                active: Number(countActiveSessionsStmt.get(now)?.count || 0)
+            },
+            authTokens: {
+                total: Number(countAuthTokensStmt.get()?.count || 0),
+                active: Number(countActiveAuthTokensStmt.get(now)?.count || 0)
+            },
+            rateLimitEvents: Number(countRateLimitEventsStmt.get()?.count || 0),
+            historyEntries: Number(countHistoryStmt.get()?.count || 0),
+            tasks: Number(countTasksStmt.get()?.count || 0),
+            auditLogs: {
+                total: Number(auditLogs.count || 0),
+                oldestCreatedAt: auditLogs.oldestCreatedAt || null,
+                newestCreatedAt: auditLogs.newestCreatedAt || null
+            }
+        };
+    }
+
+    function pruneAuditLogs({ olderThanDays, now = Date.now() } = {}) {
+        const retentionDays = Number(olderThanDays || 0);
+        if (!Number.isFinite(retentionDays) || retentionDays <= 0) {
+            throw new Error('olderThanDays must be a positive number');
+        }
+        const cutoff = now - (retentionDays * 24 * 60 * 60 * 1000);
+        const result = deleteAuditLogsBeforeStmt.run(cutoff);
+        return {
+            olderThanDays: retentionDays,
+            cutoff,
+            deletedCount: Number(result?.changes || 0)
+        };
     }
 
     return {
@@ -1810,6 +1873,15 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
                 totalPages: Math.max(1, Math.ceil(total / pageSize)),
                 hasMore: offset + items.length < total
             };
+        },
+
+        getMaintenanceSummary(options = {}) {
+            const now = Number(options.now || Date.now());
+            return getMaintenanceSummary(now);
+        },
+
+        pruneAuditLogs(options = {}) {
+            return pruneAuditLogs(options);
         },
 
         close() {

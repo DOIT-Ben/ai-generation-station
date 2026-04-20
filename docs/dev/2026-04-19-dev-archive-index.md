@@ -24,10 +24,12 @@ Read these first for the latest round:
 6. `2026-04-20-email-delivery-operator-release-execution.md`
 7. `2026-04-20-email-delivery-operator-release-summary.md`
 8. `2026-04-20-next-state-durability-mainline-granular-todo.md`
-9. `2026-04-19-user-facing-auth-rules.md`
-10. `2026-04-19-production-env-matrix.md`
-11. `2026-04-19-local-service-runbook.md`
-12. `2026-04-19-release-readiness-checklist.md`
+9. `2026-04-20-state-durability-retention-plan.md`
+10. `2026-04-20-state-durability-retention-execution.md`
+11. `2026-04-19-user-facing-auth-rules.md`
+12. `2026-04-19-production-env-matrix.md`
+13. `2026-04-19-local-service-runbook.md`
+14. `2026-04-19-release-readiness-checklist.md`
 
 ## Active Read Order
 

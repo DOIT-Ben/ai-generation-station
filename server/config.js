@@ -34,6 +34,14 @@ function resolveOutputDir(value) {
     return path.isAbsolute(value) ? value : path.join(ROOT_DIR, value);
 }
 
+function resolveDataDirPath(value, fallback) {
+    const candidate = String(value || '').trim();
+    if (!candidate) {
+        return path.join(DATA_DIR, fallback);
+    }
+    return path.isAbsolute(candidate) ? candidate : path.join(DATA_DIR, candidate);
+}
+
 const MIME_TYPES = {
     '.html': 'text/html',
     '.css': 'text/css',
@@ -113,6 +121,9 @@ function createConfig(options = {}) {
     const NOTIFICATION_DELIVERY_MODE = String(getConfigValue(env, localConfig, 'NOTIFICATION_DELIVERY_MODE', 'local_preview') || 'local_preview').trim().toLowerCase() || 'local_preview';
     const NOTIFICATION_FROM_EMAIL = String(getConfigValue(env, localConfig, 'NOTIFICATION_FROM_EMAIL', '') || '').trim();
     const RESEND_API_KEY = String(getConfigValue(env, localConfig, 'RESEND_API_KEY', '') || '').trim();
+    const STATE_BACKUP_DIR = resolveDataDirPath(getConfigValue(env, localConfig, 'STATE_BACKUP_DIR', ''), 'backups');
+    const AUDIT_LOG_RETENTION_DAYS = getPositiveNumberConfig(env, localConfig, 'AUDIT_LOG_RETENTION_DAYS', 90);
+    const STATE_BACKUP_RETENTION_DAYS = getPositiveNumberConfig(env, localConfig, 'STATE_BACKUP_RETENTION_DAYS', 14);
 
     if (!fs.existsSync(DATA_DIR)) {
         fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -120,6 +131,10 @@ function createConfig(options = {}) {
 
     if (!fs.existsSync(OUTPUT_DIR)) {
         fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+    }
+
+    if (!fs.existsSync(STATE_BACKUP_DIR)) {
+        fs.mkdirSync(STATE_BACKUP_DIR, { recursive: true });
     }
 
     if (!API_KEY) {
@@ -156,6 +171,9 @@ function createConfig(options = {}) {
         NOTIFICATION_DELIVERY_MODE,
         NOTIFICATION_FROM_EMAIL,
         RESEND_API_KEY,
+        STATE_BACKUP_DIR,
+        AUDIT_LOG_RETENTION_DAYS,
+        STATE_BACKUP_RETENTION_DAYS,
         MIME_TYPES
     };
 }
