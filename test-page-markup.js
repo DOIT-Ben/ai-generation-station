@@ -20,6 +20,8 @@ function main() {
   assert.ok(html.includes('id="chat-queue-indicator"'), 'index should contain chat queue indicator');
   assert.ok(html.includes('id="chat-conversation-list"'), 'index should contain chat conversation list');
   assert.ok(html.includes('id="chat-conversation-search"'), 'index should contain conversation search input');
+  assert.ok(html.includes('data-chat-filter="pinned"'), 'index should contain pinned conversation filter');
+  assert.ok(html.includes('data-chat-filter="parked"'), 'index should contain parked conversation filter');
   assert.ok(html.includes('id="chat-archived-section"'), 'index should contain archived conversation section');
   assert.ok(html.includes('id="chat-archived-list"'), 'index should contain archived conversation list');
   assert.ok(html.includes('data-chat-archived-toggle="true"'), 'index should contain archived conversation collapse toggle');
@@ -78,6 +80,9 @@ function main() {
   assert.ok(appJs.includes('data-chat-message-actions-toggle'), 'workspace should expose a compact assistant action toggle for version history');
   assert.ok(appJs.includes('stopChatGeneration'), 'workspace should expose stop-generation behavior');
   assert.ok(appJs.includes('groupConversationsByDay'), 'workspace should group conversation list items by relative day');
+  assert.ok(appJs.includes('toggleConversationWorkflowState'), 'workspace should support local conversation workflow toggles');
+  assert.ok(appJs.includes('isConversationPinned'), 'workspace should expose pinned conversation workflow state');
+  assert.ok(appJs.includes('isConversationParked'), 'workspace should expose parked conversation workflow state');
   assert.ok(appJs.includes('renderChatSuggestionStrip'), 'workspace should consolidate chat prompt suggestions into one adaptive strip');
   assert.ok(appJs.includes('getChatExperienceStage'), 'workspace should adapt chat composer copy to the current conversation stage');
   assert.ok(appJs.includes('syncChatViewportState'), 'workspace should react to mobile visual viewport changes while composing');

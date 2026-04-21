@@ -82,7 +82,9 @@
   let workspaceState = createDefaultWorkspaceState();
   const fieldInitialValues = {};
   const CHAT_ARCHIVED_COLLAPSED_KEY = 'aigs.chat.archived.collapsed';
+  const CHAT_WORKFLOW_STATE_KEY_PREFIX = 'aigs.chat.workflow';
   let chatArchivedCollapsed = false;
+  let chatWorkflowState = createDefaultChatWorkflowState();
 
   const FEATURE_FIELDS = {
     lyrics: { prompt: 'lyrics-prompt', style: 'lyrics-style', structure: 'lyrics-structure' },
@@ -200,6 +202,86 @@
   function updateWorkspaceStateFromPreferences(preferences = userPreferences) {
     templatePreferenceEnvelope = safeParseJson(preferences?.templatePreferencesJson, {}) || {};
     workspaceState = normalizeWorkspaceState(templatePreferenceEnvelope.workspace);
+  }
+
+  function createDefaultChatWorkflowState() {
+    return {
+      pinnedIds: [],
+      parkedIds: []
+    };
+  }
+
+  function normalizeChatWorkflowState(rawState) {
+    const raw = rawState && typeof rawState === 'object' ? rawState : {};
+    return {
+      pinnedIds: Array.from(new Set((Array.isArray(raw.pinnedIds) ? raw.pinnedIds : []).map(item => String(item || '').trim()).filter(Boolean))),
+      parkedIds: Array.from(new Set((Array.isArray(raw.parkedIds) ? raw.parkedIds : []).map(item => String(item || '').trim()).filter(Boolean)))
+    };
+  }
+
+  function getChatWorkflowStorageKey() {
+    const identity = currentUserProfile?.id || currentUser || 'guest';
+    return `${CHAT_WORKFLOW_STATE_KEY_PREFIX}.${encodeURIComponent(String(identity).trim().toLowerCase() || 'guest')}`;
+  }
+
+  function readChatWorkflowStatePreference() {
+    try {
+      return normalizeChatWorkflowState(safeParseJson(window.localStorage.getItem(getChatWorkflowStorageKey()), createDefaultChatWorkflowState()));
+    } catch {
+      return createDefaultChatWorkflowState();
+    }
+  }
+
+  function persistChatWorkflowState() {
+    try {
+      window.localStorage.setItem(getChatWorkflowStorageKey(), JSON.stringify(chatWorkflowState));
+    } catch {
+      // Ignore localStorage failures.
+    }
+  }
+
+  function hydrateChatWorkflowState() {
+    chatWorkflowState = readChatWorkflowStatePreference();
+  }
+
+  function isConversationPinned(conversationId) {
+    const targetId = String(conversationId || '').trim();
+    return targetId ? chatWorkflowState.pinnedIds.includes(targetId) : false;
+  }
+
+  function isConversationParked(conversationId) {
+    const targetId = String(conversationId || '').trim();
+    return targetId ? chatWorkflowState.parkedIds.includes(targetId) : false;
+  }
+
+  function removeConversationFromWorkflowState(conversationId, options = {}) {
+    const targetId = String(conversationId || '').trim();
+    if (!targetId) return;
+    chatWorkflowState = {
+      pinnedIds: chatWorkflowState.pinnedIds.filter(item => item !== targetId),
+      parkedIds: chatWorkflowState.parkedIds.filter(item => item !== targetId)
+    };
+    if (options.persist !== false) {
+      persistChatWorkflowState();
+    }
+  }
+
+  function toggleConversationWorkflowState(conversationId, mode) {
+    const targetId = String(conversationId || '').trim();
+    if (!targetId) return false;
+    const isPinnedMode = mode === 'pinned';
+    const collectionKey = isPinnedMode ? 'pinnedIds' : 'parkedIds';
+    const currentCollection = chatWorkflowState[collectionKey];
+    const exists = currentCollection.includes(targetId);
+    chatWorkflowState = {
+      ...chatWorkflowState,
+      [collectionKey]: exists
+        ? currentCollection.filter(item => item !== targetId)
+        : [targetId].concat(currentCollection.filter(item => item !== targetId))
+    };
+    persistChatWorkflowState();
+    renderConversationList();
+    return !exists;
   }
 
   function getWorkspaceStateDraft(feature) {
@@ -539,6 +621,12 @@
 
     pills.push({ tone: 'model', label: conversation.model || 'MiniMax-M2.7' });
     pills.push({ tone: 'count', label: `${conversation.messageCount || 0} 条消息` });
+    if (isConversationPinned(conversation.id)) {
+      pills.push({ tone: 'priority', label: '重点会话' });
+    }
+    if (isConversationParked(conversation.id)) {
+      pills.push({ tone: 'parked', label: '稍后处理' });
+    }
     if (Number(conversation.messageCount || 0) <= 0) {
       pills.push({ tone: 'empty', label: '空白会话，可直接开始新主题' });
     }
@@ -962,6 +1050,7 @@
     currentUserProfile = null;
     workspaceStateReady = false;
     workspaceState = createDefaultWorkspaceState();
+    chatWorkflowState = createDefaultChatWorkflowState();
     templatePreferenceEnvelope = {};
     conversationState.list = [];
     conversationState.archived = [];
@@ -1024,6 +1113,7 @@
   }
 
   async function loadAuthenticatedWorkspaceData() {
+    hydrateChatWorkflowState();
     await loadUserPreferences();
     await refreshUsageToday();
     await loadTemplateLibraries();
@@ -1450,6 +1540,12 @@
     if (conversation?.id === conversationState.activeId) {
       pills.push('<span class="chat-conversation-pill is-current">当前</span>');
     }
+    if (isConversationPinned(conversation?.id)) {
+      pills.push('<span class="chat-conversation-pill is-pinned">重点</span>');
+    }
+    if (isConversationParked(conversation?.id)) {
+      pills.push('<span class="chat-conversation-pill is-parked">稍后</span>');
+    }
     if (Number(conversation?.messageCount || 0) <= 0) {
       pills.push('<span class="chat-conversation-pill">空白</span>');
     }
@@ -1470,7 +1566,18 @@
 
   function groupConversationsByDay(items = []) {
     const groups = [];
-    items.forEach(item => {
+    const pinnedItems = items.filter(item => isConversationPinned(item?.id));
+    const parkedItems = items.filter(item => !isConversationPinned(item?.id) && isConversationParked(item?.id));
+    const regularItems = items.filter(item => !isConversationPinned(item?.id) && !isConversationParked(item?.id));
+
+    if (pinnedItems.length) {
+      groups.push({
+        label: '重点会话',
+        items: pinnedItems
+      });
+    }
+
+    regularItems.forEach(item => {
       const label = getDayBucketLabel(getConversationTimestamp(item));
       const currentGroup = groups[groups.length - 1];
       if (currentGroup && currentGroup.label === label) {
@@ -1482,7 +1589,20 @@
         items: [item]
       });
     });
+
+    if (parkedItems.length) {
+      groups.push({
+        label: '稍后处理',
+        items: parkedItems
+      });
+    }
     return groups;
+  }
+
+  function getConversationPriorityRank(conversation) {
+    if (isConversationPinned(conversation?.id)) return 0;
+    if (isConversationParked(conversation?.id)) return 2;
+    return 1;
   }
 
   function getConversationSortValue(conversation) {
@@ -1495,6 +1615,8 @@
 
   function sortConversationSummaries(items = []) {
     return items.slice().sort((left, right) => {
+      const priority = getConversationPriorityRank(left) - getConversationPriorityRank(right);
+      if (priority !== 0) return priority;
       const primary = getConversationSortValue(right) - getConversationSortValue(left);
       if (primary !== 0) return primary;
       return Number(right?.updatedAt || 0) - Number(left?.updatedAt || 0);
@@ -1535,6 +1657,12 @@
 
   function matchesConversationFilter(conversation, mode = getConversationFilterMode()) {
     if (!conversation) return false;
+    if (mode === 'pinned') {
+      return isConversationPinned(conversation.id);
+    }
+    if (mode === 'parked') {
+      return isConversationParked(conversation.id);
+    }
     if (mode === 'current') {
       return conversation.id === conversationState.activeId;
     }
@@ -1553,9 +1681,8 @@
   }
 
   function getFilteredArchivedConversations() {
-    const mode = getConversationFilterMode();
     return filterConversationSummaries(conversationState.archived, getConversationSearchQuery())
-      .filter(item => mode === 'all' || mode === 'today' ? matchesConversationFilter(item, mode) : false);
+      .filter(item => matchesConversationFilter(item));
   }
 
   function updateConversationSearch(value, options = {}) {
@@ -1571,7 +1698,7 @@
   }
 
   function updateConversationFilterMode(mode, options = {}) {
-    const nextMode = ['all', 'current', 'blank', 'today'].includes(mode) ? mode : 'all';
+    const nextMode = ['all', 'pinned', 'parked', 'current', 'blank', 'today'].includes(mode) ? mode : 'all';
     conversationFilterMode = nextMode;
     document.querySelectorAll('[data-chat-filter]').forEach(button => {
       button.classList.toggle('is-active', button.dataset.chatFilter === nextMode);
@@ -1700,6 +1827,20 @@
                 <div class="chat-conversation-flags">${getConversationRowPillsMarkup(item)}</div>
               </button>
               <div class="chat-conversation-inline-actions">
+                <button
+                  type="button"
+                  class="chat-conversation-mini-action${isConversationPinned(item.id) ? ' is-active' : ''}"
+                  data-conversation-pin-id="${item.id}"
+                  ${isChatGenerating ? 'disabled' : ''}>
+                  ${isConversationPinned(item.id) ? '取消重点' : '设为重点'}
+                </button>
+                <button
+                  type="button"
+                  class="chat-conversation-mini-action is-muted${isConversationParked(item.id) ? ' is-active' : ''}"
+                  data-conversation-park-id="${item.id}"
+                  ${isChatGenerating ? 'disabled' : ''}>
+                  ${isConversationParked(item.id) ? '取消稍后' : '稍后处理'}
+                </button>
                 <button
                   type="button"
                   class="chat-conversation-mini-action"
@@ -1899,12 +2040,16 @@
 
     const totalActive = conversationState.list.length;
     const totalArchived = conversationState.archived.length;
+    const pinnedCount = conversationState.list.filter(item => isConversationPinned(item?.id)).length;
+    const parkedCount = conversationState.list.filter(item => isConversationParked(item?.id)).length;
     const blankCount = conversationState.list.filter(item => matchesConversationFilter(item, 'blank')).length;
     const todayCount = conversationState.list.filter(item => matchesConversationFilter(item, 'today')).length;
     const activeConversation = getActiveConversation();
     const hasFilterState = Boolean(getConversationSearchQuery().trim()) || getConversationFilterMode() !== 'all';
     const filterLabels = {
       all: '当前筛选：全部会话',
+      pinned: '当前筛选：重点会话',
+      parked: '当前筛选：稍后处理',
       current: '当前筛选：仅当前会话',
       blank: '当前筛选：仅空白会话',
       today: '当前筛选：仅今日活跃'
@@ -1919,6 +2064,12 @@
 
     if (activeConversation) {
       utilityActions.push('<button type="button" class="chat-sidebar-tool" data-chat-focus-current="true">定位当前</button>');
+    }
+    if (pinnedCount > 0 && getConversationFilterMode() !== 'pinned') {
+      utilityActions.push('<button type="button" class="chat-sidebar-tool" data-chat-filter-shortcut="pinned">只看重点</button>');
+    }
+    if (parkedCount > 0 && getConversationFilterMode() !== 'parked') {
+      utilityActions.push('<button type="button" class="chat-sidebar-tool" data-chat-filter-shortcut="parked">只看稍后</button>');
     }
     if (hasFilterState) {
       utilityActions.push('<button type="button" class="chat-sidebar-tool" data-chat-search-reset="true">清空筛选</button>');
@@ -1938,13 +2089,13 @@
           <span>空白会话</span>
         </div>
         <div class="chat-sidebar-stat">
-          <strong>${todayCount}</strong>
-          <span>今日活跃</span>
+          <strong>${pinnedCount}</strong>
+          <span>重点会话</span>
         </div>
       </div>
       <div class="chat-sidebar-summary-foot">
         <span>${filterLabels[getConversationFilterMode()] || filterLabels.all}</span>
-        <span>已归档 ${totalArchived} 条</span>
+        <span>今日活跃 ${todayCount} · 稍后 ${parkedCount} · 已归档 ${totalArchived}</span>
       </div>
       ${utilityActions.length ? `<div class="chat-sidebar-utility">${utilityActions.join('')}</div>` : ''}
     `;
@@ -1965,6 +2116,8 @@
     const activeVisible = Boolean(activeConversation && filteredActive.some(item => item.id === activeConversation.id));
     const filterLabels = {
       all: '全部会话',
+      pinned: '重点会话',
+      parked: '稍后处理',
       current: '仅当前会话',
       blank: '仅空白会话',
       today: '仅今日活跃'
@@ -1986,7 +2139,7 @@
       feedback.innerHTML = `
         <div class="chat-search-feedback-main">
           <strong>${filterLabels[filterMode] || filterLabels.all}</strong>
-          <span>当前已切到快捷筛选状态，可随时回到全部会话。</span>
+          <span>当前已切到快捷筛选状态，可随时回到全部会话继续浏览。</span>
         </div>
         <div class="chat-search-feedback-actions">
           <button type="button" class="chat-search-action" data-chat-search-reset="true">回到全部</button>
@@ -2237,6 +2390,7 @@
 
     try {
       const result = await persistence.deleteArchivedConversation(conversationId);
+      removeConversationFromWorkflowState(conversationId);
       if (workspaceState.lastConversationId === conversationId) {
         workspaceState.lastConversationId = null;
       }
@@ -2756,6 +2910,18 @@
         renameConversationById(inlineRenameConversationButton.dataset.conversationRenameId);
         return;
       }
+      const inlinePinConversationButton = event.target.closest('[data-conversation-pin-id]');
+      if (inlinePinConversationButton) {
+        const nextPinned = toggleConversationWorkflowState(inlinePinConversationButton.dataset.conversationPinId, 'pinned');
+        showToast(nextPinned ? '已设为重点会话' : '已取消重点会话', 'success', 1400);
+        return;
+      }
+      const inlineParkConversationButton = event.target.closest('[data-conversation-park-id]');
+      if (inlineParkConversationButton) {
+        const nextParked = toggleConversationWorkflowState(inlineParkConversationButton.dataset.conversationParkId, 'parked');
+        showToast(nextParked ? '已加入稍后处理' : '已移出稍后处理', 'success', 1400);
+        return;
+      }
       const inlineArchiveConversationButton = event.target.closest('[data-conversation-archive-id]');
       if (inlineArchiveConversationButton) {
         archiveConversationById(inlineArchiveConversationButton.dataset.conversationArchiveId);
@@ -2829,6 +2995,11 @@
       const filterButton = event.target.closest('[data-chat-filter]');
       if (filterButton) {
         updateConversationFilterMode(filterButton.dataset.chatFilter || 'all');
+        return;
+      }
+      const filterShortcutButton = event.target.closest('[data-chat-filter-shortcut]');
+      if (filterShortcutButton) {
+        updateConversationFilterMode(filterShortcutButton.dataset.chatFilterShortcut || 'all');
         return;
       }
       const focusCurrentButton = event.target.closest('[data-chat-focus-current]');

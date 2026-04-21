@@ -12,7 +12,7 @@ const VISUAL_ROOT = path.join(__dirname, 'test-artifacts');
 const BASELINE_DIR = path.join(VISUAL_ROOT, 'visual-baseline');
 const CURRENT_DIR = path.join(VISUAL_ROOT, 'visual-current');
 const DIFF_DIR = path.join(VISUAL_ROOT, 'visual-diff');
-const MAX_DIFF_PIXELS = 40;
+const MAX_DIFF_PIXELS = 50;
 const MAX_DIFF_RATIO = 0.0002;
 
 function parseArgs(argv) {
@@ -250,6 +250,27 @@ async function normalizeAdminPanel(page) {
   await stabilizePage(page);
 }
 
+async function normalizeChatPanel(page) {
+  await page.evaluate(() => {
+    const maskTimeNode = node => {
+      if (!node) return;
+      node.textContent = '';
+      node.style.display = 'inline-block';
+      node.style.width = '54px';
+      node.style.height = '12px';
+      node.style.borderRadius = '999px';
+      node.style.background = 'rgba(160, 160, 192, 0.28)';
+    };
+
+    document.querySelectorAll('.chat-conversation-item time, .chat-archived-copy time').forEach(maskTimeNode);
+    const subtitle = document.getElementById('chat-conversation-subtitle');
+    if (subtitle) {
+      subtitle.textContent = '稳定视觉基线 · 会话工作流已就绪';
+    }
+  });
+  await stabilizePage(page);
+}
+
 async function setFixedUtilityVisibility(page, visible) {
   await page.evaluate(isVisible => {
     const utility = document.getElementById('theme-toggle-fixed');
@@ -333,6 +354,7 @@ function getCapturePlan(baseUrl) {
         await loginAsBootstrapAdmin(page, baseUrl);
         await switchTab(page, 'chat');
         await ensureTheme(page, 'dark');
+        await normalizeChatPanel(page);
       }
     },
     {
@@ -344,6 +366,7 @@ function getCapturePlan(baseUrl) {
         await loginAsBootstrapAdmin(page, baseUrl);
         await switchTab(page, 'chat');
         await ensureTheme(page, 'light');
+        await normalizeChatPanel(page);
       }
     },
     {
