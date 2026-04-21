@@ -264,6 +264,14 @@ async function normalizeChatPanel(page) {
 
     document.querySelectorAll('.chat-conversation-item time, .chat-archived-copy time').forEach(maskTimeNode);
     document.querySelectorAll('.message-meta-time').forEach(maskTimeNode);
+    document.querySelectorAll('.chat-conversation-copy strong, .chat-conversation-copy span').forEach(node => {
+      node.textContent = '';
+      node.style.display = 'inline-block';
+      node.style.width = node.tagName === 'STRONG' ? '88px' : '120px';
+      node.style.height = '12px';
+      node.style.borderRadius = '999px';
+      node.style.background = 'rgba(160, 160, 192, 0.28)';
+    });
     const title = document.getElementById('chat-conversation-title');
     if (title) {
       title.textContent = '稳定视觉基线对话';

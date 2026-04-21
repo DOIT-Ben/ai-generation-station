@@ -3455,6 +3455,11 @@
         });
         return;
       }
+      const workspaceAssetOpenArchivedButton = event.target.closest('[data-workspace-asset-open-archived]');
+      if (workspaceAssetOpenArchivedButton) {
+        openArchivedChatAssetsPanel();
+        return;
+      }
       const clearRecentTemplatesButton = event.target.closest('[data-template-recent-clear]');
       if (clearRecentTemplatesButton) {
         clearRecentTemplates(clearRecentTemplatesButton.dataset.templateRecentClear);
@@ -4764,15 +4769,27 @@
     showToast(config.toast, 'success', 1400);
   }
 
+  function openArchivedChatAssetsPanel() {
+    switchTab('chat');
+    setChatExcerptExpanded(true);
+    setChatExcerptFilterMode('archived');
+    window.setTimeout(() => {
+      $('chat-excerpt-shelf')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }, 40);
+  }
+
   function renderWorkspaceAssetStrip() {
     const strip = $('workspace-asset-strip');
     const title = $('workspace-asset-title');
     const summary = $('workspace-asset-summary');
+    const stats = $('workspace-asset-stats');
     const actions = $('workspace-asset-actions');
-    if (!strip || !title || !summary || !actions) return;
+    if (!strip || !title || !summary || !stats || !actions) return;
 
-    const items = currentUser ? getRecentChatAssets(3) : [];
-    if (!items.length) {
+    const activeItems = currentUser ? getRecentChatAssets(3) : [];
+    const archivedCount = currentUser ? chatExcerptState.items.filter(item => item.archivedAt).length : 0;
+    const activeCount = currentUser ? chatExcerptState.items.filter(item => !item.archivedAt).length : 0;
+    if (!activeItems.length && !archivedCount) {
       strip.setAttribute('hidden', '');
       actions.innerHTML = '';
       return;
@@ -4781,10 +4798,29 @@
     const config = getCurrentWorkspaceAssetConfig();
     const featureTitle = featureMeta[currentTab]?.title || '当前页';
     title.textContent = `${featureTitle} 可直接复用最近资产`;
+    stats.innerHTML = `
+      <span class="workspace-mini-stat">活跃 ${activeCount}</span>
+      <span class="workspace-mini-stat">归档 ${archivedCount}</span>
+    `;
+    if (!activeItems.length && archivedCount > 0) {
+      summary.textContent = '活跃资产已经清空，但你的归档内容还在，随时可以恢复。';
+      actions.innerHTML = `
+        <div class="workspace-asset-empty">
+          <strong>最近资产暂时为空</strong>
+          <span>你已经把当前资产归档完了。去归档视图里恢复，或在聊天中继续添加新的摘录。</span>
+          <div class="workspace-asset-empty-actions">
+            <button type="button" class="workspace-asset-btn tone-strong" data-workspace-asset-open-archived="true">查看已归档资产</button>
+          </div>
+        </div>
+      `;
+      strip.removeAttribute('hidden');
+      return;
+    }
+
     summary.textContent = currentTab === 'chat'
-      ? '你刚摘录的内容会留在这里，方便继续展开或回到原消息。'
+      ? '最近保留的活跃资产会留在这里，方便继续展开或回到原消息。'
       : `把聊天中留下的高价值内容快速导入到${featureTitle}，减少来回复制粘贴。`;
-    actions.innerHTML = items.map(item => `
+    actions.innerHTML = activeItems.map(item => `
       <article class="workspace-asset-item">
         <div class="workspace-asset-item-copy">
           <strong>${escapeHtml(item.conversationTitle || '未命名对话')}</strong>
@@ -4803,6 +4839,7 @@
   function renderChatExcerptShelf() {
     const shelf = $('chat-excerpt-shelf');
     const summary = $('chat-excerpt-summary');
+    const stats = $('chat-excerpt-stats');
     const presets = $('chat-excerpt-presets');
     const toggleButton = $('btn-chat-excerpt-toggle-panel');
     const copyVisibleButton = $('btn-chat-excerpt-copy-visible');
@@ -4812,12 +4849,13 @@
     const clearArchivedButton = $('btn-chat-excerpt-clear-archived');
     const resultsMeta = $('chat-excerpt-results-meta');
     const actions = $('chat-excerpt-actions');
-    if (!shelf || !summary || !actions || !presets || !toggleButton || !copyVisibleButton || !archiveVisibleButton || !manager || !searchInput || !clearArchivedButton || !resultsMeta) return;
+    if (!shelf || !summary || !stats || !actions || !presets || !toggleButton || !copyVisibleButton || !archiveVisibleButton || !manager || !searchInput || !clearArchivedButton || !resultsMeta) return;
 
     if (!currentUser || !chatExcerptState.items.length) {
       shelf.setAttribute('hidden', '');
       summary.textContent = '把值得保留的回复留在这里，方便稍后回看。';
       actions.innerHTML = '';
+      stats.innerHTML = '';
       presets.innerHTML = '';
       resultsMeta.textContent = '';
       searchInput.value = '';
@@ -4834,11 +4872,18 @@
       && chatExcerptState.filter === 'current'
       && !currentCount
       && visibleItems.length > 0;
+    stats.innerHTML = `
+      <span class="workspace-mini-stat">活跃 ${activeCount}</span>
+      <span class="workspace-mini-stat">归档 ${archivedCount}</span>
+      <span class="workspace-mini-stat">当前可见 ${visibleItems.length}</span>
+    `;
     summary.textContent = chatExcerptState.expanded
       ? (
         filteredCount > 0
-          ? `已筛出 ${filteredCount} 条摘录。你可以搜索、复制、回填到输入框，或跳回原消息。`
-          : '没有找到匹配的摘录，试试切到全部或清空搜索。'
+          ? `已筛出 ${filteredCount} 条资产。你可以搜索、复制、继续复用，或跳回原消息。`
+          : (chatExcerptState.filter === 'archived'
+            ? '当前没有匹配的归档资产，试试清空搜索或切回全部。'
+            : '没有找到匹配的资产，试试切到全部或清空搜索。')
       )
       : (currentCount > 0
         ? `当前对话已摘录 ${currentCount} 条，展开后可统一管理与复用。`
@@ -4881,8 +4926,8 @@
       </article>
     `).join('') : `
       <div class="chat-excerpt-empty">
-        <strong>当前条件下还没有可展示的摘录</strong>
-        <span>你可以切到“全部摘录”，或先从回复里加入新的摘录。</span>
+        <strong>${chatExcerptState.filter === 'archived' ? '当前还没有可展示的归档资产' : '当前条件下还没有可展示的资产'}</strong>
+        <span>${chatExcerptState.filter === 'archived' ? '你可以清空搜索、切回全部，或先把一些活跃资产归档。' : '你可以切到“全部”，或先从回复里加入新的摘录。'}</span>
         <div class="chat-excerpt-empty-actions">
           <button type="button" class="chat-excerpt-item-btn" data-chat-excerpt-filter="all">查看全部摘录</button>
           <button type="button" class="chat-excerpt-item-btn" data-chat-excerpt-search-clear="true">清空搜索</button>
