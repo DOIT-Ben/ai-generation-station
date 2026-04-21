@@ -473,7 +473,9 @@
   }
 
   function setChatExcerptFilterMode(nextFilter) {
-    updateChatExcerptState({ filter: nextFilter === 'all' ? 'all' : 'current' });
+    updateChatExcerptState({
+      filter: ['current', 'all', 'archived'].includes(nextFilter) ? nextFilter : 'current'
+    });
   }
 
   function setChatExcerptQuery(nextQuery, options = {}) {
