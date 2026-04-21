@@ -32,6 +32,7 @@ function main() {
   assert.ok(html.includes('id="chat-request-status"'), 'index should contain chat request status feedback');
   assert.ok(html.includes('id="btn-chat-stop"'), 'index should contain chat stop-generation action');
   assert.ok(html.includes('id="chat-suggestion-strip"'), 'index should contain unified chat suggestion strip');
+  assert.ok(html.includes('id="chat-excerpt-shelf"'), 'index should contain chat excerpt shelf');
   assert.ok(html.includes('id="btn-quota-toggle"'), 'index should contain nav quota collapse toggle');
   assert.ok(html.includes('id="quota-summary"'), 'index should contain nav quota summary line');
   assert.ok(html.includes('id="btn-chat-new-conversation"'), 'index should contain new conversation button');
@@ -76,6 +77,9 @@ function main() {
   assert.ok(appJs.includes('conversation_state'), 'workspace should handle streamed conversation state events');
   assert.ok(appJs.includes('rewriteAssistantMessage'), 'workspace should expose assistant rewrite actions');
   assert.ok(appJs.includes('copyAssistantMessage'), 'workspace should expose assistant copy actions');
+  assert.ok(appJs.includes('toggleChatExcerpt'), 'workspace should expose chat excerpt toggle actions');
+  assert.ok(appJs.includes('renderChatExcerptShelf'), 'workspace should render a chat excerpt shelf');
+  assert.ok(appJs.includes('jumpToChatExcerpt'), 'workspace should support jumping back to an excerpted message');
   assert.ok(appJs.includes('retryTransientAssistantMessage'), 'workspace should expose retry actions for failed assistant replies');
   assert.ok(appJs.includes('data-chat-message-actions-toggle'), 'workspace should expose a compact assistant action toggle for version history');
   assert.ok(appJs.includes('stopChatGeneration'), 'workspace should expose stop-generation behavior');

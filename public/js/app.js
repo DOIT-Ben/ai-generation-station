@@ -83,8 +83,10 @@
   const fieldInitialValues = {};
   const CHAT_ARCHIVED_COLLAPSED_KEY = 'aigs.chat.archived.collapsed';
   const CHAT_WORKFLOW_STATE_KEY_PREFIX = 'aigs.chat.workflow';
+  const CHAT_EXCERPT_STATE_KEY_PREFIX = 'aigs.chat.excerpts';
   let chatArchivedCollapsed = false;
   let chatWorkflowState = createDefaultChatWorkflowState();
+  let chatExcerptState = createDefaultChatExcerptState();
 
   const FEATURE_FIELDS = {
     lyrics: { prompt: 'lyrics-prompt', style: 'lyrics-style', structure: 'lyrics-structure' },
@@ -287,6 +289,123 @@
     persistChatWorkflowState();
     renderConversationList();
     return !exists;
+  }
+
+  function createDefaultChatExcerptState() {
+    return {
+      items: []
+    };
+  }
+
+  function normalizeChatExcerptState(rawState) {
+    const raw = rawState && typeof rawState === 'object' ? rawState : {};
+    const items = Array.isArray(raw.items) ? raw.items : [];
+    return {
+      items: items
+        .filter(item => item && typeof item === 'object' && item.id && item.messageId)
+        .map(item => ({
+          id: String(item.id),
+          messageId: String(item.messageId),
+          conversationId: String(item.conversationId || ''),
+          conversationTitle: String(item.conversationTitle || ''),
+          preview: String(item.preview || ''),
+          createdAt: Number(item.createdAt || 0)
+        }))
+        .sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0))
+    };
+  }
+
+  function getChatExcerptStorageKey() {
+    const identity = currentUserProfile?.id || currentUser || 'guest';
+    return `${CHAT_EXCERPT_STATE_KEY_PREFIX}.${encodeURIComponent(String(identity).trim().toLowerCase() || 'guest')}`;
+  }
+
+  function readChatExcerptStatePreference() {
+    try {
+      return normalizeChatExcerptState(safeParseJson(window.localStorage.getItem(getChatExcerptStorageKey()), createDefaultChatExcerptState()));
+    } catch {
+      return createDefaultChatExcerptState();
+    }
+  }
+
+  function persistChatExcerptState() {
+    try {
+      window.localStorage.setItem(getChatExcerptStorageKey(), JSON.stringify(chatExcerptState));
+    } catch {
+      // Ignore localStorage failures.
+    }
+  }
+
+  function hydrateChatExcerptState() {
+    chatExcerptState = readChatExcerptStatePreference();
+  }
+
+  function isMessageExcerpted(messageId) {
+    const targetId = String(messageId || '').trim();
+    return targetId ? chatExcerptState.items.some(item => item.messageId === targetId) : false;
+  }
+
+  function buildChatExcerptPreview(text) {
+    return truncateText(String(text || '').replace(/\s+/g, ' ').trim(), 84);
+  }
+
+  function getChatExcerptByMessageId(messageId) {
+    const targetId = String(messageId || '').trim();
+    return chatExcerptState.items.find(item => item.messageId === targetId) || null;
+  }
+
+  function removeChatExcerpt(messageId, options = {}) {
+    const targetId = String(messageId || '').trim();
+    if (!targetId) return false;
+    const exists = isMessageExcerpted(targetId);
+    if (!exists) return false;
+    chatExcerptState = {
+      items: chatExcerptState.items.filter(item => item.messageId !== targetId)
+    };
+    if (options.persist !== false) {
+      persistChatExcerptState();
+      renderChatExcerptShelf();
+    }
+    return true;
+  }
+
+  function saveChatExcerpt(message) {
+    if (!message?.id || !message?.content) return null;
+    const activeConversation = getActiveConversation();
+    const excerpt = {
+      id: `excerpt-${message.id}`,
+      messageId: String(message.id),
+      conversationId: String(activeConversation?.id || conversationState.activeId || ''),
+      conversationTitle: getConversationTitlePreview(activeConversation),
+      preview: buildChatExcerptPreview(message.content),
+      createdAt: Date.now()
+    };
+    chatExcerptState = {
+      items: [excerpt].concat(chatExcerptState.items.filter(item => item.messageId !== excerpt.messageId)).slice(0, 24)
+    };
+    persistChatExcerptState();
+    renderChatExcerptShelf();
+    return excerpt;
+  }
+
+  async function toggleChatExcerpt(messageId, triggerButton = null) {
+    const message = getConversationMessageById(messageId);
+    if (!message?.content) return;
+    if (isMessageExcerpted(messageId)) {
+      removeChatExcerpt(messageId);
+      flashButtonFeedback(triggerButton, '已移除', 1200, 'info');
+      showToast('已移出消息摘录', 'success', 1200);
+      if (conversationState.activeId) {
+        restoreChatMessages(conversationState.messages, { forceFollow: false });
+      }
+      return;
+    }
+    saveChatExcerpt(message);
+    flashButtonFeedback(triggerButton, '已摘录', 1200, 'success');
+    showToast('已加入消息摘录', 'success', 1200);
+    if (conversationState.activeId) {
+      restoreChatMessages(conversationState.messages, { forceFollow: false });
+    }
   }
 
   function getWorkspaceStateDraft(feature) {
@@ -1056,6 +1175,7 @@
     workspaceStateReady = false;
     workspaceState = createDefaultWorkspaceState();
     chatWorkflowState = createDefaultChatWorkflowState();
+    chatExcerptState = createDefaultChatExcerptState();
     templatePreferenceEnvelope = {};
     conversationState.list = [];
     conversationState.archived = [];
@@ -1119,6 +1239,7 @@
 
   async function loadAuthenticatedWorkspaceData() {
     hydrateChatWorkflowState();
+    hydrateChatExcerptState();
     await loadUserPreferences();
     await refreshUsageToday();
     await loadTemplateLibraries();
@@ -1756,6 +1877,7 @@
       restoreChatMessages(conversationState.messages, options.chatRestoreOptions || {});
     }
     renderConversationList();
+    renderChatExcerptShelf();
     renderWorkspaceResumeCard();
     if (options.persist !== false) {
       scheduleWorkspaceStateSave();
@@ -2026,6 +2148,7 @@
       subtitle.textContent = '新建一个对话后即可开始聊天。';
       renderChatExperienceState();
       renderChatContextStrip();
+      renderChatExcerptShelf();
       renderChatSuggestionStrip();
       return;
     }
@@ -2036,6 +2159,7 @@
       : `${getActiveConversationLastActivityLabel(activeConversation)} · ${getConversationPreview(activeConversation)}`;
     renderChatExperienceState();
     renderChatContextStrip();
+    renderChatExcerptShelf();
     renderChatSuggestionStrip();
   }
 
@@ -2940,6 +3064,13 @@
         });
         return;
       }
+      const excerptMessageButton = event.target.closest('[data-chat-excerpt-id]');
+      if (excerptMessageButton) {
+        toggleChatExcerpt(excerptMessageButton.dataset.chatExcerptId, excerptMessageButton).catch(error => {
+          showToast(error.message || '摘录操作失败，请重试。', 'error', 1600);
+        });
+        return;
+      }
       const rewriteMessageButton = event.target.closest('[data-chat-rewrite-id]');
       if (rewriteMessageButton) {
         rewriteAssistantMessage(rewriteMessageButton.dataset.chatRewriteId, rewriteMessageButton);
@@ -3037,6 +3168,27 @@
         if (targetHeading) {
           setChatAutoFollow(false);
           targetHeading.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }
+        return;
+      }
+      const excerptJumpButton = event.target.closest('[data-chat-excerpt-jump]');
+      if (excerptJumpButton) {
+        jumpToChatExcerpt(
+          excerptJumpButton.dataset.chatExcerptJump || '',
+          excerptJumpButton.dataset.chatExcerptConversationId || ''
+        ).catch(error => {
+          showToast(error.message || '摘录跳转失败，请重试。', 'error', 1600);
+        });
+        return;
+      }
+      const excerptRemoveButton = event.target.closest('[data-chat-excerpt-remove]');
+      if (excerptRemoveButton) {
+        const removed = removeChatExcerpt(excerptRemoveButton.dataset.chatExcerptRemove || '');
+        if (removed) {
+          showToast('已移出消息摘录', 'success', 1200);
+          if (conversationState.activeId) {
+            restoreChatMessages(conversationState.messages, { forceFollow: false });
+          }
         }
         return;
       }
@@ -4218,6 +4370,71 @@
     syncChatReadingOutlineActiveTarget();
   }
 
+  function getVisibleChatExcerpts() {
+    const activeConversationId = String(conversationState.activeId || '').trim();
+    const currentItems = chatExcerptState.items.filter(item => item.conversationId === activeConversationId);
+    if (currentItems.length) return currentItems.slice(0, 6);
+    return chatExcerptState.items.slice(0, 6);
+  }
+
+  function renderChatExcerptShelf() {
+    const shelf = $('chat-excerpt-shelf');
+    const summary = $('chat-excerpt-summary');
+    const actions = $('chat-excerpt-actions');
+    if (!shelf || !summary || !actions) return;
+
+    if (!currentUser || !chatExcerptState.items.length) {
+      shelf.setAttribute('hidden', '');
+      summary.textContent = '把值得保留的回复留在这里，方便稍后回看。';
+      actions.innerHTML = '';
+      return;
+    }
+
+    const visibleItems = getVisibleChatExcerpts();
+    const activeConversationId = String(conversationState.activeId || '').trim();
+    const currentCount = chatExcerptState.items.filter(item => item.conversationId === activeConversationId).length;
+    summary.textContent = currentCount > 0
+      ? `当前对话已摘录 ${currentCount} 条，点一下可以快速跳回原消息。`
+      : `你一共摘录了 ${chatExcerptState.items.length} 条消息，这里先显示最近保留的内容。`;
+    actions.innerHTML = visibleItems.map(item => `
+      <article class="chat-excerpt-item">
+        <button type="button" class="chat-excerpt-jump" data-chat-excerpt-jump="${escapeHtml(item.messageId)}" data-chat-excerpt-conversation-id="${escapeHtml(item.conversationId)}">
+          <strong>${escapeHtml(item.conversationTitle || '未命名对话')}</strong>
+          <span>${escapeHtml(item.preview)}</span>
+        </button>
+        <button type="button" class="chat-excerpt-remove" data-chat-excerpt-remove="${escapeHtml(item.messageId)}">移除</button>
+      </article>
+    `).join('');
+    shelf.removeAttribute('hidden');
+  }
+
+  async function jumpToChatExcerpt(messageId, conversationId = '') {
+    const targetMessageId = String(messageId || '').trim();
+    const targetConversationId = String(conversationId || '').trim();
+    if (!targetMessageId) return;
+    if (targetConversationId && targetConversationId !== String(conversationState.activeId || '').trim()) {
+      const activeMatch = conversationState.list.some(item => item.id === targetConversationId);
+      if (!activeMatch) {
+        showToast('摘录来自非当前进行中会话，请先恢复或打开原会话。', 'info', 1800);
+        return;
+      }
+      await selectConversation(targetConversationId);
+    }
+    window.setTimeout(() => {
+      const targetNode = document.querySelector(`.chat-message[data-chat-message-id="${CSS.escape(targetMessageId)}"]`);
+      if (!targetNode) {
+        showToast('原消息暂时不可用', 'info', 1600);
+        return;
+      }
+      setChatAutoFollow(false);
+      targetNode.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      targetNode.classList.add('is-highlighted');
+      window.setTimeout(() => {
+        targetNode.classList.remove('is-highlighted');
+      }, 1800);
+    }, 40);
+  }
+
   function syncChatReadingOutlineActiveTarget() {
     const container = $('chat-messages');
     if (!container) return;
@@ -4253,6 +4470,7 @@
     const status = getAssistantMessageStatus(message);
     const canCopy = Boolean(String(message.content || '').trim());
     const canRetry = Boolean(message.transient && message.retryPayload);
+    const isExcerpted = isMessageExcerpted(message.id);
     const isExpanded = Boolean(getChatMessageUiState(message.id)?.actionsExpanded);
     const versionSummary = versionCount > 1
       ? `当前第 ${activeVersionIndex} 版，共 ${versionCount} 版，可随时切回上一版。`
@@ -4264,6 +4482,7 @@
           ${status ? `<div class="message-status-row"><span class="message-status-badge tone-${escapeHtml(status.tone)}">${escapeHtml(status.label)}</span></div>` : '<span class="message-status-spacer" aria-hidden="true"></span>'}
           <div class="message-actions-row">
             ${canCopy ? `<button class="message-action-btn" type="button" data-chat-copy-id="${escapeHtml(message.id)}">复制全文</button>` : ''}
+            ${canCopy ? `<button class="message-action-btn${isExcerpted ? ' tone-secondary' : ''}" type="button" data-chat-excerpt-id="${escapeHtml(message.id)}">${isExcerpted ? '取消摘录' : '加入摘录'}</button>` : ''}
             ${!message.transient ? `<button class="message-action-btn" type="button" data-chat-rewrite-id="${escapeHtml(message.id)}">换个版本</button>` : ''}
             ${canRetry ? `<button class="message-action-btn tone-retry" type="button" data-chat-retry-id="${escapeHtml(message.id)}">重试</button>` : ''}
             ${versionCount > 1 ? `
