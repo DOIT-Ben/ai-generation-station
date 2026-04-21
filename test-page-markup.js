@@ -75,9 +75,12 @@ function main() {
   assert.ok(appJs.includes('rewriteAssistantMessage'), 'workspace should expose assistant rewrite actions');
   assert.ok(appJs.includes('copyAssistantMessage'), 'workspace should expose assistant copy actions');
   assert.ok(appJs.includes('retryTransientAssistantMessage'), 'workspace should expose retry actions for failed assistant replies');
+  assert.ok(appJs.includes('data-chat-message-actions-toggle'), 'workspace should expose a compact assistant action toggle for version history');
   assert.ok(appJs.includes('stopChatGeneration'), 'workspace should expose stop-generation behavior');
   assert.ok(appJs.includes('groupConversationsByDay'), 'workspace should group conversation list items by relative day');
   assert.ok(appJs.includes('renderChatSuggestionStrip'), 'workspace should consolidate chat prompt suggestions into one adaptive strip');
+  assert.ok(appJs.includes('getChatExperienceStage'), 'workspace should adapt chat composer copy to the current conversation stage');
+  assert.ok(appJs.includes('syncChatViewportState'), 'workspace should react to mobile visual viewport changes while composing');
   assert.ok(appJs.includes('setChatArchivedCollapsed'), 'workspace should support collapsing the archived conversation section');
   assert.ok(appJs.includes('syncQuotaCardState'), 'workspace should keep nav quota collapsed state in sync');
   assert.ok(authPageJs.includes('注册成功，正在进入工作台'), 'auth page should contain a register success flow');

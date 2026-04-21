@@ -22,6 +22,10 @@
   const chatScrollState = {
     autoFollow: true
   };
+  const chatViewportState = {
+    keyboardInset: 0,
+    mobileCompose: false
+  };
 
   // ---- DOM helpers ----
   const $ = id => document.getElementById(id);
@@ -404,14 +408,11 @@
     const input = $('chat-input');
     const sendButton = $('btn-chat-send');
     const clearButton = $('btn-chat-clear');
-    const draftIndicator = $('chat-draft-indicator');
-    const shortcutHint = $('chat-shortcut-hint');
     if (!input) return;
 
     autoResizeChatInput();
     const rawValue = String(input.value || '');
     const trimmedValue = rawValue.trim();
-    const queuedCount = chatQueue.length;
 
     if (sendButton) {
       sendButton.disabled = !trimmedValue;
@@ -420,37 +421,104 @@
     if (clearButton) {
       clearButton.disabled = rawValue.length <= 0;
     }
-
-    if (draftIndicator) {
-      if (isChatGenerating && queuedCount > 0) {
-        draftIndicator.textContent = `队列中还有 ${queuedCount} 条待发送消息`;
-      } else if (isChatGenerating && trimmedValue) {
-        draftIndicator.textContent = `已输入 ${trimmedValue.length} 字，发送后会加入队列`;
-      } else if (trimmedValue) {
-        draftIndicator.textContent = `未发送草稿 ${trimmedValue.length} 字`;
-      } else {
-        draftIndicator.textContent = '当前没有未发送内容';
-      }
-    }
-
-    if (shortcutHint) {
-      if (isChatGenerating) {
-        shortcutHint.textContent = queuedCount > 0
-          ? '当前回复中，新的 Enter 会继续加入队列'
-          : '当前回复中，可继续输入，按 Enter 会加入队列';
-      } else if (trimmedValue) {
-        shortcutHint.textContent = `${formatRelativeSavedAt(workspaceState.lastSavedAt)} · Enter 发送 / Shift + Enter 换行`;
-      } else {
-        shortcutHint.textContent = 'Enter 发送，Shift + Enter 换行';
-      }
-    }
+    renderChatExperienceState();
     renderChatSuggestionStrip();
     renderChatContextStrip();
+    queueChatViewportSync();
   }
 
   function getChatDraftLength() {
     const input = $('chat-input');
     return String(input?.value || '').trim().length;
+  }
+
+  function getConversationMessageCount(conversation = getActiveConversation()) {
+    if (!conversation) return Array.isArray(conversationState.messages) ? conversationState.messages.length : 0;
+    return Number(conversation.messageCount || conversationState.messages.length || 0);
+  }
+
+  function getAssistantMessageCount(messages = conversationState.messages) {
+    return (Array.isArray(messages) ? messages : []).filter(item => item?.role === 'assistant').length;
+  }
+
+  function getChatExperienceStage() {
+    const draftLength = getChatDraftLength();
+    const activeConversation = getActiveConversation();
+    const messageCount = getConversationMessageCount(activeConversation);
+    const assistantCount = getAssistantMessageCount();
+    const hasConversation = Boolean(currentUser && activeConversation);
+
+    if (isChatGenerating) {
+      if (chatQueue.length > 0) {
+        return {
+          key: 'queued',
+          tone: 'live',
+          indicator: `队列中还有 ${chatQueue.length} 条待发送消息`,
+          hint: '当前回复完成后会自动继续发送，你也可以继续输入下一条。'
+        };
+      }
+      if (draftLength > 0) {
+        return {
+          key: 'live-draft',
+          tone: 'live',
+          indicator: `已输入 ${draftLength} 字，发送后会加入队列`,
+          hint: '当前回复仍在继续，Enter 会把这条消息加入队列。'
+        };
+      }
+      return {
+        key: 'live',
+        tone: 'live',
+        indicator: '正在生成回复',
+        hint: '可以提前组织下一条消息，回复结束后会更顺。'
+      };
+    }
+
+    if (!hasConversation || messageCount <= 0) {
+      if (draftLength > 0) {
+        return {
+          key: 'first-draft',
+          tone: 'quickstart',
+          indicator: `第一条消息已准备 ${draftLength} 字`,
+          hint: '发出后我会开始记录上下文，并自动切到继续追问节奏。'
+        };
+      }
+      return {
+        key: 'quickstart',
+        tone: 'quickstart',
+        indicator: '先写下这轮目标或问题',
+        hint: '没想好第一句也可以先点建议，再补限制条件后发送。'
+      };
+    }
+
+    if (draftLength > 0) {
+      return {
+        key: 'followup-draft',
+        tone: 'followup',
+        indicator: `这条会接在当前上下文后面 · ${draftLength} 字`,
+        hint: assistantCount <= 1
+          ? '第一轮刚展开，继续补充目标、风格或限制会最省力。'
+          : '继续补约束、偏好或风险点，我会沿当前主题往下接。'
+      };
+    }
+
+    return {
+      key: assistantCount <= 1 ? 'followup-early' : 'followup',
+      tone: 'followup',
+      indicator: assistantCount <= 1 ? '第一轮已展开，继续把需求压实' : '当前上下文已就绪，可以继续追问',
+      hint: assistantCount <= 1
+        ? '再给一句限制条件、目标结果或风格偏好，我会继续顺着这轮往下拆。'
+        : '可以让我换角度、补风险、整理步骤，或直接给执行方案。'
+    };
+  }
+
+  function renderChatExperienceState() {
+    const draftIndicator = $('chat-draft-indicator');
+    const shortcutHint = $('chat-shortcut-hint');
+    const inputArea = document.querySelector('.chat-input-area');
+    const stage = getChatExperienceStage();
+    if (draftIndicator) draftIndicator.textContent = stage.indicator;
+    if (shortcutHint) shortcutHint.textContent = stage.hint;
+    if (inputArea) inputArea.dataset.chatStage = stage.tone || 'neutral';
   }
 
   function getActiveConversationLastActivityLabel(conversation) {
@@ -523,7 +591,8 @@
   function getChatSuggestionConfig() {
     const activeConversation = getActiveConversation();
     const draftLength = getChatDraftLength();
-    const conversationMessageCount = Number(activeConversation?.messageCount || conversationState.messages.length || 0);
+    const conversationMessageCount = getConversationMessageCount(activeConversation);
+    const assistantCount = getAssistantMessageCount();
     if (!currentUser || isChatGenerating || draftLength > 0) return null;
 
     if (conversationMessageCount > 0) {
@@ -531,8 +600,10 @@
       if (!prompts.length) return null;
       return {
         tone: 'followup',
-        title: '继续推进当前对话',
-        description: '常见追问先帮你备好，点一下就能接着聊。',
+        title: assistantCount <= 1 ? '第一轮已经开始，继续把它说透' : '继续推进当前对话',
+        description: assistantCount <= 1
+          ? '先补一句限制、目标结果或风格偏好，后面的输出会更贴你的意图。'
+          : '常见追问先帮你备好，点一下就能接着聊。',
         prompts
       };
     }
@@ -604,7 +675,7 @@
           `).join('')}
         </div>
         <div class="chat-starter-footer">
-          点一下会先填入输入框，你还可以继续补上下文再发送。
+          点一下会先填入输入框。发出第一句后，我会自动切到继续追问节奏，帮你把话题越聊越具体。
         </div>
       </div>
     `;
@@ -1807,6 +1878,7 @@
     if (!currentUser || !activeConversation) {
       title.textContent = '暂无进行中的对话';
       subtitle.textContent = '新建一个对话后即可开始聊天。';
+      renderChatExperienceState();
       renderChatContextStrip();
       renderChatSuggestionStrip();
       return;
@@ -1816,6 +1888,7 @@
     subtitle.textContent = Number(activeConversation.messageCount || 0) <= 0
       ? `${getActiveConversationLastActivityLabel(activeConversation)} · 还没有消息，可以直接从下方快速开始。`
       : `${getActiveConversationLastActivityLabel(activeConversation)} · ${getConversationPreview(activeConversation)}`;
+    renderChatExperienceState();
     renderChatContextStrip();
     renderChatSuggestionStrip();
   }
@@ -2298,6 +2371,7 @@
       button.setAttribute('hidden', '');
       return;
     }
+    button.textContent = isChatGenerating ? '有新回复，回到最新' : '回到最新回复';
     button.removeAttribute('hidden');
   }
 
@@ -2307,6 +2381,48 @@
     chatScrollState.autoFollow = isChatNearBottom(container);
     syncChatReadingOutlineActiveTarget();
     updateChatScrollButton();
+  }
+
+  function isChatMobileViewport() {
+    return window.matchMedia ? window.matchMedia('(max-width: 767px)').matches : window.innerWidth <= 767;
+  }
+
+  function getChatKeyboardInset() {
+    const viewport = window.visualViewport;
+    if (!viewport) return 0;
+    const viewportBottom = viewport.height + viewport.offsetTop;
+    return Math.max(0, Math.round(window.innerHeight - viewportBottom));
+  }
+
+  function syncChatViewportState() {
+    const chatMain = document.querySelector('.chat-main');
+    const inputArea = document.querySelector('.chat-input-area');
+    const input = $('chat-input');
+    if (!chatMain || !inputArea || !input) return;
+
+    const focused = document.activeElement === input;
+    const keyboardInset = isChatMobileViewport() && focused ? getChatKeyboardInset() : 0;
+    const mobileCompose = Boolean(isChatMobileViewport() && focused && keyboardInset >= 80);
+
+    chatViewportState.keyboardInset = keyboardInset;
+    chatViewportState.mobileCompose = mobileCompose;
+    document.documentElement.style.setProperty('--chat-mobile-keyboard-offset', `${keyboardInset}px`);
+    chatMain.dataset.mobileCompose = mobileCompose ? 'true' : 'false';
+    inputArea.dataset.mobileCompose = mobileCompose ? 'true' : 'false';
+  }
+
+  function queueChatViewportSync() {
+    window.requestAnimationFrame(syncChatViewportState);
+  }
+
+  function ensureChatComposerVisible() {
+    if (!isChatMobileViewport()) return;
+    const inputArea = document.querySelector('.chat-input-area');
+    if (!inputArea) return;
+    window.setTimeout(() => {
+      inputArea.scrollIntoView({ block: 'end', behavior: 'smooth' });
+      followChatToBottom(false);
+    }, 60);
   }
 
   function setChatAutoFollow(shouldFollow) {
@@ -2366,6 +2482,53 @@
     if (patch.renderNow && conversationState.activeId) {
       restoreChatMessages(conversationState.messages, { forceFollow: false });
     }
+  }
+
+  function syncChatMessageActionPanelDom(messageId, expanded) {
+    if (!messageId) return;
+    const messageNode = document.querySelector(`.chat-message[data-chat-message-id="${CSS.escape(messageId)}"]`);
+    if (!messageNode) return;
+    messageNode.querySelectorAll(`[data-chat-message-actions-toggle="${CSS.escape(messageId)}"]`).forEach(button => {
+      button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+      button.textContent = expanded
+        ? (button.dataset.expandedLabel || '收起版本')
+        : (button.dataset.collapsedLabel || '查看版本');
+    });
+    const panel = messageNode.querySelector('[data-chat-message-panel]');
+    if (panel) {
+      if (expanded) {
+        panel.removeAttribute('hidden');
+      } else {
+        panel.setAttribute('hidden', '');
+      }
+    }
+    const shell = messageNode.querySelector('.message-actions');
+    if (shell) shell.dataset.expanded = expanded ? 'true' : 'false';
+  }
+
+  function collapseOtherChatMessagePanels(exceptMessageId = '') {
+    Array.from(chatMessageUiState.entries()).forEach(([messageId, state]) => {
+      if (!state?.actionsExpanded || messageId === exceptMessageId) return;
+      chatMessageUiState.set(messageId, {
+        ...state,
+        actionsExpanded: false
+      });
+      syncChatMessageActionPanelDom(messageId, false);
+    });
+  }
+
+  function toggleChatMessageActionPanel(messageId) {
+    if (!messageId) return;
+    const currentState = getChatMessageUiState(messageId) || {};
+    const nextExpanded = !currentState.actionsExpanded;
+    if (nextExpanded) {
+      collapseOtherChatMessagePanels(messageId);
+    }
+    chatMessageUiState.set(messageId, {
+      ...currentState,
+      actionsExpanded: nextExpanded
+    });
+    syncChatMessageActionPanelDom(messageId, nextExpanded);
   }
 
   function setChatRequestStatus(text = '', tone = 'info') {
@@ -2608,6 +2771,11 @@
       const rewriteMessageButton = event.target.closest('[data-chat-rewrite-id]');
       if (rewriteMessageButton) {
         rewriteAssistantMessage(rewriteMessageButton.dataset.chatRewriteId, rewriteMessageButton);
+        return;
+      }
+      const messageActionsToggleButton = event.target.closest('[data-chat-message-actions-toggle]');
+      if (messageActionsToggleButton) {
+        toggleChatMessageActionPanel(messageActionsToggleButton.dataset.chatMessageActionsToggle || '');
         return;
       }
       const versionNavButton = event.target.closest('[data-chat-version-nav]');
@@ -3908,22 +4076,42 @@
     const status = getAssistantMessageStatus(message);
     const canCopy = Boolean(String(message.content || '').trim());
     const canRetry = Boolean(message.transient && message.retryPayload);
+    const isExpanded = Boolean(getChatMessageUiState(message.id)?.actionsExpanded);
+    const versionSummary = versionCount > 1
+      ? `当前第 ${activeVersionIndex} 版，共 ${versionCount} 版，可随时切回上一版。`
+      : '';
 
     return `
-      <div class="message-actions">
-        ${status ? `<div class="message-status-row"><span class="message-status-badge tone-${escapeHtml(status.tone)}">${escapeHtml(status.label)}</span></div>` : ''}
-        <div class="message-actions-row">
-          ${canCopy ? `<button class="message-action-btn" type="button" data-chat-copy-id="${escapeHtml(message.id)}">复制</button>` : ''}
-          ${!message.transient ? `<button class="message-action-btn" type="button" data-chat-rewrite-id="${escapeHtml(message.id)}">重写</button>` : ''}
-          ${canRetry ? `<button class="message-action-btn tone-retry" type="button" data-chat-retry-id="${escapeHtml(message.id)}">重试</button>` : ''}
-          ${versionCount > 1 ? `
+      <div class="message-actions" data-expanded="${isExpanded ? 'true' : 'false'}">
+        <div class="message-actions-head">
+          ${status ? `<div class="message-status-row"><span class="message-status-badge tone-${escapeHtml(status.tone)}">${escapeHtml(status.label)}</span></div>` : '<span class="message-status-spacer" aria-hidden="true"></span>'}
+          <div class="message-actions-row">
+            ${canCopy ? `<button class="message-action-btn" type="button" data-chat-copy-id="${escapeHtml(message.id)}">复制全文</button>` : ''}
+            ${!message.transient ? `<button class="message-action-btn" type="button" data-chat-rewrite-id="${escapeHtml(message.id)}">换个版本</button>` : ''}
+            ${canRetry ? `<button class="message-action-btn tone-retry" type="button" data-chat-retry-id="${escapeHtml(message.id)}">重试</button>` : ''}
+            ${versionCount > 1 ? `
+              <button
+                class="message-action-btn tone-secondary"
+                type="button"
+                data-chat-message-actions-toggle="${escapeHtml(message.id)}"
+                data-collapsed-label="查看版本 ${activeVersionIndex}/${versionCount}"
+                data-expanded-label="收起版本"
+                aria-expanded="${isExpanded ? 'true' : 'false'}">
+                ${isExpanded ? '收起版本' : `查看版本 ${activeVersionIndex}/${versionCount}`}
+              </button>
+            ` : ''}
+          </div>
+        </div>
+        ${versionCount > 1 ? `
+          <div class="message-version-panel" data-chat-message-panel ${isExpanded ? '' : 'hidden'}>
+            <div class="message-version-summary">${escapeHtml(versionSummary)}</div>
             <div class="message-version-switcher">
               <button class="message-action-btn" type="button" data-chat-version-nav="prev" data-chat-message-id="${escapeHtml(message.id)}" ${activeVersionIndex <= 1 ? 'disabled' : ''}>上一版</button>
               <span class="message-version-label">版本 ${activeVersionIndex}/${versionCount}</span>
               <button class="message-action-btn" type="button" data-chat-version-nav="next" data-chat-message-id="${escapeHtml(message.id)}" ${activeVersionIndex >= versionCount ? 'disabled' : ''}>下一版</button>
             </div>
-          ` : ''}
-        </div>
+          </div>
+        ` : ''}
       </div>
     `;
   }
@@ -4972,10 +5160,20 @@
     $('chat-input')?.addEventListener('input', () => {
       updateChatComposerState();
     });
+    $('chat-input')?.addEventListener('focus', () => {
+      queueChatViewportSync();
+      ensureChatComposerVisible();
+    });
+    $('chat-input')?.addEventListener('blur', () => {
+      queueChatViewportSync();
+    });
     $('chat-input')?.addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.ctrlKey && !e.shiftKey && !e.altKey) { e.preventDefault(); sendChatMessage(); }
     });
     $('chat-messages')?.addEventListener('scroll', handleChatMessagesScroll);
+    window.addEventListener('resize', queueChatViewportSync);
+    window.visualViewport?.addEventListener('resize', queueChatViewportSync);
+    window.visualViewport?.addEventListener('scroll', queueChatViewportSync);
 
     // Custom dropdown for chat model
     initCustomDropdown('chat-model-dropdown', 'chat-model');
@@ -4987,6 +5185,7 @@
       schedulePreferenceSave({ defaultModelChat: $('chat-model')?.value || 'MiniMax-M2.7' });
     });
     updateChatComposerState();
+    queueChatViewportSync();
     $('speech-voice')?.addEventListener('change', () => {
       schedulePreferenceSave({ defaultVoice: $('speech-voice')?.value || 'male-qn-qingse' });
     });
