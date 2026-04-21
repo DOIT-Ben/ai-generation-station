@@ -2301,6 +2301,14 @@
     button.removeAttribute('hidden');
   }
 
+  function handleChatMessagesScroll() {
+    const container = $('chat-messages');
+    if (!container) return;
+    chatScrollState.autoFollow = isChatNearBottom(container);
+    syncChatReadingOutlineActiveTarget();
+    updateChatScrollButton();
+  }
+
   function setChatAutoFollow(shouldFollow) {
     chatScrollState.autoFollow = Boolean(shouldFollow);
     updateChatScrollButton();
@@ -4967,9 +4975,7 @@
     $('chat-input')?.addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.ctrlKey && !e.shiftKey && !e.altKey) { e.preventDefault(); sendChatMessage(); }
     });
-    $('chat-messages')?.addEventListener('scroll', () => {
-      syncChatReadingOutlineActiveTarget();
-    });
+    $('chat-messages')?.addEventListener('scroll', handleChatMessagesScroll);
 
     // Custom dropdown for chat model
     initCustomDropdown('chat-model-dropdown', 'chat-model');
