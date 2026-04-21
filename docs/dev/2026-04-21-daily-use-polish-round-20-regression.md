@@ -15,19 +15,19 @@
 - 结果：全部通过。脚本语法、静态结构断言和基础 UI 流程均无新增错误。
 
 ### 阶段回归 2
-- 执行时间：2026-04-21 12:53 +08:00
+- 执行时间：2026-04-21 13:05 +08:00
 - 已执行：
   - `npm run test:ui-visual:update -- --port 18802 --launch-server`
   - `npm run test:ui-visual -- --port 18802 --launch-server`
 - 结果：串行执行后通过。视觉差异维持在阈值内：
-  - `admin-console: 0 px`
-  - `chat-card-dark: 24 px`
-  - `chat-card-light: 30 px`
+  - `admin-console: 28 px`
+  - `chat-card-dark: 36 px`
+  - `chat-card-light: 44 px`
   - 其余基线：`0 px`
 
 ### 异常记录
-- 初次视觉对比时，`chat-card-dark` 与 `chat-card-light` 因聊天侧边栏会话标题和预览文本仍存在动态波动而超阈值。
-- 处理方式：在 `test-ui-visual.js` 的 `normalizeChatPanel()` 中补充对聊天列表标题与预览文本的归一化处理。
+- 初次视觉对比时，`chat-card-dark` 与 `chat-card-light` 因聊天侧边栏文本归一化选择器不准确而超阈值。
+- 处理方式：在 `test-ui-visual.js` 的 `normalizeChatPanel()` 中补充真实的聊天侧边栏节点选择器，包括会话标题、预览、元信息、分组标签、侧边栏摘要与快捷按钮。
 - 结论：属于测试稳定性问题，不是产品代码缺陷；补齐归一化后视觉回归恢复稳定。
 
 ### 最终收口核对

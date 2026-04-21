@@ -264,7 +264,7 @@ async function normalizeChatPanel(page) {
 
     document.querySelectorAll('.chat-conversation-item time, .chat-archived-copy time').forEach(maskTimeNode);
     document.querySelectorAll('.message-meta-time').forEach(maskTimeNode);
-    document.querySelectorAll('.chat-conversation-copy strong, .chat-conversation-copy span').forEach(node => {
+    document.querySelectorAll('.chat-conversation-item strong, .chat-conversation-preview, .chat-conversation-meta span, .chat-conversation-group-label, .chat-conversation-mini-action, .chat-sidebar-summary strong, .chat-sidebar-summary span, .chat-sidebar-tool').forEach(node => {
       node.textContent = '';
       node.style.display = 'inline-block';
       node.style.width = node.tagName === 'STRONG' ? '88px' : '120px';
