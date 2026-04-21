@@ -263,6 +263,11 @@ async function normalizeChatPanel(page) {
     };
 
     document.querySelectorAll('.chat-conversation-item time, .chat-archived-copy time').forEach(maskTimeNode);
+    document.querySelectorAll('.message-meta-time').forEach(maskTimeNode);
+    const title = document.getElementById('chat-conversation-title');
+    if (title) {
+      title.textContent = '稳定视觉基线对话';
+    }
     const subtitle = document.getElementById('chat-conversation-subtitle');
     if (subtitle) {
       subtitle.textContent = '稳定视觉基线 · 会话工作流已就绪';

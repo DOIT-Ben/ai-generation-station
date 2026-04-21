@@ -108,6 +108,44 @@
     'voice-prompt': 'voice-char',
     'speech-text': 'speech-char'
   };
+  const WORKSPACE_ASSET_TARGETS = {
+    chat: {
+      inputId: 'chat-input',
+      actionLabel: '继续聊',
+      toast: '已插入聊天输入框',
+      buildText: content => `参考这段已摘录内容继续：\n${content}\n\n请基于这段内容继续展开。`
+    },
+    lyrics: {
+      inputId: 'lyrics-prompt',
+      actionLabel: '用于歌词',
+      toast: '已导入到歌词灵感',
+      buildText: content => `参考这段摘录，写成更完整的歌词：\n${content}`
+    },
+    music: {
+      inputId: 'music-prompt',
+      actionLabel: '用于音乐',
+      toast: '已导入到音乐描述',
+      buildText: content => `参考这段摘录，为我生成对应的音乐灵感与编曲描述：\n${content}`
+    },
+    cover: {
+      inputId: 'cover-prompt',
+      actionLabel: '用于封面',
+      toast: '已导入到封面描述',
+      buildText: content => `参考这段摘录，为我设计一张匹配气质的封面：\n${content}`
+    },
+    speech: {
+      inputId: 'speech-text',
+      actionLabel: '用于语音',
+      toast: '已导入到语音文本',
+      buildText: content => content
+    },
+    covervoice: {
+      inputId: 'voice-prompt',
+      actionLabel: '用于配音',
+      toast: '已导入到配音描述',
+      buildText: content => `参考这段摘录，帮我规划适合的翻唱或配音风格：\n${content}`
+    }
+  };
 
   const TRACKED_WORKSPACE_INPUT_IDS = new Set([
     'chat-input',
@@ -357,6 +395,10 @@
     return truncateText(String(text || '').replace(/\s+/g, ' ').trim(), 84);
   }
 
+  function getRecentChatAssets(limit = 3) {
+    return chatExcerptState.items.slice(0, Math.max(0, limit));
+  }
+
   function getChatExcerptByMessageId(messageId) {
     const targetId = String(messageId || '').trim();
     return chatExcerptState.items.find(item => item.messageId === targetId) || null;
@@ -373,6 +415,7 @@
     }
     if (options.render !== false) {
       renderChatExcerptShelf();
+      renderWorkspaceAssetStrip();
     }
   }
 
@@ -633,6 +676,7 @@
     }
 
     card.removeAttribute('hidden');
+    renderWorkspaceAssetStrip();
     updateChatComposerState();
   }
 
@@ -3261,6 +3305,28 @@
         setChatExcerptQuery('');
         return;
       }
+      const workspaceAssetApplyButton = event.target.closest('[data-workspace-asset-apply]');
+      if (workspaceAssetApplyButton) {
+        applyChatAssetToCurrentWorkspace(workspaceAssetApplyButton.dataset.workspaceAssetApply || '', workspaceAssetApplyButton);
+        return;
+      }
+      const workspaceAssetCopyButton = event.target.closest('[data-workspace-asset-copy]');
+      if (workspaceAssetCopyButton) {
+        copyChatExcerptItem(workspaceAssetCopyButton.dataset.workspaceAssetCopy || '', workspaceAssetCopyButton).catch(error => {
+          showToast(error.message || '资产复制失败，请重试。', 'error', 1600);
+        });
+        return;
+      }
+      const workspaceAssetJumpButton = event.target.closest('[data-workspace-asset-jump]');
+      if (workspaceAssetJumpButton) {
+        jumpToChatExcerpt(
+          workspaceAssetJumpButton.dataset.workspaceAssetJump || '',
+          workspaceAssetJumpButton.dataset.workspaceAssetConversation || ''
+        ).catch(error => {
+          showToast(error.message || '资产跳转失败，请重试。', 'error', 1600);
+        });
+        return;
+      }
       const clearRecentTemplatesButton = event.target.closest('[data-template-recent-clear]');
       if (clearRecentTemplatesButton) {
         clearRecentTemplates(clearRecentTemplatesButton.dataset.templateRecentClear);
@@ -4514,7 +4580,7 @@
     const excerpt = getChatExcerptByMessageId(messageId);
     const input = $('chat-input');
     if (!excerpt?.content || !input) return;
-    const addition = `参考这段已摘录内容继续：\n${excerpt.content}\n\n请基于这段内容继续展开。`;
+    const addition = WORKSPACE_ASSET_TARGETS.chat.buildText(excerpt.content);
     input.value = String(input.value || '').trim()
       ? `${String(input.value || '').trim()}\n\n${addition}`
       : addition;
@@ -4528,6 +4594,78 @@
     }
     flashButtonFeedback(triggerButton, '已插入', 1200, 'success');
     showToast('已插入输入框，可直接继续追问', 'success', 1400);
+  }
+
+  function getCurrentWorkspaceAssetConfig() {
+    return WORKSPACE_ASSET_TARGETS[currentTab] || WORKSPACE_ASSET_TARGETS.chat;
+  }
+
+  function appendTextToField(inputId, nextText) {
+    const input = $(inputId);
+    if (!input || nextText == null) return false;
+    const prepared = String(nextText || '').trim();
+    if (!prepared) return false;
+    input.value = String(input.value || '').trim()
+      ? `${String(input.value || '').trim()}\n\n${prepared}`
+      : prepared;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.focus();
+    const caretPosition = input.value.length;
+    if (typeof input.setSelectionRange === 'function') {
+      input.setSelectionRange(caretPosition, caretPosition);
+    }
+    if (inputId === 'chat-input') {
+      updateChatComposerState();
+    }
+    return true;
+  }
+
+  function applyChatAssetToCurrentWorkspace(messageId, triggerButton = null) {
+    const excerpt = getChatExcerptByMessageId(messageId);
+    if (!excerpt?.content) return;
+    const config = getCurrentWorkspaceAssetConfig();
+    const applied = appendTextToField(config.inputId, config.buildText(excerpt.content));
+    if (!applied) return;
+    renderWorkspaceResumeCard();
+    scheduleWorkspaceStateSave();
+    flashButtonFeedback(triggerButton, '已导入', 1200, 'success');
+    showToast(config.toast, 'success', 1400);
+  }
+
+  function renderWorkspaceAssetStrip() {
+    const strip = $('workspace-asset-strip');
+    const title = $('workspace-asset-title');
+    const summary = $('workspace-asset-summary');
+    const actions = $('workspace-asset-actions');
+    if (!strip || !title || !summary || !actions) return;
+
+    const items = currentUser ? getRecentChatAssets(3) : [];
+    if (!items.length) {
+      strip.setAttribute('hidden', '');
+      actions.innerHTML = '';
+      return;
+    }
+
+    const config = getCurrentWorkspaceAssetConfig();
+    const featureTitle = featureMeta[currentTab]?.title || '当前页';
+    title.textContent = `${featureTitle} 可直接复用最近摘录`;
+    summary.textContent = currentTab === 'chat'
+      ? '你刚摘录的内容会留在这里，方便继续展开或回到原消息。'
+      : `把聊天中留下的高价值内容快速导入到${featureTitle}，减少来回复制粘贴。`;
+    actions.innerHTML = items.map(item => `
+      <article class="workspace-asset-item">
+        <div class="workspace-asset-item-copy">
+          <strong>${escapeHtml(item.conversationTitle || '未命名对话')}</strong>
+          <span>${escapeHtml(item.preview || '暂无摘要')}</span>
+        </div>
+        <div class="workspace-asset-item-actions">
+          <button type="button" class="workspace-asset-btn tone-strong" data-workspace-asset-apply="${escapeHtml(item.messageId)}">${escapeHtml(config.actionLabel)}</button>
+          <button type="button" class="workspace-asset-btn" data-workspace-asset-copy="${escapeHtml(item.messageId)}">复制</button>
+          <button type="button" class="workspace-asset-btn" data-workspace-asset-jump="${escapeHtml(item.messageId)}" data-workspace-asset-conversation="${escapeHtml(item.conversationId)}">原文</button>
+        </div>
+      </article>
+    `).join('');
+    strip.removeAttribute('hidden');
   }
 
   function renderChatExcerptShelf() {
@@ -4618,6 +4756,9 @@
     const targetMessageId = String(messageId || '').trim();
     const targetConversationId = String(conversationId || '').trim();
     if (!targetMessageId) return;
+    if (currentTab !== 'chat') {
+      switchTab('chat');
+    }
     if (targetConversationId && targetConversationId !== String(conversationState.activeId || '').trim()) {
       const activeMatch = conversationState.list.some(item => item.id === targetConversationId);
       if (!activeMatch) {
