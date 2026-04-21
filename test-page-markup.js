@@ -87,6 +87,8 @@ function main() {
   assert.ok(appJs.includes('insertChatExcerptIntoComposer'), 'workspace should allow reusing excerpted content in composer');
   assert.ok(appJs.includes('renderWorkspaceAssetStrip'), 'workspace should render cross-page asset strip');
   assert.ok(appJs.includes('applyChatAssetToCurrentWorkspace'), 'workspace should apply chat assets to the current workspace');
+  assert.ok(appJs.includes('buildAssistantMessageCompactSummary'), 'workspace should build compact summaries for long assistant replies');
+  assert.ok(appJs.includes('toggleAssistantMessageCompact'), 'workspace should toggle long assistant reply compact mode');
   assert.ok(appJs.includes('retryTransientAssistantMessage'), 'workspace should expose retry actions for failed assistant replies');
   assert.ok(appJs.includes('data-chat-message-actions-toggle'), 'workspace should expose a compact assistant action toggle for version history');
   assert.ok(appJs.includes('stopChatGeneration'), 'workspace should expose stop-generation behavior');

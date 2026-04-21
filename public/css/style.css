@@ -2353,6 +2353,62 @@ input[type="range"]::-webkit-slider-thumb:active {
   word-break: break-word;
 }
 
+.message-body.is-compact {
+  position: relative;
+  max-height: 248px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 76%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 0%, #000 76%, transparent 100%);
+}
+
+.message-compact-summary {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(250, 204, 21, 0.14);
+  background:
+    linear-gradient(180deg, rgba(250, 204, 21, 0.08), rgba(255, 255, 255, 0.03)),
+    rgba(255, 255, 255, 0.03);
+}
+
+.message-compact-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.message-compact-copy strong {
+  color: var(--fg-primary);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.message-compact-copy span {
+  color: var(--fg-secondary);
+  font-size: 0.78rem;
+  line-height: 1.6;
+}
+
+.message-compact-headings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.message-compact-heading {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--fg-muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
 .message-body > * {
   margin: 0;
 }
@@ -2861,6 +2917,12 @@ input[type="range"]::-webkit-slider-thumb:active {
   background: rgba(36, 93, 255, 0.06);
   border-left-color: rgba(36, 93, 255, 0.32);
   color: var(--fg-secondary);
+}
+
+[data-theme="light"] .message-compact-summary,
+[data-theme="light"] .message-compact-heading {
+  border-color: rgba(24, 32, 51, 0.08);
+  background: rgba(255, 255, 255, 0.78);
 }
 
 [data-theme="light"] .chat-starter-card {
@@ -5350,6 +5412,20 @@ input[type="range"]::-webkit-slider-thumb:active {
   .message-body {
     gap: 12px;
     font-size: 0.9rem;
+  }
+
+  .message-body.is-compact {
+    max-height: 220px;
+  }
+
+  .message-compact-summary {
+    gap: 8px;
+    margin-bottom: 12px;
+    padding: 10px 12px;
+  }
+
+  .message-compact-headings {
+    gap: 6px;
   }
 
   .message-body h1 {

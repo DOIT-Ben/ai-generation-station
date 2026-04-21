@@ -399,6 +399,47 @@
     return chatExcerptState.items.slice(0, Math.max(0, limit));
   }
 
+  function stripChatMarkupForPreview(text) {
+    return String(text || '')
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/^#{1,3}\s+/gm, '')
+      .replace(/^[-*]\s+/gm, '')
+      .replace(/^\d+\.\s+/gm, '')
+      .replace(/^>\s?/gm, '')
+      .replace(/[*_~`>#-]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function isLongAssistantMessage(message) {
+    const content = String(message?.content || '').trim();
+    if (!content) return false;
+    const headingCount = (content.match(/^#{1,3}\s+/gm) || []).length;
+    const paragraphCount = content.split(/\n\s*\n/).filter(Boolean).length;
+    return content.length >= 520 || headingCount >= 2 || paragraphCount >= 5;
+  }
+
+  function buildAssistantMessageCompactSummary(message) {
+    const content = String(message?.content || '').trim();
+    if (!content) return null;
+    const headings = (content.match(/^#{1,3}\s+(.+)$/gm) || [])
+      .map(line => line.replace(/^#{1,3}\s+/, '').trim())
+      .filter(Boolean)
+      .slice(0, 3);
+    const plain = stripChatMarkupForPreview(content);
+    const preview = truncateText(plain, headings.length ? 96 : 132);
+    return {
+      preview,
+      headings
+    };
+  }
+
+  function isAssistantMessageCompact(message) {
+    if (!message?.id || !isLongAssistantMessage(message)) return false;
+    const uiState = getChatMessageUiState(message.id) || {};
+    return uiState.compactExpanded !== true;
+  }
+
   function getChatExcerptByMessageId(messageId) {
     const targetId = String(messageId || '').trim();
     return chatExcerptState.items.find(item => item.messageId === targetId) || null;
@@ -2894,6 +2935,15 @@
     syncChatMessageActionPanelDom(messageId, nextExpanded);
   }
 
+  function toggleAssistantMessageCompact(messageId) {
+    if (!messageId) return;
+    const currentState = getChatMessageUiState(messageId) || {};
+    setChatMessageUiState(messageId, {
+      compactExpanded: currentState.compactExpanded === true ? false : true,
+      renderNow: true
+    });
+  }
+
   function setChatRequestStatus(text = '', tone = 'info') {
     const statusEl = $('chat-request-status');
     if (!statusEl) return;
@@ -3148,6 +3198,11 @@
         toggleChatExcerpt(excerptMessageButton.dataset.chatExcerptId, excerptMessageButton).catch(error => {
           showToast(error.message || '摘录操作失败，请重试。', 'error', 1600);
         });
+        return;
+      }
+      const compactToggleButton = event.target.closest('[data-chat-compact-toggle]');
+      if (compactToggleButton) {
+        toggleAssistantMessageCompact(compactToggleButton.dataset.chatCompactToggle || '');
         return;
       }
       const rewriteMessageButton = event.target.closest('[data-chat-rewrite-id]');
@@ -4819,6 +4874,8 @@
     const canRetry = Boolean(message.transient && message.retryPayload);
     const isExcerpted = isMessageExcerpted(message.id);
     const isExpanded = Boolean(getChatMessageUiState(message.id)?.actionsExpanded);
+    const canCompact = isLongAssistantMessage(message);
+    const isCompact = isAssistantMessageCompact(message);
     const versionSummary = versionCount > 1
       ? `当前第 ${activeVersionIndex} 版，共 ${versionCount} 版，可随时切回上一版。`
       : '';
@@ -4828,6 +4885,7 @@
         <div class="message-actions-head">
           ${status ? `<div class="message-status-row"><span class="message-status-badge tone-${escapeHtml(status.tone)}">${escapeHtml(status.label)}</span></div>` : '<span class="message-status-spacer" aria-hidden="true"></span>'}
           <div class="message-actions-row">
+            ${canCompact ? `<button class="message-action-btn tone-secondary" type="button" data-chat-compact-toggle="${escapeHtml(message.id)}">${isCompact ? '展开全文' : '收起长文'}</button>` : ''}
             ${canCopy ? `<button class="message-action-btn" type="button" data-chat-copy-id="${escapeHtml(message.id)}">复制全文</button>` : ''}
             ${canCopy ? `<button class="message-action-btn${isExcerpted ? ' tone-secondary' : ''}" type="button" data-chat-excerpt-id="${escapeHtml(message.id)}">${isExcerpted ? '取消摘录' : '加入摘录'}</button>` : ''}
             ${!message.transient ? `<button class="message-action-btn" type="button" data-chat-rewrite-id="${escapeHtml(message.id)}">换个版本</button>` : ''}
@@ -4932,7 +4990,24 @@
     const formattedContent = settings.rawHtml || formatChatMessageHtml(content);
     const actionsHtml = role === 'chatbot' ? buildChatAssistantActions(messageData) : '';
     const metaHtml = settings.rawHtml ? '' : buildChatMessageMeta(messageData, role, settings);
-    msgDiv.innerHTML = `<div class="message-avatar">${avatar}</div><div class="${contentClassName}">${metaHtml}<div class="${bodyClassName}">${formattedContent}</div>${actionsHtml}</div>`;
+    const compactSummary = role === 'chatbot' && messageData && isAssistantMessageCompact(messageData)
+      ? buildAssistantMessageCompactSummary(messageData)
+      : null;
+    const compactSummaryHtml = compactSummary ? `
+      <div class="message-compact-summary">
+        <div class="message-compact-copy">
+          <strong>速览</strong>
+          <span>${escapeHtml(compactSummary.preview || '这条回复较长，建议先看重点再展开全文。')}</span>
+        </div>
+        ${compactSummary.headings.length ? `
+          <div class="message-compact-headings">
+            ${compactSummary.headings.map((heading, index) => `<span class="message-compact-heading">${index + 1}. ${escapeHtml(heading)}</span>`).join('')}
+          </div>
+        ` : ''}
+      </div>
+    ` : '';
+    const compactBodyClass = compactSummary ? `${bodyClassName} is-compact` : bodyClassName;
+    msgDiv.innerHTML = `<div class="message-avatar">${avatar}</div><div class="${contentClassName}">${metaHtml}${compactSummaryHtml}<div class="${compactBodyClass}">${formattedContent}</div>${actionsHtml}</div>`;
     annotateChatMessageHeadings(msgDiv, messageId);
     insertChatMessageNode(container, msgDiv, settings.insertAfterMessageId || '');
     followChatToBottom(settings.forceFollow !== false);
