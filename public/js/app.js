@@ -293,13 +293,17 @@
 
   function createDefaultChatExcerptState() {
     return {
-      items: []
+      items: [],
+      expanded: false,
+      filter: 'current',
+      query: ''
     };
   }
 
   function normalizeChatExcerptState(rawState) {
     const raw = rawState && typeof rawState === 'object' ? rawState : {};
     const items = Array.isArray(raw.items) ? raw.items : [];
+    const filter = raw.filter === 'all' ? 'all' : 'current';
     return {
       items: items
         .filter(item => item && typeof item === 'object' && item.id && item.messageId)
@@ -308,10 +312,14 @@
           messageId: String(item.messageId),
           conversationId: String(item.conversationId || ''),
           conversationTitle: String(item.conversationTitle || ''),
+          content: String(item.content || ''),
           preview: String(item.preview || ''),
           createdAt: Number(item.createdAt || 0)
         }))
-        .sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0))
+        .sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0)),
+      expanded: Boolean(raw.expanded),
+      filter,
+      query: truncateText(String(raw.query || '').replace(/\s+/g, ' ').trim(), 48)
     };
   }
 
@@ -354,18 +362,46 @@
     return chatExcerptState.items.find(item => item.messageId === targetId) || null;
   }
 
+  function updateChatExcerptState(patch = {}, options = {}) {
+    chatExcerptState = normalizeChatExcerptState({
+      ...chatExcerptState,
+      ...patch,
+      items: patch.items ?? chatExcerptState.items
+    });
+    if (options.persist !== false) {
+      persistChatExcerptState();
+    }
+    if (options.render !== false) {
+      renderChatExcerptShelf();
+    }
+  }
+
+  function setChatExcerptExpanded(nextExpanded) {
+    updateChatExcerptState({
+      expanded: Boolean(nextExpanded),
+      query: nextExpanded ? chatExcerptState.query : ''
+    });
+  }
+
+  function setChatExcerptFilterMode(nextFilter) {
+    updateChatExcerptState({ filter: nextFilter === 'all' ? 'all' : 'current' });
+  }
+
+  function setChatExcerptQuery(nextQuery, options = {}) {
+    updateChatExcerptState(
+      { query: String(nextQuery || '').replace(/\s+/g, ' ').trim() },
+      options
+    );
+  }
+
   function removeChatExcerpt(messageId, options = {}) {
     const targetId = String(messageId || '').trim();
     if (!targetId) return false;
     const exists = isMessageExcerpted(targetId);
     if (!exists) return false;
-    chatExcerptState = {
+    updateChatExcerptState({
       items: chatExcerptState.items.filter(item => item.messageId !== targetId)
-    };
-    if (options.persist !== false) {
-      persistChatExcerptState();
-      renderChatExcerptShelf();
-    }
+    }, options);
     return true;
   }
 
@@ -377,14 +413,13 @@
       messageId: String(message.id),
       conversationId: String(activeConversation?.id || conversationState.activeId || ''),
       conversationTitle: getConversationTitlePreview(activeConversation),
+      content: String(message.content || '').trim(),
       preview: buildChatExcerptPreview(message.content),
       createdAt: Date.now()
     };
-    chatExcerptState = {
+    updateChatExcerptState({
       items: [excerpt].concat(chatExcerptState.items.filter(item => item.messageId !== excerpt.messageId)).slice(0, 24)
-    };
-    persistChatExcerptState();
-    renderChatExcerptShelf();
+    });
     return excerpt;
   }
 
@@ -3181,6 +3216,18 @@
         });
         return;
       }
+      const excerptCopyButton = event.target.closest('[data-chat-excerpt-copy]');
+      if (excerptCopyButton) {
+        copyChatExcerptItem(excerptCopyButton.dataset.chatExcerptCopy || '', excerptCopyButton).catch(error => {
+          showToast(error.message || '摘录复制失败，请重试。', 'error', 1600);
+        });
+        return;
+      }
+      const excerptInsertButton = event.target.closest('[data-chat-excerpt-insert]');
+      if (excerptInsertButton) {
+        insertChatExcerptIntoComposer(excerptInsertButton.dataset.chatExcerptInsert || '', excerptInsertButton);
+        return;
+      }
       const excerptRemoveButton = event.target.closest('[data-chat-excerpt-remove]');
       if (excerptRemoveButton) {
         const removed = removeChatExcerpt(excerptRemoveButton.dataset.chatExcerptRemove || '');
@@ -3190,6 +3237,28 @@
             restoreChatMessages(conversationState.messages, { forceFollow: false });
           }
         }
+        return;
+      }
+      const excerptFilterButton = event.target.closest('[data-chat-excerpt-filter]');
+      if (excerptFilterButton) {
+        setChatExcerptFilterMode(excerptFilterButton.dataset.chatExcerptFilter || 'current');
+        return;
+      }
+      const excerptToggleButton = event.target.closest('#btn-chat-excerpt-toggle-panel');
+      if (excerptToggleButton) {
+        setChatExcerptExpanded(!chatExcerptState.expanded);
+        return;
+      }
+      const excerptCopyVisibleButton = event.target.closest('#btn-chat-excerpt-copy-visible');
+      if (excerptCopyVisibleButton) {
+        copyChatExcerptBundle(excerptCopyVisibleButton).catch(error => {
+          showToast(error.message || '摘录列表复制失败，请重试。', 'error', 1600);
+        });
+        return;
+      }
+      const excerptSearchClearButton = event.target.closest('[data-chat-excerpt-search-clear], #btn-chat-excerpt-search-clear');
+      if (excerptSearchClearButton) {
+        setChatExcerptQuery('');
         return;
       }
       const clearRecentTemplatesButton = event.target.closest('[data-template-recent-clear]');
@@ -3227,6 +3296,11 @@
       const searchInput = event.target.closest?.('#chat-conversation-search');
       if (searchInput) {
         updateConversationSearch(searchInput.value, { syncInput: false });
+        return;
+      }
+      const excerptSearchInput = event.target.closest?.('#chat-excerpt-search');
+      if (excerptSearchInput) {
+        setChatExcerptQuery(excerptSearchInput.value);
         return;
       }
 
@@ -4371,40 +4445,172 @@
   }
 
   function getVisibleChatExcerpts() {
+    return getFilteredChatExcerpts({
+      limit: chatExcerptState.expanded ? 24 : 3,
+      fallbackToAll: !chatExcerptState.expanded
+    });
+  }
+
+  function matchesChatExcerptQuery(item, query) {
+    const normalizedQuery = String(query || '').trim().toLowerCase();
+    if (!normalizedQuery) return true;
+    const terms = normalizedQuery.split(/\s+/).filter(Boolean);
+    if (!terms.length) return true;
+    const haystack = [
+      item.conversationTitle,
+      item.preview,
+      item.content
+    ].join(' ').toLowerCase();
+    return terms.every(term => haystack.includes(term));
+  }
+
+  function getFilteredChatExcerpts(options = {}) {
+    const { limit = 24, fallbackToAll = false } = options;
     const activeConversationId = String(conversationState.activeId || '').trim();
-    const currentItems = chatExcerptState.items.filter(item => item.conversationId === activeConversationId);
-    if (currentItems.length) return currentItems.slice(0, 6);
-    return chatExcerptState.items.slice(0, 6);
+    const requestedFilter = chatExcerptState.filter === 'all' ? 'all' : 'current';
+    const query = String(chatExcerptState.query || '').trim();
+    let filtered = chatExcerptState.items;
+
+    if (requestedFilter === 'current') {
+      filtered = activeConversationId
+        ? filtered.filter(item => item.conversationId === activeConversationId)
+        : [];
+      if (!filtered.length && fallbackToAll) {
+        filtered = chatExcerptState.items;
+      }
+    }
+
+    filtered = filtered.filter(item => matchesChatExcerptQuery(item, query));
+    return filtered.slice(0, limit);
+  }
+
+  function buildChatExcerptBundle(items = []) {
+    return items.map((item, index) => [
+      `${index + 1}. ${item.conversationTitle || '未命名对话'}`,
+      item.content || item.preview || ''
+    ].filter(Boolean).join('\n')).join('\n\n');
+  }
+
+  async function copyChatExcerptBundle(triggerButton = null) {
+    const items = getFilteredChatExcerpts({
+      limit: chatExcerptState.expanded ? 24 : 3,
+      fallbackToAll: !chatExcerptState.expanded
+    });
+    if (!items.length) return;
+    await navigator.clipboard.writeText(buildChatExcerptBundle(items));
+    flashButtonFeedback(triggerButton, '已复制');
+    showToast('已复制当前摘录列表', 'success', 1200);
+  }
+
+  async function copyChatExcerptItem(messageId, triggerButton = null) {
+    const excerpt = getChatExcerptByMessageId(messageId);
+    if (!excerpt?.content) return;
+    await navigator.clipboard.writeText(excerpt.content);
+    flashButtonFeedback(triggerButton, '已复制');
+    showToast('已复制摘录内容', 'success', 1200);
+  }
+
+  function insertChatExcerptIntoComposer(messageId, triggerButton = null) {
+    const excerpt = getChatExcerptByMessageId(messageId);
+    const input = $('chat-input');
+    if (!excerpt?.content || !input) return;
+    const addition = `参考这段已摘录内容继续：\n${excerpt.content}\n\n请基于这段内容继续展开。`;
+    input.value = String(input.value || '').trim()
+      ? `${String(input.value || '').trim()}\n\n${addition}`
+      : addition;
+    renderWorkspaceResumeCard();
+    updateChatComposerState();
+    scheduleWorkspaceStateSave();
+    input.focus();
+    const caretPosition = input.value.length;
+    if (typeof input.setSelectionRange === 'function') {
+      input.setSelectionRange(caretPosition, caretPosition);
+    }
+    flashButtonFeedback(triggerButton, '已插入', 1200, 'success');
+    showToast('已插入输入框，可直接继续追问', 'success', 1400);
   }
 
   function renderChatExcerptShelf() {
     const shelf = $('chat-excerpt-shelf');
     const summary = $('chat-excerpt-summary');
+    const presets = $('chat-excerpt-presets');
+    const toggleButton = $('btn-chat-excerpt-toggle-panel');
+    const copyVisibleButton = $('btn-chat-excerpt-copy-visible');
+    const manager = $('chat-excerpt-manager');
+    const searchInput = $('chat-excerpt-search');
+    const resultsMeta = $('chat-excerpt-results-meta');
     const actions = $('chat-excerpt-actions');
-    if (!shelf || !summary || !actions) return;
+    if (!shelf || !summary || !actions || !presets || !toggleButton || !copyVisibleButton || !manager || !searchInput || !resultsMeta) return;
 
     if (!currentUser || !chatExcerptState.items.length) {
       shelf.setAttribute('hidden', '');
       summary.textContent = '把值得保留的回复留在这里，方便稍后回看。';
       actions.innerHTML = '';
+      presets.innerHTML = '';
+      resultsMeta.textContent = '';
+      searchInput.value = '';
       return;
     }
 
     const visibleItems = getVisibleChatExcerpts();
     const activeConversationId = String(conversationState.activeId || '').trim();
     const currentCount = chatExcerptState.items.filter(item => item.conversationId === activeConversationId).length;
-    summary.textContent = currentCount > 0
-      ? `当前对话已摘录 ${currentCount} 条，点一下可以快速跳回原消息。`
-      : `你一共摘录了 ${chatExcerptState.items.length} 条消息，这里先显示最近保留的内容。`;
-    actions.innerHTML = visibleItems.map(item => `
+    const filteredCount = getFilteredChatExcerpts({ limit: 24, fallbackToAll: false }).length;
+    const usingFallbackItems = !chatExcerptState.expanded
+      && chatExcerptState.filter === 'current'
+      && !currentCount
+      && visibleItems.length > 0;
+    summary.textContent = chatExcerptState.expanded
+      ? (
+        filteredCount > 0
+          ? `已筛出 ${filteredCount} 条摘录。你可以搜索、复制、回填到输入框，或跳回原消息。`
+          : '没有找到匹配的摘录，试试切到全部或清空搜索。'
+      )
+      : (currentCount > 0
+        ? `当前对话已摘录 ${currentCount} 条，展开后可统一管理与复用。`
+        : `你一共摘录了 ${chatExcerptState.items.length} 条消息，展开后可搜索、复制和继续追问。`);
+    presets.innerHTML = `
+      <button type="button" class="chat-excerpt-preset${chatExcerptState.filter === 'current' ? ' is-active' : ''}" data-chat-excerpt-filter="current">当前对话${currentCount ? ` · ${currentCount}` : ''}</button>
+      <button type="button" class="chat-excerpt-preset${chatExcerptState.filter === 'all' ? ' is-active' : ''}" data-chat-excerpt-filter="all">全部摘录 · ${chatExcerptState.items.length}</button>
+    `;
+    toggleButton.textContent = chatExcerptState.expanded ? '收起管理' : '展开管理';
+    toggleButton.setAttribute('aria-expanded', chatExcerptState.expanded ? 'true' : 'false');
+    manager.toggleAttribute('hidden', !chatExcerptState.expanded);
+    searchInput.value = chatExcerptState.query || '';
+    resultsMeta.textContent = chatExcerptState.expanded
+      ? (
+        usingFallbackItems
+          ? '当前对话暂无摘录，折叠态已回退展示最近摘录。'
+          : `当前显示 ${visibleItems.length} / ${filteredCount} 条`
+      )
+      : (usingFallbackItems ? '当前对话还没有摘录，先为你显示最近保留的内容。' : '');
+    copyVisibleButton.disabled = !visibleItems.length;
+    actions.innerHTML = visibleItems.length ? visibleItems.map(item => `
       <article class="chat-excerpt-item">
-        <button type="button" class="chat-excerpt-jump" data-chat-excerpt-jump="${escapeHtml(item.messageId)}" data-chat-excerpt-conversation-id="${escapeHtml(item.conversationId)}">
-          <strong>${escapeHtml(item.conversationTitle || '未命名对话')}</strong>
-          <span>${escapeHtml(item.preview)}</span>
-        </button>
-        <button type="button" class="chat-excerpt-remove" data-chat-excerpt-remove="${escapeHtml(item.messageId)}">移除</button>
+        <div class="chat-excerpt-item-head">
+          <div class="chat-excerpt-item-copy">
+            <strong>${escapeHtml(item.conversationTitle || '未命名对话')}</strong>
+            <span>${escapeHtml(formatChatRelativeTime(item.createdAt) || '刚刚摘录')}</span>
+          </div>
+        </div>
+        <p class="chat-excerpt-preview">${escapeHtml(item.preview)}</p>
+        <div class="chat-excerpt-item-actions">
+          <button type="button" class="chat-excerpt-item-btn" data-chat-excerpt-jump="${escapeHtml(item.messageId)}" data-chat-excerpt-conversation-id="${escapeHtml(item.conversationId)}">跳回原文</button>
+          <button type="button" class="chat-excerpt-item-btn" data-chat-excerpt-copy="${escapeHtml(item.messageId)}">复制</button>
+          <button type="button" class="chat-excerpt-item-btn tone-secondary" data-chat-excerpt-insert="${escapeHtml(item.messageId)}">继续聊</button>
+          <button type="button" class="chat-excerpt-item-btn tone-danger" data-chat-excerpt-remove="${escapeHtml(item.messageId)}">移除</button>
+        </div>
       </article>
-    `).join('');
+    `).join('') : `
+      <div class="chat-excerpt-empty">
+        <strong>当前条件下还没有可展示的摘录</strong>
+        <span>你可以切到“全部摘录”，或先从回复里加入新的摘录。</span>
+        <div class="chat-excerpt-empty-actions">
+          <button type="button" class="chat-excerpt-item-btn" data-chat-excerpt-filter="all">查看全部摘录</button>
+          <button type="button" class="chat-excerpt-item-btn" data-chat-excerpt-search-clear="true">清空搜索</button>
+        </div>
+      </div>
+    `;
     shelf.removeAttribute('hidden');
   }
 
