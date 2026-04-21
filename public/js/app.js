@@ -341,7 +341,7 @@
   function normalizeChatExcerptState(rawState) {
     const raw = rawState && typeof rawState === 'object' ? rawState : {};
     const items = Array.isArray(raw.items) ? raw.items : [];
-    const filter = raw.filter === 'all' ? 'all' : 'current';
+    const filter = ['current', 'all', 'archived'].includes(raw.filter) ? raw.filter : 'current';
     return {
       items: items
         .filter(item => item && typeof item === 'object' && item.id && item.messageId)
@@ -352,7 +352,8 @@
           conversationTitle: String(item.conversationTitle || ''),
           content: String(item.content || ''),
           preview: String(item.preview || ''),
-          createdAt: Number(item.createdAt || 0)
+          createdAt: Number(item.createdAt || 0),
+          archivedAt: Number(item.archivedAt || 0)
         }))
         .sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0)),
       expanded: Boolean(raw.expanded),
@@ -396,7 +397,7 @@
   }
 
   function getRecentChatAssets(limit = 3) {
-    return chatExcerptState.items.slice(0, Math.max(0, limit));
+    return chatExcerptState.items.filter(item => !item.archivedAt).slice(0, Math.max(0, limit));
   }
 
   function stripChatMarkupForPreview(text) {
@@ -445,6 +446,10 @@
     return chatExcerptState.items.find(item => item.messageId === targetId) || null;
   }
 
+  function isChatExcerptArchived(messageId) {
+    return Boolean(getChatExcerptByMessageId(messageId)?.archivedAt);
+  }
+
   function updateChatExcerptState(patch = {}, options = {}) {
     chatExcerptState = normalizeChatExcerptState({
       ...chatExcerptState,
@@ -489,6 +494,44 @@
     return true;
   }
 
+  function setChatExcerptArchived(messageId, nextArchived = true, options = {}) {
+    const targetId = String(messageId || '').trim();
+    if (!targetId) return false;
+    const item = getChatExcerptByMessageId(targetId);
+    if (!item) return false;
+    updateChatExcerptState({
+      items: chatExcerptState.items.map(entry => entry.messageId === targetId
+        ? {
+          ...entry,
+          archivedAt: nextArchived ? Date.now() : 0
+        }
+        : entry)
+    }, options);
+    return true;
+  }
+
+  function archiveVisibleChatExcerpts() {
+    const visibleIds = getFilteredChatExcerpts({ limit: 24, fallbackToAll: false })
+      .filter(item => !item.archivedAt)
+      .map(item => item.messageId);
+    if (!visibleIds.length) return 0;
+    updateChatExcerptState({
+      items: chatExcerptState.items.map(item => visibleIds.includes(item.messageId)
+        ? { ...item, archivedAt: item.archivedAt || Date.now() }
+        : item)
+    });
+    return visibleIds.length;
+  }
+
+  function clearArchivedChatExcerpts() {
+    const archivedCount = chatExcerptState.items.filter(item => item.archivedAt).length;
+    if (!archivedCount) return 0;
+    updateChatExcerptState({
+      items: chatExcerptState.items.filter(item => !item.archivedAt)
+    });
+    return archivedCount;
+  }
+
   function saveChatExcerpt(message) {
     if (!message?.id || !message?.content) return null;
     const activeConversation = getActiveConversation();
@@ -499,7 +542,8 @@
       conversationTitle: getConversationTitlePreview(activeConversation),
       content: String(message.content || '').trim(),
       preview: buildChatExcerptPreview(message.content),
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      archivedAt: 0
     };
     updateChatExcerptState({
       items: [excerpt].concat(chatExcerptState.items.filter(item => item.messageId !== excerpt.messageId)).slice(0, 24)
@@ -3327,6 +3371,19 @@
         insertChatExcerptIntoComposer(excerptInsertButton.dataset.chatExcerptInsert || '', excerptInsertButton);
         return;
       }
+      const excerptArchiveButton = event.target.closest('[data-chat-excerpt-archive]');
+      if (excerptArchiveButton) {
+        const targetId = excerptArchiveButton.dataset.chatExcerptArchive || '';
+        const nextArchived = !isChatExcerptArchived(targetId);
+        const updated = setChatExcerptArchived(targetId, nextArchived);
+        if (updated) {
+          showToast(nextArchived ? '已归档到资产库' : '已恢复到活跃资产', 'success', 1400);
+          if (conversationState.activeId) {
+            restoreChatMessages(conversationState.messages, { forceFollow: false });
+          }
+        }
+        return;
+      }
       const excerptRemoveButton = event.target.closest('[data-chat-excerpt-remove]');
       if (excerptRemoveButton) {
         const removed = removeChatExcerpt(excerptRemoveButton.dataset.chatExcerptRemove || '');
@@ -3355,9 +3412,25 @@
         });
         return;
       }
+      const excerptArchiveVisibleButton = event.target.closest('#btn-chat-excerpt-archive-visible');
+      if (excerptArchiveVisibleButton) {
+        const archived = archiveVisibleChatExcerpts();
+        if (archived > 0) {
+          showToast(`已归档 ${archived} 条资产`, 'success', 1400);
+        }
+        return;
+      }
       const excerptSearchClearButton = event.target.closest('[data-chat-excerpt-search-clear], #btn-chat-excerpt-search-clear');
       if (excerptSearchClearButton) {
         setChatExcerptQuery('');
+        return;
+      }
+      const excerptClearArchivedButton = event.target.closest('#btn-chat-excerpt-clear-archived');
+      if (excerptClearArchivedButton) {
+        const cleared = clearArchivedChatExcerpts();
+        if (cleared > 0) {
+          showToast(`已清空 ${cleared} 条归档资产`, 'success', 1400);
+        }
         return;
       }
       const workspaceAssetApplyButton = event.target.closest('[data-workspace-asset-apply]');
@@ -4588,17 +4661,21 @@
   function getFilteredChatExcerpts(options = {}) {
     const { limit = 24, fallbackToAll = false } = options;
     const activeConversationId = String(conversationState.activeId || '').trim();
-    const requestedFilter = chatExcerptState.filter === 'all' ? 'all' : 'current';
+    const requestedFilter = ['current', 'all', 'archived'].includes(chatExcerptState.filter) ? chatExcerptState.filter : 'current';
     const query = String(chatExcerptState.query || '').trim();
     let filtered = chatExcerptState.items;
 
-    if (requestedFilter === 'current') {
+    if (requestedFilter === 'archived') {
+      filtered = filtered.filter(item => item.archivedAt);
+    } else if (requestedFilter === 'current') {
       filtered = activeConversationId
-        ? filtered.filter(item => item.conversationId === activeConversationId)
+        ? filtered.filter(item => item.conversationId === activeConversationId && !item.archivedAt)
         : [];
       if (!filtered.length && fallbackToAll) {
-        filtered = chatExcerptState.items;
+        filtered = chatExcerptState.items.filter(item => !item.archivedAt);
       }
+    } else if (requestedFilter === 'all') {
+      filtered = filtered.slice();
     }
 
     filtered = filtered.filter(item => matchesChatExcerptQuery(item, query));
@@ -4703,7 +4780,7 @@
 
     const config = getCurrentWorkspaceAssetConfig();
     const featureTitle = featureMeta[currentTab]?.title || '当前页';
-    title.textContent = `${featureTitle} 可直接复用最近摘录`;
+    title.textContent = `${featureTitle} 可直接复用最近资产`;
     summary.textContent = currentTab === 'chat'
       ? '你刚摘录的内容会留在这里，方便继续展开或回到原消息。'
       : `把聊天中留下的高价值内容快速导入到${featureTitle}，减少来回复制粘贴。`;
@@ -4729,11 +4806,13 @@
     const presets = $('chat-excerpt-presets');
     const toggleButton = $('btn-chat-excerpt-toggle-panel');
     const copyVisibleButton = $('btn-chat-excerpt-copy-visible');
+    const archiveVisibleButton = $('btn-chat-excerpt-archive-visible');
     const manager = $('chat-excerpt-manager');
     const searchInput = $('chat-excerpt-search');
+    const clearArchivedButton = $('btn-chat-excerpt-clear-archived');
     const resultsMeta = $('chat-excerpt-results-meta');
     const actions = $('chat-excerpt-actions');
-    if (!shelf || !summary || !actions || !presets || !toggleButton || !copyVisibleButton || !manager || !searchInput || !resultsMeta) return;
+    if (!shelf || !summary || !actions || !presets || !toggleButton || !copyVisibleButton || !archiveVisibleButton || !manager || !searchInput || !clearArchivedButton || !resultsMeta) return;
 
     if (!currentUser || !chatExcerptState.items.length) {
       shelf.setAttribute('hidden', '');
@@ -4747,7 +4826,9 @@
 
     const visibleItems = getVisibleChatExcerpts();
     const activeConversationId = String(conversationState.activeId || '').trim();
-    const currentCount = chatExcerptState.items.filter(item => item.conversationId === activeConversationId).length;
+    const currentCount = chatExcerptState.items.filter(item => item.conversationId === activeConversationId && !item.archivedAt).length;
+    const archivedCount = chatExcerptState.items.filter(item => item.archivedAt).length;
+    const activeCount = chatExcerptState.items.length - archivedCount;
     const filteredCount = getFilteredChatExcerpts({ limit: 24, fallbackToAll: false }).length;
     const usingFallbackItems = !chatExcerptState.expanded
       && chatExcerptState.filter === 'current'
@@ -4761,29 +4842,32 @@
       )
       : (currentCount > 0
         ? `当前对话已摘录 ${currentCount} 条，展开后可统一管理与复用。`
-        : `你一共摘录了 ${chatExcerptState.items.length} 条消息，展开后可搜索、复制和继续追问。`);
+        : `你当前有 ${activeCount} 条活跃资产，另有 ${archivedCount} 条已归档。`);
     presets.innerHTML = `
       <button type="button" class="chat-excerpt-preset${chatExcerptState.filter === 'current' ? ' is-active' : ''}" data-chat-excerpt-filter="current">当前对话${currentCount ? ` · ${currentCount}` : ''}</button>
-      <button type="button" class="chat-excerpt-preset${chatExcerptState.filter === 'all' ? ' is-active' : ''}" data-chat-excerpt-filter="all">全部摘录 · ${chatExcerptState.items.length}</button>
+      <button type="button" class="chat-excerpt-preset${chatExcerptState.filter === 'all' ? ' is-active' : ''}" data-chat-excerpt-filter="all">全部 · ${chatExcerptState.items.length}</button>
+      <button type="button" class="chat-excerpt-preset${chatExcerptState.filter === 'archived' ? ' is-active' : ''}" data-chat-excerpt-filter="archived">已归档 · ${archivedCount}</button>
     `;
     toggleButton.textContent = chatExcerptState.expanded ? '收起管理' : '展开管理';
     toggleButton.setAttribute('aria-expanded', chatExcerptState.expanded ? 'true' : 'false');
     manager.toggleAttribute('hidden', !chatExcerptState.expanded);
     searchInput.value = chatExcerptState.query || '';
+    archiveVisibleButton.disabled = !visibleItems.some(item => !item.archivedAt);
+    clearArchivedButton.disabled = archivedCount === 0;
     resultsMeta.textContent = chatExcerptState.expanded
       ? (
         usingFallbackItems
           ? '当前对话暂无摘录，折叠态已回退展示最近摘录。'
-          : `当前显示 ${visibleItems.length} / ${filteredCount} 条`
+          : `当前显示 ${visibleItems.length} / ${filteredCount} 条 · 活跃 ${activeCount} · 已归档 ${archivedCount}`
       )
       : (usingFallbackItems ? '当前对话还没有摘录，先为你显示最近保留的内容。' : '');
     copyVisibleButton.disabled = !visibleItems.length;
     actions.innerHTML = visibleItems.length ? visibleItems.map(item => `
-      <article class="chat-excerpt-item">
+      <article class="chat-excerpt-item${item.archivedAt ? ' is-archived' : ''}">
         <div class="chat-excerpt-item-head">
           <div class="chat-excerpt-item-copy">
             <strong>${escapeHtml(item.conversationTitle || '未命名对话')}</strong>
-            <span>${escapeHtml(formatChatRelativeTime(item.createdAt) || '刚刚摘录')}</span>
+            <span>${escapeHtml(item.archivedAt ? `已归档 · ${formatChatRelativeTime(item.archivedAt) || '刚刚'}` : (formatChatRelativeTime(item.createdAt) || '刚刚摘录'))}</span>
           </div>
         </div>
         <p class="chat-excerpt-preview">${escapeHtml(item.preview)}</p>
@@ -4791,6 +4875,7 @@
           <button type="button" class="chat-excerpt-item-btn" data-chat-excerpt-jump="${escapeHtml(item.messageId)}" data-chat-excerpt-conversation-id="${escapeHtml(item.conversationId)}">跳回原文</button>
           <button type="button" class="chat-excerpt-item-btn" data-chat-excerpt-copy="${escapeHtml(item.messageId)}">复制</button>
           <button type="button" class="chat-excerpt-item-btn tone-secondary" data-chat-excerpt-insert="${escapeHtml(item.messageId)}">继续聊</button>
+          <button type="button" class="chat-excerpt-item-btn" data-chat-excerpt-archive="${escapeHtml(item.messageId)}">${item.archivedAt ? '恢复' : '归档'}</button>
           <button type="button" class="chat-excerpt-item-btn tone-danger" data-chat-excerpt-remove="${escapeHtml(item.messageId)}">移除</button>
         </div>
       </article>

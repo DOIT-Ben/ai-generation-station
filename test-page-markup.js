@@ -36,6 +36,8 @@ function main() {
   assert.ok(html.includes('id="chat-excerpt-search"'), 'index should contain chat excerpt search input');
   assert.ok(html.includes('id="btn-chat-excerpt-toggle-panel"'), 'index should contain chat excerpt panel toggle');
   assert.ok(html.includes('id="workspace-asset-strip"'), 'index should contain workspace asset strip');
+  assert.ok(html.includes('id="btn-chat-excerpt-archive-visible"'), 'index should contain bulk archive action for excerpts');
+  assert.ok(html.includes('id="btn-chat-excerpt-clear-archived"'), 'index should contain clear archived excerpts action');
   assert.ok(html.includes('id="btn-quota-toggle"'), 'index should contain nav quota collapse toggle');
   assert.ok(html.includes('id="quota-summary"'), 'index should contain nav quota summary line');
   assert.ok(html.includes('id="btn-chat-new-conversation"'), 'index should contain new conversation button');
@@ -89,6 +91,8 @@ function main() {
   assert.ok(appJs.includes('applyChatAssetToCurrentWorkspace'), 'workspace should apply chat assets to the current workspace');
   assert.ok(appJs.includes('buildAssistantMessageCompactSummary'), 'workspace should build compact summaries for long assistant replies');
   assert.ok(appJs.includes('toggleAssistantMessageCompact'), 'workspace should toggle long assistant reply compact mode');
+  assert.ok(appJs.includes('setChatExcerptArchived'), 'workspace should support archiving chat excerpts');
+  assert.ok(appJs.includes('clearArchivedChatExcerpts'), 'workspace should support clearing archived chat excerpts');
   assert.ok(appJs.includes('retryTransientAssistantMessage'), 'workspace should expose retry actions for failed assistant replies');
   assert.ok(appJs.includes('data-chat-message-actions-toggle'), 'workspace should expose a compact assistant action toggle for version history');
   assert.ok(appJs.includes('stopChatGeneration'), 'workspace should expose stop-generation behavior');

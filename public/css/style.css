@@ -3939,6 +3939,10 @@ input[type="range"]::-webkit-slider-thumb:active {
   background: rgba(255, 255, 255, 0.72);
 }
 
+[data-theme="light"] .chat-excerpt-item.is-archived {
+  background: rgba(251, 247, 240, 0.9);
+}
+
 [data-theme="light"] .chat-conversation-pill.is-current {
   background: rgba(36, 93, 255, 0.14);
   color: #2142a6;
@@ -4336,6 +4340,12 @@ input[type="range"]::-webkit-slider-thumb:active {
   gap: 8px;
 }
 
+.chat-excerpt-manager-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .chat-excerpt-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -4425,6 +4435,12 @@ input[type="range"]::-webkit-slider-thumb:active {
   border-radius: 18px;
   border: 1px solid rgba(255, 255, 255, 0.06);
   background: rgba(255, 255, 255, 0.03);
+}
+
+.chat-excerpt-item.is-archived {
+  border-style: dashed;
+  opacity: 0.84;
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .chat-excerpt-item-head {
@@ -5327,6 +5343,7 @@ input[type="range"]::-webkit-slider-thumb:active {
 
   .chat-excerpt-toolbar-actions,
   .chat-excerpt-presets,
+  .chat-excerpt-manager-actions,
   .chat-excerpt-item-actions,
   .chat-excerpt-empty-actions {
     width: 100%;
