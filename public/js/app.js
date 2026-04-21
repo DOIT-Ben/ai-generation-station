@@ -213,9 +213,12 @@
 
   function normalizeChatWorkflowState(rawState) {
     const raw = rawState && typeof rawState === 'object' ? rawState : {};
+    const pinnedIds = Array.from(new Set((Array.isArray(raw.pinnedIds) ? raw.pinnedIds : []).map(item => String(item || '').trim()).filter(Boolean)));
+    const parkedIds = Array.from(new Set((Array.isArray(raw.parkedIds) ? raw.parkedIds : []).map(item => String(item || '').trim()).filter(Boolean)))
+      .filter(item => !pinnedIds.includes(item));
     return {
-      pinnedIds: Array.from(new Set((Array.isArray(raw.pinnedIds) ? raw.pinnedIds : []).map(item => String(item || '').trim()).filter(Boolean))),
-      parkedIds: Array.from(new Set((Array.isArray(raw.parkedIds) ? raw.parkedIds : []).map(item => String(item || '').trim()).filter(Boolean)))
+      pinnedIds,
+      parkedIds
     };
   }
 
@@ -271,10 +274,12 @@
     if (!targetId) return false;
     const isPinnedMode = mode === 'pinned';
     const collectionKey = isPinnedMode ? 'pinnedIds' : 'parkedIds';
+    const oppositeKey = isPinnedMode ? 'parkedIds' : 'pinnedIds';
     const currentCollection = chatWorkflowState[collectionKey];
     const exists = currentCollection.includes(targetId);
     chatWorkflowState = {
       ...chatWorkflowState,
+      [oppositeKey]: chatWorkflowState[oppositeKey].filter(item => item !== targetId),
       [collectionKey]: exists
         ? currentCollection.filter(item => item !== targetId)
         : [targetId].concat(currentCollection.filter(item => item !== targetId))
@@ -2314,6 +2319,7 @@
 
     try {
       const result = await persistence.archiveConversation(targetConversation.id);
+      removeConversationFromWorkflowState(targetConversation.id);
       setConversationList(result?.conversations || conversationState.list.filter(item => item.id !== targetConversation.id));
       setArchivedConversationList(
         result?.archivedConversations || [result?.archivedConversation || targetConversation].filter(Boolean).concat(
