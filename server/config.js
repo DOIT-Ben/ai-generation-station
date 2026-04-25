@@ -102,7 +102,7 @@ function createConfig(options = {}) {
     const SESSION_COOKIE_SAME_SITE = normalizeSameSite(getConfigValue(env, localConfig, 'SESSION_COOKIE_SAME_SITE', 'Lax'));
     const CSRF_COOKIE_NAME = String(getConfigValue(env, localConfig, 'CSRF_COOKIE_NAME', 'aigs_csrf') || 'aigs_csrf').trim() || 'aigs_csrf';
     const CSRF_TOKEN_HEADER_NAME = String(getConfigValue(env, localConfig, 'CSRF_TOKEN_HEADER_NAME', 'x-csrf-token') || 'x-csrf-token').trim().toLowerCase() || 'x-csrf-token';
-    const PUBLIC_REGISTRATION_ENABLED = parseBooleanFlag(getConfigValue(env, localConfig, 'PUBLIC_REGISTRATION_ENABLED', 'true'), true);
+    const PUBLIC_REGISTRATION_ENABLED = parseBooleanFlag(getConfigValue(env, localConfig, 'PUBLIC_REGISTRATION_ENABLED', ''), false);
     const APP_STATE_DB = path.isAbsolute(getConfigValue(env, localConfig, 'APP_STATE_DB', ''))
         ? getConfigValue(env, localConfig, 'APP_STATE_DB', '')
         : path.join(DATA_DIR, getConfigValue(env, localConfig, 'APP_STATE_DB', 'app-state.sqlite'));
