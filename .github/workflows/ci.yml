@@ -39,5 +39,8 @@ jobs:
       - name: State foreign key tests
         run: node test-state-foreign-keys.js
 
+      - name: Gray release strategy tests
+        run: node test-gray-release-strategy.js
+
       - name: Release core tests
         run: npm run test:release-core
