@@ -36,8 +36,9 @@ function withoutCsrfBootstrapCalls(calls) {
 }
 
 function testAuth() {
-  assert.equal(AppShell.authenticate('studio', 'AIGS2026!'), true, 'fixed credentials should authenticate');
-  assert.equal(AppShell.authenticate('studio', 'wrong'), false, 'wrong password should fail');
+  assert.equal(Object.prototype.hasOwnProperty.call(AppShell, 'AUTH'), false, 'front-end shell should not expose fixed credentials');
+  assert.equal(Object.prototype.hasOwnProperty.call(AppShell, 'authenticate'), false, 'front-end shell should not expose local fixed-credential auth');
+  assert.equal(typeof AppShell.createRemotePersistence, 'function', 'remote persistence should provide API-backed auth');
 }
 
 function testTemplates() {

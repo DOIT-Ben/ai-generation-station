@@ -7,11 +7,6 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  const AUTH = {
-    username: 'studio',
-    password: 'AIGS2026!'
-  };
-
   const MAX_HISTORY_ITEMS = 12;
   const STORAGE_PREFIX = 'aigs.v2';
 
@@ -576,10 +571,6 @@
         data.delete(key);
       }
     };
-  }
-
-  function authenticate(username, password) {
-    return username === AUTH.username && password === AUTH.password;
   }
 
   function buildKey(parts) {
@@ -1355,12 +1346,10 @@
   }
 
   return {
-    AUTH,
     FEATURE_META,
     TEMPLATE_LIBRARY,
     MAX_HISTORY_ITEMS,
     STORAGE_PREFIX,
-    authenticate,
     filterConversationSummaries,
     createMemoryStorage,
     createPersistence,
