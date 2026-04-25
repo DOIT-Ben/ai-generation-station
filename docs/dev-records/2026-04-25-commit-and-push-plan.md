@@ -79,6 +79,17 @@
   - 边界条件：amend 发生在推送前，不会改写远端历史。
   - 遗漏点：无。
   - 是否回写规划：已回写。
+- TODO 6 已完成：
+  - 推送前状态为 `main...origin\main [ahead 1]`。
+  - 已推送 `main` 到 `origin\main`。
+  - 推送结果：`9d1dfb1..b7c3f5d main -> main`。
+- TODO 6 复盘：
+  - 新问题：推送完成后仍需补写本复盘，需追加一个文档记录提交来保持流程闭环。
+  - 边界条件：不 amend 已推送提交，避免改写远端历史。
+  - 遗漏点：无。
+  - 是否回写规划：已回写。
+- TODO 7 已完成：
+  - 已补写推送结果与复盘。
 
 ## 验证结果
 - `npm run check`：通过。
@@ -88,6 +99,10 @@
 - `node test-style-contract.js`：通过。
 - `node test-api-auth-boundary.js`：通过。
 - `node test-regression.js --skip-live --skip-browser`：Total 12, Passed 10, Skipped 2, Failed 0。
+- 主提交 `b7c3f5d Harden app security and polish chat experience` 已推送到 `origin\main`。
 
 ## 复盘
-- 待推送后补充。
+- 新问题：本地远端 URL 中带凭据，终端操作可用，但后续应考虑改为更安全的凭据管理方式。
+- 边界条件：本次未运行浏览器 UI 回归和 live API 验证，已在执行记录中明确。
+- 遗漏点：提交后补写复盘需要单独文档提交，这是流程闭环成本。
+- 是否回写规划：已完成。
