@@ -1,6 +1,5 @@
 node_modules/
 .claude/
-package-lock.json
 .env
 backend/config.local.js
 *.log

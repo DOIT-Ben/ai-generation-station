@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  core:
+    name: Core checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+
+      - name: Secret scan
+        run: node test-secret-scan.js
+
+      - name: Static syntax check
+        run: npm run check
+
+      - name: Security gateway tests
+        run: node test-security-gateway.js
+
+      - name: State foreign key tests
+        run: node test-state-foreign-keys.js
+
+      - name: Release core tests
+        run: npm run test:release-core
