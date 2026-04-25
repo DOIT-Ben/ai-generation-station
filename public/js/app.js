@@ -7028,6 +7028,13 @@
     // Update nav
     currentNav?.classList.remove('active');
     newNav?.classList.add('active');
+    $$('.nav-item').forEach(item => {
+      if (item.dataset.tab === tab) {
+        item.setAttribute('aria-current', 'page');
+      } else {
+        item.removeAttribute('aria-current');
+      }
+    });
 
     currentTab = tab;
     workspaceState.lastTab = tab;
