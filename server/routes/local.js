@@ -56,10 +56,55 @@ function getTaskStatus(taskMap, taskId, stateStore) {
     };
 }
 
+function startsWithBytes(buffer, bytes) {
+    if (!Buffer.isBuffer(buffer) || buffer.length < bytes.length) return false;
+    return bytes.every((byte, index) => buffer[index] === byte);
+}
+
+function hasMp3FrameHeader(buffer) {
+    return buffer.length >= 2
+        && buffer[0] === 0xff
+        && [0xfb, 0xf3, 0xf2].includes(buffer[1]);
+}
+
+function hasAacAdtsHeader(buffer) {
+    return buffer.length >= 2
+        && buffer[0] === 0xff
+        && (buffer[1] & 0xf6) === 0xf0;
+}
+
+function hasMp4FtypHeader(buffer) {
+    return buffer.length >= 12
+        && buffer.slice(4, 8).toString('ascii') === 'ftyp';
+}
+
+function detectUploadFileType(buffer) {
+    if (!Buffer.isBuffer(buffer) || buffer.length < 4) return null;
+    if (startsWithBytes(buffer, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return 'png';
+    if (startsWithBytes(buffer, [0xff, 0xd8, 0xff])) return 'jpeg';
+    if (buffer.length >= 12 && buffer.slice(0, 4).toString('ascii') === 'RIFF' && buffer.slice(8, 12).toString('ascii') === 'WEBP') return 'webp';
+    if (buffer.length >= 12 && buffer.slice(0, 4).toString('ascii') === 'RIFF' && buffer.slice(8, 12).toString('ascii') === 'WAVE') return 'wav';
+    if (buffer.slice(0, 4).toString('ascii') === 'OggS') return 'ogg';
+    if (buffer.slice(0, 3).toString('ascii') === 'ID3' || hasMp3FrameHeader(buffer)) return 'mp3';
+    if (hasAacAdtsHeader(buffer)) return 'aac';
+    if (hasMp4FtypHeader(buffer)) return 'mp4';
+    return null;
+}
+
 function createLocalRoutes({ OUTPUT_DIR, MIME_TYPES, musicTasks, coverTasks, imageTasks, stateStore, maxUploadBytes }) {
     const outputRoot = path.resolve(OUTPUT_DIR);
     const uploadLimitBytes = Number(maxUploadBytes || 10 * 1024 * 1024) || (10 * 1024 * 1024);
     const allowedUploadExtensions = new Set(['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.png', '.jpg', '.jpeg', '.webp']);
+    const uploadTypeExtensions = {
+        mp3: new Set(['.mp3']),
+        wav: new Set(['.wav']),
+        mp4: new Set(['.m4a', '.aac']),
+        aac: new Set(['.aac']),
+        ogg: new Set(['.ogg']),
+        png: new Set(['.png']),
+        jpeg: new Set(['.jpg', '.jpeg']),
+        webp: new Set(['.webp'])
+    };
 
     function isInsideOutputRoot(filepath) {
         const resolved = path.resolve(filepath);
@@ -94,6 +139,12 @@ function createLocalRoutes({ OUTPUT_DIR, MIME_TYPES, musicTasks, coverTasks, ima
                 if (!allowedUploadExtensions.has(ext)) {
                     return { error: '不支持的文件类型', reason: 'unsupported_file_type' };
                 }
+
+                const detectedType = detectUploadFileType(buffer);
+                if (!detectedType || !uploadTypeExtensions[detectedType]?.has(ext)) {
+                    return { error: '上传文件内容与类型不匹配', reason: 'invalid_file_content' };
+                }
+
                 const outputFile = path.join(OUTPUT_DIR, `upload_${Date.now()}${ext}`);
                 fs.writeFileSync(outputFile, buffer);
 
