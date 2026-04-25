@@ -29,9 +29,52 @@ function createOpaqueToken() {
 const LOGIN_FAILURE_LOCK_THRESHOLD = 5;
 const LOGIN_FAILURE_LOCK_MS = 15 * 60 * 1000;
 
+function hasUserHistoryUserForeignKey(db) {
+    return db.prepare(`PRAGMA foreign_key_list(user_history_entries)`)
+        .all()
+        .some(row => row.table === 'users' && row.from === 'user_id' && row.to === 'id');
+}
+
+function migrateUserHistoryForeignKey(db) {
+    if (hasUserHistoryUserForeignKey(db)) return;
+
+    db.exec(`
+        BEGIN;
+
+        DROP TABLE IF EXISTS user_history_entries_migrated;
+
+        CREATE TABLE user_history_entries_migrated (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            feature TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+        );
+
+        INSERT INTO user_history_entries_migrated (id, user_id, feature, payload, created_at)
+        SELECT h.id, h.user_id, h.feature, h.payload, h.created_at
+        FROM user_history_entries h
+        WHERE EXISTS (
+            SELECT 1
+            FROM users u
+            WHERE u.id = h.user_id
+        );
+
+        DROP TABLE user_history_entries;
+        ALTER TABLE user_history_entries_migrated RENAME TO user_history_entries;
+
+        CREATE INDEX IF NOT EXISTS idx_user_history_lookup
+            ON user_history_entries (user_id, feature, created_at DESC, id DESC);
+
+        COMMIT;
+    `);
+}
+
 function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItems, seedUser }) {
     const db = new DatabaseSync(dbPath);
     db.exec(`
+        PRAGMA foreign_keys = ON;
         PRAGMA journal_mode = WAL;
         PRAGMA synchronous = NORMAL;
         PRAGMA busy_timeout = 5000;
@@ -146,7 +189,8 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
             user_id TEXT NOT NULL,
             feature TEXT NOT NULL,
             payload TEXT NOT NULL,
-            created_at INTEGER NOT NULL
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
         );
 
         CREATE INDEX IF NOT EXISTS idx_user_history_lookup ON user_history_entries (user_id, feature, created_at DESC, id DESC);
@@ -260,6 +304,8 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         CREATE INDEX IF NOT EXISTS idx_audit_logs_action_created_at ON audit_logs (action, created_at DESC, id DESC);
         CREATE INDEX IF NOT EXISTS idx_audit_logs_target_created_at ON audit_logs (target_user_id, created_at DESC, id DESC);
     `);
+
+    migrateUserHistoryForeignKey(db);
 
     try {
         db.exec(`ALTER TABLE conversation_messages ADD COLUMN metadata_json TEXT;`);
