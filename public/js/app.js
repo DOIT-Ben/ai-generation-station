@@ -4776,7 +4776,7 @@
     preview.removeAttribute('hidden');
   }
 
-  function renderTranscriptionPlaceholder(file) {
+  function renderTranscriptionExperimentalPlan(file) {
     const resultArea = $('transcription-result');
     const meta = $('transcription-meta');
     const title = $('transcription-result-title');
@@ -4787,38 +4787,36 @@
     const fileLabel = file?.name || '当前文件';
     const typeLabel = normalizeMediaTypeLabel(file);
     if (meta) {
-      meta.textContent = `${typeLabel} · ${formatFileSize(file?.size || 0)}`;
+      meta.textContent = file ? `${typeLabel} · ${formatFileSize(file?.size || 0)}` : '未选择文件 · 实验入口';
     }
-    title.textContent = `${fileLabel} 的转写承接区已就绪`;
-    subtitle.textContent = '当前点击只会进入占位结果区，等你后续接入 API 后，文字结果会落在这里。';
+    title.textContent = '转写服务接入计划';
+    subtitle.textContent = file
+      ? `已选择 ${fileLabel}，当前仅展示接入计划，不会生成识别文本。`
+      : '当前仅展示接入计划，不会生成识别文本。';
     text.textContent = [
-      `文件名：${fileLabel}`,
-      `文件类型：${typeLabel}`,
+      '语音转文字仍处于实验接入阶段。',
+      file ? `已选择文件：${fileLabel}` : '已选择文件：无',
+      file ? `文件类型：${typeLabel}` : '',
       '',
-      '当前状态：',
-      '- 上传壳子已完成',
-      '- 拖拽与文件选择可用',
-      '- 结果区已预留',
-      '- 真实转写 API 尚未接入',
+      '正式开放前需要完成：',
+      '1. 选定转写服务和鉴权方式',
+      '2. 增加后端上传、抽音轨和异步任务队列',
+      '3. 返回纯文本或分段文本结果',
+      '4. 增加失败重试、费用限制和灰度开关',
       '',
-      '后续接入后，这里会显示完整识别文本或分段文本。'
-    ].join('\n');
+      '当前不会生成识别文本。'
+    ].filter(Boolean).join('\n');
     resultArea.removeAttribute('hidden');
     currentResult.transcription = {
       text: text.textContent,
-      fileName: fileLabel
+      fileName: file?.name || null
     };
   }
 
   function startTranscriptionShell() {
     const file = getTranscriptionSelectedFile();
-    if (!file) {
-      showToast('请先上传音频或视频文件', 'error');
-      return;
-    }
-
-    renderTranscriptionPlaceholder(file);
-    showToast('壳子已就绪，等待接入转写 API', 'info', 1800);
+    renderTranscriptionExperimentalPlan(file);
+    showToast('语音转文字仍为实验入口，已展示接入计划', 'info', 1800);
     renderWorkspaceResumeCard();
     scheduleWorkspaceStateSave();
   }

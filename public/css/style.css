@@ -2373,6 +2373,20 @@ input[type="range"]::-webkit-slider-thumb:active {
   text-transform: uppercase;
 }
 
+.feature-status-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--transcription-accent-soft, rgba(0, 119, 255, 0.1));
+  color: var(--transcription-accent, var(--accent-cyan));
+  font-size: 0.72rem;
+  font-weight: 750;
+  line-height: 1.2;
+  vertical-align: middle;
+}
+
 .transcription-shell-copy h3 {
   margin: 12px 0 8px;
   font-size: 1.08rem;

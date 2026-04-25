@@ -68,11 +68,12 @@
         <span class="nav-label">语音合成</span>
       </button>
 
-      <button class="nav-item" data-tab="transcription" data-tooltip="语音转文字">
+      <button class="nav-item" data-tab="transcription" data-tooltip="语音转文字" data-feature-state="experimental" aria-label="语音转文字（实验）">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 3v12"></path><path d="M8 7v4"></path><path d="M16 5v8"></path><path d="M5 10v2"></path><path d="M19 8v6"></path><path d="M8 21h8"></path>
         </svg>
         <span class="nav-label">语音转文字</span>
+        <span class="nav-badge">实验</span>
       </button>
 
       <button class="nav-item" data-tab="music" data-tooltip="音乐生成">
@@ -626,24 +627,24 @@
     </section>
 
     <!-- Transcription Tab -->
-    <section id="tab-transcription" class="tab-content">
+    <section id="tab-transcription" class="tab-content" data-feature-state="experimental">
       <div class="section-header">
-        <h1><span class="icon">📝</span> 语音转文字</h1>
-        <p>上传音频或视频文件，后续可在这里接入自动转写 API</p>
+        <h1><span class="icon">📝</span> 语音转文字 <span class="feature-status-badge">实验</span></h1>
+        <p>转写服务正在接入中，当前入口用于验证上传流程和展示后续接入计划。</p>
       </div>
 
       <div class="card">
         <div class="input-group">
           <label>
             上传音频 / 视频
-            <span class="hint">当前先完成外层壳子，支持后续接入转写服务</span>
+            <span class="hint">实验入口：可先验证文件选择，正式转写暂未开放</span>
           </label>
 
           <div class="transcription-shell">
             <div class="transcription-shell-copy">
-              <div class="transcription-shell-kicker">上传入口</div>
-              <h3>把会议录音、口播素材或视频文件丢进来</h3>
-              <p>推荐先上传常见格式文件。后续接入 API 后，这里会自动完成抽音轨、识别和文本返回。</p>
+              <div class="transcription-shell-kicker">实验入口</div>
+              <h3>转写服务接入中</h3>
+              <p>你可以先验证文件选择和页面承接体验。正式开放前，这里只展示接入计划，不生成识别文本。</p>
             </div>
 
             <div class="drop-zone transcription-drop-zone" id="transcription-drop-zone">
@@ -665,7 +666,7 @@
 
             <div class="transcription-shell-note">
               <strong>当前状态</strong>
-              <span>界面壳子已准备好。点击“开始提取”后会进入占位结果区，方便你后续直接接 API。</span>
+              <span>实验入口已准备好。点击“查看接入计划”会展示后续 API、任务队列和结果回填的实现清单。</span>
             </div>
           </div>
         </div>
@@ -675,33 +676,33 @@
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polygon points="5 3 19 12 5 21 5 3"></polygon>
             </svg>
-            <span>开始提取</span>
+            <span>查看接入计划</span>
           </button>
           <button class="btn btn-reset" id="btn-reset-transcription">重置</button>
         </div>
 
         <div id="transcription-result" class="result-area" hidden>
           <div class="result-info">
-            <div class="result-label">转写结果占位</div>
+            <div class="result-label">实验功能说明</div>
             <div class="result-meta" id="transcription-meta"></div>
           </div>
 
           <div class="transcription-result-card">
             <div class="transcription-result-header">
               <div>
-                <strong id="transcription-result-title">等待接入转写 API</strong>
-                <p id="transcription-result-subtitle">当前仅完成上传壳子和结果承接区域。</p>
+                <strong id="transcription-result-title">转写服务接入计划</strong>
+                <p id="transcription-result-subtitle">当前不会生成识别文本，正式能力接入后再开放转写操作。</p>
               </div>
-              <button class="btn btn-secondary" id="btn-copy-transcription-placeholder" type="button">复制占位文案</button>
+              <button class="btn btn-secondary" id="btn-copy-transcription-placeholder" type="button">复制接入计划</button>
             </div>
 
-            <pre id="transcription-text" class="transcription-text">这里将显示识别后的文字内容。
+            <pre id="transcription-text" class="transcription-text">语音转文字仍处于实验接入阶段。
 
-后续接入 API 后，预期流程：
-1. 上传音频或视频
-2. 服务端必要时抽取音轨
-3. 调用语音识别服务
-4. 返回纯文本或分段文本结果</pre>
+正式开放前需要完成：
+1. 选定转写服务和鉴权方式
+2. 增加后端上传、抽音轨和异步任务队列
+3. 返回纯文本或分段文本结果
+4. 增加失败重试、费用限制和灰度开关</pre>
           </div>
         </div>
       </div>
