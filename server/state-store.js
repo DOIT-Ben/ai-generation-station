@@ -28,6 +28,30 @@ function createOpaqueToken() {
 
 const LOGIN_FAILURE_LOCK_THRESHOLD = 5;
 const LOGIN_FAILURE_LOCK_MS = 15 * 60 * 1000;
+const SCHEMA_MIGRATION_CONVERSATION_MESSAGE_METADATA = '2026-04-25-conversation-message-metadata';
+const SCHEMA_MIGRATION_USER_HISTORY_FOREIGN_KEY = '2026-04-25-user-history-foreign-key';
+
+function tableHasColumn(db, tableName, columnName) {
+    return db.prepare(`PRAGMA table_info(${tableName})`)
+        .all()
+        .some(row => row.name === columnName);
+}
+
+function runSchemaMigration(db, id, migrate) {
+    const existing = db.prepare(`SELECT id FROM schema_migrations WHERE id = ?`).get(id);
+    if (existing) return;
+
+    migrate();
+    db.prepare(`
+        INSERT OR IGNORE INTO schema_migrations (id, applied_at)
+        VALUES (?, ?)
+    `).run(id, Date.now());
+}
+
+function migrateConversationMessageMetadata(db) {
+    if (tableHasColumn(db, 'conversation_messages', 'metadata_json')) return;
+    db.exec(`ALTER TABLE conversation_messages ADD COLUMN metadata_json TEXT;`);
+}
 
 function hasUserHistoryUserForeignKey(db) {
     return db.prepare(`PRAGMA foreign_key_list(user_history_entries)`)
@@ -78,6 +102,11 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         PRAGMA journal_mode = WAL;
         PRAGMA synchronous = NORMAL;
         PRAGMA busy_timeout = 5000;
+
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+            id TEXT PRIMARY KEY,
+            applied_at INTEGER NOT NULL
+        );
 
         CREATE TABLE IF NOT EXISTS users (
             id TEXT PRIMARY KEY,
@@ -305,13 +334,12 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         CREATE INDEX IF NOT EXISTS idx_audit_logs_target_created_at ON audit_logs (target_user_id, created_at DESC, id DESC);
     `);
 
-    migrateUserHistoryForeignKey(db);
-
-    try {
-        db.exec(`ALTER TABLE conversation_messages ADD COLUMN metadata_json TEXT;`);
-    } catch {
-        // Column already exists on current workspace databases.
-    }
+    runSchemaMigration(db, SCHEMA_MIGRATION_CONVERSATION_MESSAGE_METADATA, () => {
+        migrateConversationMessageMetadata(db);
+    });
+    runSchemaMigration(db, SCHEMA_MIGRATION_USER_HISTORY_FOREIGN_KEY, () => {
+        migrateUserHistoryForeignKey(db);
+    });
 
     const findUserByUsernameStmt = db.prepare(`
         SELECT id, username, email, display_name AS displayName, status, role, plan_code AS planCode,
