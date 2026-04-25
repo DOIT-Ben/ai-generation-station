@@ -4,7 +4,7 @@
 > 
 > 更新时间：2026-04-10
 > 
-> API 密钥：`sk-cp-uHBY-VvooyT13Jr2ool1ZrnC8hEAONsdwdaoZ3Y4h_UKtqfffudUmd5bMxk-2uxuxAbTO8dFMnECVqiS5K5qduKNj3-Qlj4QlRUqx2SjFurXvQnfggpsgxw`
+> API 密钥：请通过环境变量 `MINIMAX_API_KEY` 配置，不要把真实密钥写入文档或代码。
 > 
 > API 基础地址：`https://api.minimaxi.com`
 

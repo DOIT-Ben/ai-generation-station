@@ -4952,6 +4952,40 @@
     `;
   }
 
+  function renderChatFormulaSegment(rawFormula, mode = 'inline') {
+    const formula = String(rawFormula || '').trim();
+    const className = mode === 'block' ? 'chat-formula-block' : 'chat-formula-inline';
+    return `<span class="${className}">${escapeHtml(formula)}</span>`;
+  }
+
+  function protectChatFormulaSegments(text) {
+    const formulas = [];
+    const placeholderPrefix = '__CHAT_FORMULA_';
+    let nextText = String(text || '');
+
+    const stashFormula = (formula, mode) => {
+      const placeholder = `${placeholderPrefix}${formulas.length}__`;
+      formulas.push(renderChatFormulaSegment(formula, mode));
+      return placeholder;
+    };
+
+    nextText = nextText
+      .replace(/\\\[([\s\S]+?)\\\]/g, (_, formula) => stashFormula(formula, 'block'))
+      .replace(/\$\$([\s\S]+?)\$\$/g, (_, formula) => stashFormula(formula, 'block'))
+      .replace(/\\\(([\s\S]+?)\\\)/g, (_, formula) => stashFormula(formula, 'inline'))
+      .replace(/(^|[^\$])\$([^\n$]+?)\$/g, (_, prefix, formula) => `${prefix}${stashFormula(formula, 'inline')}`);
+
+    return { text: nextText, formulas, placeholderPrefix };
+  }
+
+  function restoreChatFormulaSegments(text, formulas, placeholderPrefix = '__CHAT_FORMULA_') {
+    let restored = String(text || '');
+    (formulas || []).forEach((formulaHtml, index) => {
+      restored = restored.replaceAll(`${placeholderPrefix}${index}__`, formulaHtml);
+    });
+    return restored;
+  }
+
   function applyInlineMarkdown(text) {
     const sanitizeLinkUrl = (rawUrl) => {
       try {
@@ -4962,7 +4996,8 @@
       }
     };
 
-    return text
+    const protectedFormula = protectChatFormulaSegments(text);
+    const rendered = protectedFormula.text
       .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, href) => `<a href="${sanitizeLinkUrl(href)}" target="_blank" rel="noopener noreferrer">${label}</a>`)
       // Bold: **text** or __text__
       .replace(/\*\*(.+?)\*\*|__(.+?)__/g, '<strong>$1$2</strong>')
@@ -4975,6 +5010,7 @@
       // Remove leftover unmatched markdown emphasis or heading markers.
       .replace(/\*\*/g, '')
       .replace(/(^|>|\s)#{1,3}(?=\s*#|\s*$)/g, '$1');
+    return restoreChatFormulaSegments(rendered, protectedFormula.formulas, protectedFormula.placeholderPrefix);
   }
 
   function getMarkdownTableCells(line) {

@@ -299,7 +299,11 @@ function createServer(options = {}) {
 
             sendJson(res, 200, result);
         } catch (error) {
-            sendJson(res, 500, { error: error.message });
+            console.error('[Server] Unhandled request error:', error);
+            sendJson(res, 500, {
+                error: '服务器内部错误，请稍后重试',
+                reason: 'internal_error'
+            });
         }
     });
 

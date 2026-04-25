@@ -232,7 +232,7 @@
           <span class="portal-brand-mark">AI</span>
           <span class="portal-brand-copy">
             <strong>AI Generation</strong>
-            <span>创作工作台</span>
+            <span>Station</span>
           </span>
         </a>
         <button class="portal-nav-toggle" type="button" data-portal-nav-toggle aria-expanded="true" aria-label="收起页面导航">收起</button>
