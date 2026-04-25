@@ -7,6 +7,23 @@ function request(path, method, body, timeout = 5000, options = {}) {
   ]);
 }
 
+async function loginAsAdmin() {
+  const login = await request('/api/auth/login', 'POST', {
+    username: 'studio',
+    password: 'AIGS2026!'
+  });
+  if (login.status !== 200) {
+    throw new Error(`登录失败: ${login.status}`);
+  }
+  const rawCookieHeader = login.headers?.['set-cookie'];
+  const cookieHeader = Array.isArray(rawCookieHeader) ? rawCookieHeader[0] : rawCookieHeader;
+  const cookie = String(cookieHeader || '').split(';')[0];
+  if (!cookie) {
+    throw new Error('登录后未返回会话 Cookie');
+  }
+  return cookie;
+}
+
 async function runTests() {
   console.log('=== Smoke Tests ===\n');
   let failures = 0;
@@ -35,11 +52,20 @@ async function runTests() {
       fail();
     }
   } catch(e) { console.log('❌ 异常:', e.message); fail(); }
+
+  let adminCookie = '';
+  console.log('\n1.6. 登录态准备');
+  try {
+    adminCookie = await loginAsAdmin();
+    console.log('✅ 登录态已建立');
+  } catch(e) { console.log('❌ 异常:', e.message); fail(); }
   
   // 2. 本地接口
   console.log('\n2. 音色接口');
   try {
-    const res = await request('/api/voices', 'GET');
+    const res = await request('/api/voices', 'GET', null, 5000, {
+      headers: { Cookie: adminCookie }
+    });
     if (res.status === 200 && Array.isArray(res.data.voices)) {
       console.log('✅ 音色列表正常');
     } else {
@@ -51,7 +77,9 @@ async function runTests() {
   // 3. 输入校验
   console.log('\n3. 聊天接口参数校验');
   try {
-    const res = await request('/api/chat', 'POST', {});
+    const res = await request('/api/chat', 'POST', {}, 5000, {
+      headers: { Cookie: adminCookie }
+    });
     if (res.status === 200 && res.data.error) {
       console.log('✅ 参数校验正常');
     } else {
@@ -63,7 +91,9 @@ async function runTests() {
   // 4. 任务状态校验
   console.log('\n4. 任务状态参数校验');
   try {
-    const res = await request('/api/music/status', 'POST', {});
+    const res = await request('/api/music/status', 'POST', {}, 5000, {
+      headers: { Cookie: adminCookie }
+    });
     if (res.status === 200 && res.data.error) {
       console.log('✅ 状态校验正常');
     } else {
@@ -99,7 +129,9 @@ async function runTests() {
   // 7. 上传参数校验
   console.log('\n7. 上传参数校验');
   try {
-    const res = await request('/api/upload', 'POST', {});
+    const res = await request('/api/upload', 'POST', {}, 5000, {
+      headers: { Cookie: adminCookie }
+    });
     if (res.status === 200 && res.data.error) {
       console.log('✅ 上传校验正常');
     } else {
@@ -111,7 +143,9 @@ async function runTests() {
   // 8. 输出文件列表
   console.log('\n8. 输出文件列表');
   try {
-    const res = await request('/api/files', 'GET');
+    const res = await request('/api/files', 'GET', null, 5000, {
+      headers: { Cookie: adminCookie }
+    });
     if (res.status === 200 && Array.isArray(res.data.files)) {
       console.log('✅ 文件列表正常');
     } else {
@@ -128,7 +162,8 @@ async function runTests() {
       request('/api/chat', 'POST', '{bad json', 5000, {
         raw: true,
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          Cookie: adminCookie
         }
       }).then(result => resolve({ status: result.status, body: result.rawBody })).catch(reject);
     });

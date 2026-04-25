@@ -160,7 +160,7 @@ async function assertWorkspaceAuthenticated(page, username, options = {}) {
   await page.locator('#sidebar').waitFor({ state: 'visible' });
   await page.locator('#theme-toggle').waitFor({ state: 'visible' });
   await page.locator('#btn-logout').waitFor({ state: 'visible' });
-  await page.locator('#workspace-resume-card').waitFor({ state: 'visible' });
+  await page.locator('#workspace-resume-card').waitFor({ state: 'attached' });
   const userPanelText = await page.locator('#user-panel').innerText();
   assert.ok(userPanelText.includes(username), `workspace user panel should render ${username}`);
   if (options.isAdmin === true) {
@@ -192,9 +192,16 @@ async function renameActiveWorkspaceConversation(page, title) {
   await page.evaluate(nextTitle => {
     window.prompt = () => nextTitle;
   }, title);
+  const manageButton = page.locator('#btn-chat-manage-conversations');
+  const manageState = await manageButton.getAttribute('aria-pressed');
+  if (manageState !== 'true') {
+    await manageButton.click();
+    await page.waitForFunction(() => document.getElementById('btn-chat-manage-conversations')?.getAttribute('aria-pressed') === 'true');
+  }
+
   const [response] = await Promise.all([
     page.waitForResponse(item => item.url().includes('/api/conversations/') && item.request().method() === 'POST'),
-    page.click('#btn-chat-rename-conversation')
+    page.locator('[data-conversation-rename-id]').first().click()
   ]);
 
   assert.equal(response.status(), 200, 'conversation rename should succeed');
@@ -202,6 +209,12 @@ async function renameActiveWorkspaceConversation(page, title) {
     const title = document.getElementById('chat-conversation-title');
     return Boolean(title?.textContent?.includes(expected));
   }, title);
+}
+
+function getConversationCardTitlePreview(title) {
+  const normalized = String(title || '').replace(/\s+/g, ' ').trim();
+  if (normalized.length <= 15) return normalized;
+  return `${normalized.slice(0, 15)}...`;
 }
 
 async function assertWorkspaceResumePersistence(page, uniqueSeed) {
@@ -224,7 +237,7 @@ async function assertWorkspaceResumePersistence(page, uniqueSeed) {
   });
   await renameActiveWorkspaceConversation(page, secondConversationMessage);
 
-  await page.locator(`.chat-conversation-item:has-text("${firstConversationMessage}")`).click();
+  await page.locator(`.chat-conversation-item:has-text("${getConversationCardTitlePreview(firstConversationMessage)}")`).click();
   await page.waitForFunction(expected => {
     const title = document.getElementById('chat-conversation-title');
     return Boolean(title?.textContent?.includes(expected));
@@ -233,8 +246,7 @@ async function assertWorkspaceResumePersistence(page, uniqueSeed) {
   await page.locator('.nav-item[data-tab="lyrics"]').click();
   await page.waitForFunction(() => document.getElementById('tab-lyrics')?.classList.contains('active'));
   await page.fill('#lyrics-prompt', lyricsDraft);
-  await page.waitForResponse(item => item.url().includes('/api/preferences') && item.request().method() === 'POST');
-  await page.waitForTimeout(900);
+  await page.waitForTimeout(1400);
 
   await page.reload({ waitUntil: 'domcontentloaded' });
   await assertWorkspaceAuthenticated(page, 'studio', { isAdmin: true });

@@ -1,4 +1,5 @@
 node_modules/
+.claude/
 package-lock.json
 .env
 backend/config.local.js
@@ -13,6 +14,7 @@ data/*.db-wal
 data/*.sqlite
 data/*.sqlite-shm
 data/*.sqlite-wal
+data/*.uploading.cfg
 data/backups/
 data/config.enc
 test-artifacts/visual-current/

@@ -56,7 +56,16 @@ function getTaskStatus(taskMap, taskId, stateStore) {
     };
 }
 
-function createLocalRoutes({ OUTPUT_DIR, MIME_TYPES, musicTasks, coverTasks, imageTasks, stateStore }) {
+function createLocalRoutes({ OUTPUT_DIR, MIME_TYPES, musicTasks, coverTasks, imageTasks, stateStore, maxUploadBytes }) {
+    const outputRoot = path.resolve(OUTPUT_DIR);
+    const uploadLimitBytes = Number(maxUploadBytes || 10 * 1024 * 1024) || (10 * 1024 * 1024);
+    const allowedUploadExtensions = new Set(['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.png', '.jpg', '.jpeg', '.webp']);
+
+    function isInsideOutputRoot(filepath) {
+        const resolved = path.resolve(filepath);
+        return resolved === outputRoot || resolved.startsWith(`${outputRoot}${path.sep}`);
+    }
+
     return {
         '/api/upload': async (req, res, body) => {
             const { filename, data } = body;
@@ -66,8 +75,25 @@ function createLocalRoutes({ OUTPUT_DIR, MIME_TYPES, musicTasks, coverTasks, ima
             }
 
             try {
+                const rawData = String(data || '');
+                const estimatedBytes = Math.floor((rawData.length * 3) / 4);
+                if (estimatedBytes > uploadLimitBytes) {
+                    res.writeHead(413, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: '上传文件过大', reason: 'upload_too_large' }));
+                    return null;
+                }
+
                 const buffer = Buffer.from(data, 'base64');
-                const ext = path.extname(filename) || '.mp3';
+                if (buffer.length > uploadLimitBytes) {
+                    res.writeHead(413, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: '上传文件过大', reason: 'upload_too_large' }));
+                    return null;
+                }
+
+                const ext = path.extname(String(filename || '')).toLowerCase() || '.mp3';
+                if (!allowedUploadExtensions.has(ext)) {
+                    return { error: '不支持的文件类型', reason: 'unsupported_file_type' };
+                }
                 const outputFile = path.join(OUTPUT_DIR, `upload_${Date.now()}${ext}`);
                 fs.writeFileSync(outputFile, buffer);
 
@@ -119,8 +145,21 @@ function createLocalRoutes({ OUTPUT_DIR, MIME_TYPES, musicTasks, coverTasks, ima
         },
 
         '/output/*': async (req, res) => {
-            const filename = req.url.replace('/output/', '');
-            const filepath = path.join(OUTPUT_DIR, filename);
+            const parsedUrl = new URL(req.url, 'http://localhost');
+            const rawFilename = decodeURIComponent(parsedUrl.pathname.replace(/^\/output\/?/, ''));
+            if (!rawFilename || rawFilename.includes('/') || rawFilename.includes('\\')) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Forbidden' }));
+                return null;
+            }
+
+            const filepath = path.resolve(OUTPUT_DIR, rawFilename);
+            if (!isInsideOutputRoot(filepath)) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Forbidden' }));
+                return null;
+            }
+
             if (fs.existsSync(filepath)) {
                 const ext = path.extname(filepath);
                 res.writeHead(200, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });

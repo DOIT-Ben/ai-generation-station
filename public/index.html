@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="aigs-api-base-url" content="" />
   <title>AI 内容生成站</title>
+  <link rel="icon" type="image/png" href="/images/AG-logo.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet" />
@@ -30,9 +31,7 @@
   <aside class="sidebar" id="sidebar" role="navigation" aria-label="主导航">
     <div class="logo">
       <div class="logo-icon">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-        </svg>
+        <img src="/images/AG-logo.png" alt="AG Logo" />
       </div>
       <span class="logo-text">AI Generation</span>
     </div>
@@ -64,6 +63,13 @@
           <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
         </svg>
         <span class="nav-label">语音合成</span>
+      </button>
+
+      <button class="nav-item" data-tab="transcription" data-tooltip="语音转文字" role="menuitem" tabindex="-1">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3v12"></path><path d="M8 7v4"></path><path d="M16 5v8"></path><path d="M5 10v2"></path><path d="M19 8v6"></path><path d="M8 21h8"></path>
+        </svg>
+        <span class="nav-label">语音转文字</span>
       </button>
 
       <button class="nav-item" data-tab="music" data-tooltip="音乐生成" role="menuitem" tabindex="-1">
@@ -616,11 +622,93 @@
       </div>
     </section>
 
+    <!-- Transcription Tab -->
+    <section id="tab-transcription" class="tab-content">
+      <div class="section-header">
+        <h1><span class="icon">📝</span> 语音转文字</h1>
+        <p>上传音频或视频文件，后续可在这里接入自动转写 API</p>
+      </div>
+
+      <div class="card">
+        <div class="input-group">
+          <label>
+            上传音频 / 视频
+            <span class="hint">当前先完成外层壳子，支持后续接入转写服务</span>
+          </label>
+
+          <div class="transcription-shell">
+            <div class="transcription-shell-copy">
+              <div class="transcription-shell-kicker">上传入口</div>
+              <h3>把会议录音、口播素材或视频文件丢进来</h3>
+              <p>推荐先上传常见格式文件。后续接入 API 后，这里会自动完成抽音轨、识别和文本返回。</p>
+            </div>
+
+            <div class="drop-zone transcription-drop-zone" id="transcription-drop-zone">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 16V4"></path>
+                <path d="M7 9l5-5 5 5"></path>
+                <path d="M20 16.5a3.5 3.5 0 0 1-3.5 3.5h-9A4.5 4.5 0 0 1 3 15.5 4.5 4.5 0 0 1 7.5 11H8"></path>
+              </svg>
+              <span class="drop-hint">将音频或视频拖到此处，或 <label for="transcription-file" class="drop-link">点击上传</label></span>
+              <span class="drop-formats">支持 MP3 WAV M4A MP4 MOV WEBM</span>
+              <input type="file" id="transcription-file" accept="audio/*,video/*" hidden aria-label="选择音频或视频文件" />
+            </div>
+
+            <div class="upload-preview transcription-upload-preview" id="transcription-upload-preview" hidden>
+              <div class="transcription-file-badge">已选文件</div>
+              <span class="file-name" id="transcription-file-name">未选择文件</span>
+              <span class="transcription-file-meta" id="transcription-file-meta"></span>
+            </div>
+
+            <div class="transcription-shell-note">
+              <strong>当前状态</strong>
+              <span>界面壳子已准备好。点击“开始提取”后会进入占位结果区，方便你后续直接接 API。</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="action-row">
+          <button class="btn btn-primary" id="btn-start-transcription">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+            <span>开始提取</span>
+          </button>
+          <button class="btn btn-reset" id="btn-reset-transcription">重置</button>
+        </div>
+
+        <div id="transcription-result" class="result-area" hidden>
+          <div class="result-info">
+            <div class="result-label">转写结果占位</div>
+            <div class="result-meta" id="transcription-meta"></div>
+          </div>
+
+          <div class="transcription-result-card">
+            <div class="transcription-result-header">
+              <div>
+                <strong id="transcription-result-title">等待接入转写 API</strong>
+                <p id="transcription-result-subtitle">当前仅完成上传壳子和结果承接区域。</p>
+              </div>
+              <button class="btn btn-secondary" id="btn-copy-transcription-placeholder" type="button">复制占位文案</button>
+            </div>
+
+            <pre id="transcription-text" class="transcription-text">这里将显示识别后的文字内容。
+
+后续接入 API 后，预期流程：
+1. 上传音频或视频
+2. 服务端必要时抽取音轨
+3. 调用语音识别服务
+4. 返回纯文本或分段文本结果</pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- Chat Tab -->
     <section id="tab-chat" class="tab-content active">
       <div class="section-header">
         <h1><span class="icon">💬</span> AI 对话</h1>
-        <p>与 MiniMax M2.7 进行智能对话</p>
+        <p>专注当前对话</p>
       </div>
 
       <div class="card chat-card">
@@ -628,21 +716,14 @@
           <aside class="chat-sidebar">
             <div class="chat-sidebar-header">
               <div>
-                <h2>会话列表</h2>
-                <p>继续已有上下文，或开始一段新对话。</p>
+                <h2>会话</h2>
               </div>
-              <button class="btn btn-secondary btn-chat-new" id="btn-chat-new-conversation" type="button">新建对话</button>
+              <div class="chat-sidebar-actions">
+                <button class="btn btn-secondary btn-chat-new" id="btn-chat-new-conversation" type="button">新建对话</button>
+                <button class="btn btn-secondary btn-chat-manage-all" id="btn-chat-manage-conversations" type="button" aria-pressed="false">管理</button>
+              </div>
             </div>
-            <div class="chat-sidebar-summary" id="chat-sidebar-summary"></div>
             <div class="chat-search-shell">
-              <div class="chat-filter-bar" id="chat-filter-bar">
-                <button type="button" class="chat-filter-chip is-active" data-chat-filter="all">全部</button>
-                <button type="button" class="chat-filter-chip" data-chat-filter="pinned">重点</button>
-                <button type="button" class="chat-filter-chip" data-chat-filter="parked">稍后</button>
-                <button type="button" class="chat-filter-chip" data-chat-filter="current">当前</button>
-                <button type="button" class="chat-filter-chip" data-chat-filter="blank">空白</button>
-                <button type="button" class="chat-filter-chip" data-chat-filter="today">今日活跃</button>
-              </div>
               <input
                 id="chat-conversation-search"
                 class="chat-search-input"
@@ -650,7 +731,6 @@
                 placeholder="搜索会话"
                 aria-label="搜索会话">
             </div>
-            <div class="chat-search-feedback" id="chat-search-feedback" hidden></div>
             <div class="chat-conversation-empty" id="chat-conversation-empty">暂无对话。</div>
             <div class="chat-conversation-list" id="chat-conversation-list"></div>
             <section class="chat-archived-section" id="chat-archived-section" hidden>
@@ -666,57 +746,29 @@
             </section>
           </aside>
 
-          <div class="chat-main">
+            <div class="chat-main">
+            <div class="chat-main-model-float">
+              <div class="chat-model-select">
+                <input type="hidden" id="chat-model" value="gpt-4.1-mini">
+                <div class="custom-dropdown" id="chat-model-dropdown">
+                  <div class="dropdown-trigger" role="button" tabindex="0" aria-haspopup="listbox" aria-expanded="false">
+                    <span class="chat-model-kicker">模型</span>
+                    <span class="dropdown-value">GPT-4.1 Mini</span>
+                    <svg class="dropdown-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                  </div>
+                  <div class="dropdown-menu" hidden>
+                    <div class="dropdown-option active" data-value="gpt-4.1-mini">GPT-4.1 Mini</div>
+                  </div>
+                </div>
+              </div>
+            </div>
             <div class="chat-main-header">
               <div class="chat-main-meta">
                 <h2 id="chat-conversation-title">暂无进行中的对话</h2>
                 <p id="chat-conversation-subtitle">新建一个对话后即可开始聊天。</p>
               </div>
-              <div class="chat-main-actions">
-                <button class="btn btn-secondary btn-chat-manage" id="btn-chat-rename-conversation" type="button">重命名</button>
-                <button class="btn btn-secondary btn-chat-manage" id="btn-chat-archive-conversation" type="button">归档</button>
-              </div>
-            </div>
-            <div class="chat-context-strip" id="chat-context-strip" hidden>
-              <div class="chat-context-pills" id="chat-context-pills"></div>
-            </div>
-            <div class="chat-reading-outline" id="chat-reading-outline" hidden>
-              <div class="chat-reading-outline-copy">
-                <strong>本条回复目录</strong>
-                <span>当回复较长时，可以直接跳到目标段落。</span>
-              </div>
-              <div class="chat-reading-outline-actions" id="chat-reading-outline-actions"></div>
-            </div>
-            <div class="chat-excerpt-shelf" id="chat-excerpt-shelf" hidden>
-              <div class="chat-excerpt-copy">
-                <strong>消息摘录</strong>
-                <span id="chat-excerpt-summary">把值得保留的回复留在这里，方便稍后回看。</span>
-                <div class="workspace-mini-stats" id="chat-excerpt-stats"></div>
-              </div>
-              <div class="chat-excerpt-toolbar" id="chat-excerpt-toolbar">
-                <div class="chat-excerpt-presets" id="chat-excerpt-presets"></div>
-                <div class="chat-excerpt-toolbar-actions">
-                  <button type="button" class="chat-excerpt-toolbar-btn" id="btn-chat-excerpt-copy-visible">复制列表</button>
-                  <button type="button" class="chat-excerpt-toolbar-btn" id="btn-chat-excerpt-archive-visible">归档列表</button>
-                  <button type="button" class="chat-excerpt-toolbar-btn tone-strong" id="btn-chat-excerpt-toggle-panel" aria-expanded="false">展开管理</button>
-                </div>
-              </div>
-              <div class="chat-excerpt-manager" id="chat-excerpt-manager" hidden>
-                <div class="chat-excerpt-search-row">
-                  <input
-                    id="chat-excerpt-search"
-                    class="chat-excerpt-search-input"
-                    type="search"
-                    placeholder="搜索摘录标题、预览或内容"
-                    aria-label="搜索消息摘录">
-                  <button type="button" class="chat-excerpt-search-clear" id="btn-chat-excerpt-search-clear">清空</button>
-                </div>
-                <div class="chat-excerpt-manager-actions">
-                  <button type="button" class="chat-excerpt-toolbar-btn" id="btn-chat-excerpt-clear-archived">清空已归档</button>
-                </div>
-                <div class="chat-excerpt-results-meta" id="chat-excerpt-results-meta"></div>
-              </div>
-              <div class="chat-excerpt-actions" id="chat-excerpt-actions"></div>
             </div>
             <div class="chat-messages" id="chat-messages">
             <div class="chat-message chatbot">
@@ -728,47 +780,28 @@
               </div>
             </div>
           </div>
-          <button class="chat-scroll-to-latest" id="chat-scroll-to-latest" type="button" hidden>回到最新回复</button>
+          <button class="chat-scroll-to-latest" id="chat-scroll-to-latest" type="button" data-state="idle" data-visible="false" hidden>
+            <span class="chat-scroll-to-latest-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 6v12"></path>
+                <path d="m7 13 5 5 5-5"></path>
+              </svg>
+            </span>
+            <span class="chat-scroll-to-latest-label">回到最新回复</span>
+          </button>
 
             <div class="chat-input-area">
             <div id="chat-queue-indicator" hidden></div>
             <div class="chat-request-status" id="chat-request-status" hidden></div>
-            <div class="chat-composer-meta">
-              <div class="chat-composer-copy">
-                <strong id="chat-draft-indicator">当前没有未发送内容</strong>
-                <span id="chat-shortcut-hint">Enter 发送，Shift + Enter 换行</span>
-              </div>
-              <button class="chat-clear-input" id="btn-chat-clear" type="button" disabled>清空输入</button>
-            </div>
-            <div class="chat-suggestion-strip" id="chat-suggestion-strip" hidden>
-              <div class="chat-suggestion-copy">
-                <strong id="chat-suggestion-title">还没想好第一句？</strong>
-                <span id="chat-suggestion-description">先插入一个常见开头，再继续改成你自己的问题。</span>
-              </div>
-              <div class="chat-suggestion-actions" id="chat-suggestion-actions"></div>
-            </div>
             <div class="chat-input-row">
-              <div class="chat-model-select custom-dropdown" id="chat-model-dropdown">
-                <div class="dropdown-trigger">
-                  <span class="dropdown-value">M2.7</span>
-                  <svg class="dropdown-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="6 9 12 15 18 9"></polyline>
-                  </svg>
-                </div>
-                <div class="dropdown-menu" hidden>
-                  <div class="dropdown-option active" data-value="MiniMax-M2.7">M2.7</div>
-                  <div class="dropdown-option" data-value="MiniMax-M2.7-highspeed">M2.7-高速</div>
-                </div>
-                <input type="hidden" id="chat-model" value="MiniMax-M2.7">
-              </div>
-              <textarea id="chat-input" rows="1" placeholder="输入消息。支持 Shift + Enter 换行，Enter 发送。"></textarea>
+              <textarea id="chat-input" rows="1" placeholder="给 AI 发送消息"></textarea>
               <button class="btn btn-secondary btn-chat-stop" id="btn-chat-stop" type="button" hidden>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   <rect x="6" y="6" width="12" height="12" rx="2"></rect>
                 </svg>
                 <span>停止</span>
               </button>
-              <button class="btn btn-primary" id="btn-chat-send" type="button">
+              <button class="btn btn-primary" id="btn-chat-send" type="button" aria-label="发送消息">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
                 </svg>
@@ -807,6 +840,7 @@
   <button class="theme-btn" id="theme-toggle" type="button" aria-label="切换主题" data-tip="深色模式">
     <span class="sun-icon">☀️</span>
     <span class="moon-icon">🌙</span>
+    <span class="paper-icon">📒</span>
   </button>
   <div id="user-panel" class="topbar-user-slot"></div>
 </div>

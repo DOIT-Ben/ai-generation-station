@@ -156,7 +156,7 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
             user_id TEXT NOT NULL,
             feature TEXT NOT NULL DEFAULT 'chat',
             title TEXT NOT NULL,
-            model TEXT NOT NULL DEFAULT 'MiniMax-M2.7',
+            model TEXT NOT NULL DEFAULT 'gpt-4.1-mini',
             message_count INTEGER NOT NULL DEFAULT 0,
             last_message_at INTEGER,
             created_at INTEGER NOT NULL,
@@ -740,7 +740,7 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
     function getDefaultPreferences() {
         return {
             theme: 'dark',
-            defaultModelChat: 'MiniMax-M2.7',
+            defaultModelChat: 'gpt-4.1-mini',
             defaultVoice: 'male-qn-qingse',
             defaultMusicStyle: '',
             defaultCoverRatio: '1:1',
@@ -786,7 +786,7 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
             userId: row.userId,
             feature: row.feature || 'chat',
             title: row.title || '新对话',
-            model: row.model || 'MiniMax-M2.7',
+            model: row.model || 'gpt-4.1-mini',
             messageCount: Number(row.messageCount || 0),
             lastMessageAt: row.lastMessageAt || null,
             preview: buildConversationPreview(row.preview || ''),
@@ -1841,7 +1841,7 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
                 userId,
                 'chat',
                 buildConversationTitle(payload.title || '新对话'),
-                payload.model || 'MiniMax-M2.7',
+                payload.model || 'gpt-4.1-mini',
                 0,
                 null,
                 now,
@@ -2001,7 +2001,7 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
             const nextTitle = conversation.messageCount === 0 && role === 'user'
                 ? buildConversationTitle(content)
                 : conversation.title;
-            const nextModel = message.model || conversation.model || 'MiniMax-M2.7';
+            const nextModel = message.model || conversation.model || 'gpt-4.1-mini';
             const messageId = crypto.randomUUID();
 
             db.exec('BEGIN');

@@ -36,6 +36,7 @@ const ROUTE_METHODS = {
     '/api/image': ['POST'],
     '/api/image/status': ['POST'],
     '/api/quota': ['GET'],
+    '/api/chat/models': ['GET'],
     '/api/chat': ['POST'],
     '/api/files': ['GET'],
     '/output/*': ['GET']
@@ -55,7 +56,30 @@ const API_KEY_REQUIRED_ROUTES = new Set([
     '/api/chat'
 ]);
 
+const AUTH_REQUIRED_ROUTES = new Set([
+    '/api/upload',
+    '/api/tts',
+    '/api/voices',
+    '/api/generate/music',
+    '/api/music',
+    '/api/music/status',
+    '/api/generate/lyrics',
+    '/api/lyrics',
+    '/api/generate/voice',
+    '/api/music-cover',
+    '/api/music-cover/status',
+    '/api/generate/cover',
+    '/api/image',
+    '/api/image/status',
+    '/api/quota',
+    '/api/chat/models',
+    '/api/chat',
+    '/api/files',
+    '/output/*'
+]);
+
 module.exports = {
     ROUTE_METHODS,
-    API_KEY_REQUIRED_ROUTES
+    API_KEY_REQUIRED_ROUTES,
+    AUTH_REQUIRED_ROUTES
 };

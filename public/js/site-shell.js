@@ -8,6 +8,12 @@
   'use strict';
 
   const THEME_STORAGE_KEY = 'aigs.theme';
+  const THEME_SEQUENCE = ['dark', 'light', 'paper'];
+  const THEME_TIPS = {
+    dark: '深色模式',
+    light: '浅色模式',
+    paper: '护眼模式'
+  };
 
   function $(id) {
     return document.getElementById(id);
@@ -52,16 +58,20 @@
     }, duration);
   }
 
+  function normalizeTheme(theme) {
+    return THEME_SEQUENCE.includes(theme) ? theme : 'dark';
+  }
+
   function getStoredTheme() {
     try {
-      return window.localStorage.getItem(THEME_STORAGE_KEY) || 'dark';
+      return normalizeTheme(window.localStorage.getItem(THEME_STORAGE_KEY) || 'dark');
     } catch {
       return 'dark';
     }
   }
 
   function setTheme(theme) {
-    const nextTheme = theme === 'light' ? 'light' : 'dark';
+    const nextTheme = normalizeTheme(theme);
     document.documentElement.setAttribute('data-theme', nextTheme);
     try {
       window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
@@ -70,14 +80,16 @@
     }
     const button = $('theme-toggle');
     if (button) {
-      button.setAttribute('data-tip', nextTheme === 'light' ? '浅色模式' : '深色模式');
+      button.setAttribute('data-tip', THEME_TIPS[nextTheme] || THEME_TIPS.dark);
+      button.setAttribute('aria-label', `切换主题，当前为${THEME_TIPS[nextTheme] || THEME_TIPS.dark}`);
     }
   }
 
   function bindThemeToggle(onToggle) {
     setTheme(getStoredTheme());
     $('theme-toggle')?.addEventListener('click', async () => {
-      const nextTheme = getStoredTheme() === 'dark' ? 'light' : 'dark';
+      const currentIndex = THEME_SEQUENCE.indexOf(getStoredTheme());
+      const nextTheme = THEME_SEQUENCE[(currentIndex + 1) % THEME_SEQUENCE.length];
       setTheme(nextTheme);
       if (typeof onToggle === 'function') {
         await onToggle(nextTheme);

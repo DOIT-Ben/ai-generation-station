@@ -63,6 +63,13 @@ function getConfigValue(env, localConfig, key, fallback) {
     return fallback;
 }
 
+function hasExplicitConfigValue(env, localConfig, key) {
+    if (Object.prototype.hasOwnProperty.call(env, key) && String(env[key] || '').trim()) {
+        return true;
+    }
+    return localConfig[key] !== undefined && String(localConfig[key] || '').trim() !== '';
+}
+
 function getPositiveNumberConfig(env, localConfig, key, fallback) {
     const raw = getConfigValue(env, localConfig, key, fallback);
     const value = Number(raw);
@@ -83,6 +90,9 @@ function createConfig(options = {}) {
     const PORT = Number(getConfigValue(env, localConfig, 'PORT', 18791));
     const OUTPUT_DIR = resolveOutputDir(getConfigValue(env, localConfig, 'OUTPUT_DIR', undefined));
     const API_KEY = getConfigValue(env, localConfig, 'MINIMAX_API_KEY', '') || '';
+    const CHAT_API_BASE_URL = String(getConfigValue(env, localConfig, 'CHAT_API_BASE_URL', 'https://api.suneora.com/v1') || 'https://api.suneora.com/v1').trim() || 'https://api.suneora.com/v1';
+    const CHAT_API_KEY = String(getConfigValue(env, localConfig, 'CHAT_API_KEY', '') || '').trim();
+    const CHAT_DEFAULT_MODEL = String(getConfigValue(env, localConfig, 'CHAT_DEFAULT_MODEL', 'gpt-4.1-mini') || 'gpt-4.1-mini').trim() || 'gpt-4.1-mini';
     const APP_USERNAME = getConfigValue(env, localConfig, 'APP_USERNAME', 'studio');
     const APP_PASSWORD = getConfigValue(env, localConfig, 'APP_PASSWORD', 'AIGS2026!');
     const APP_BASE_URL = String(getConfigValue(env, localConfig, 'APP_BASE_URL', `http://localhost:${PORT}`) || `http://localhost:${PORT}`).trim() || `http://localhost:${PORT}`;
@@ -141,6 +151,18 @@ function createConfig(options = {}) {
     const STATE_BACKUP_DIR = resolveDataDirPath(getConfigValue(env, localConfig, 'STATE_BACKUP_DIR', ''), 'backups');
     const AUDIT_LOG_RETENTION_DAYS = getPositiveNumberConfig(env, localConfig, 'AUDIT_LOG_RETENTION_DAYS', 90);
     const STATE_BACKUP_RETENTION_DAYS = getPositiveNumberConfig(env, localConfig, 'STATE_BACKUP_RETENTION_DAYS', 14);
+    const MAX_JSON_BODY_BYTES = getPositiveNumberConfig(env, localConfig, 'MAX_JSON_BODY_BYTES', 8 * 1024 * 1024);
+    const MAX_UPLOAD_BYTES = getPositiveNumberConfig(env, localConfig, 'MAX_UPLOAD_BYTES', 10 * 1024 * 1024);
+    const NODE_ENV = String(getConfigValue(env, localConfig, 'NODE_ENV', 'development') || 'development').trim().toLowerCase();
+
+    if (NODE_ENV === 'production') {
+        if (!hasExplicitConfigValue(env, localConfig, 'APP_PASSWORD') || APP_PASSWORD === 'AIGS2026!') {
+            throw new Error('APP_PASSWORD must be explicitly configured to a non-default value in production.');
+        }
+        if (!hasExplicitConfigValue(env, localConfig, 'CSRF_SECRET')) {
+            throw new Error('CSRF_SECRET must be explicitly configured in production.');
+        }
+    }
 
     if (!fs.existsSync(DATA_DIR)) {
         fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -157,6 +179,9 @@ function createConfig(options = {}) {
     if (!API_KEY) {
         console.warn('[Config] MINIMAX_API_KEY is not configured. API generation routes will return a configuration error.');
     }
+    if (!CHAT_API_KEY) {
+        console.warn('[Config] CHAT_API_KEY is not configured. Chat routes will return a configuration error.');
+    }
     if (NOTIFICATION_DELIVERY_MODE === 'resend' && (!NOTIFICATION_FROM_EMAIL || !RESEND_API_KEY)) {
         console.warn('[Config] Resend email delivery is enabled but NOTIFICATION_FROM_EMAIL or RESEND_API_KEY is missing.');
     }
@@ -168,6 +193,9 @@ function createConfig(options = {}) {
         PORT,
         OUTPUT_DIR,
         API_KEY,
+        CHAT_API_BASE_URL,
+        CHAT_API_KEY,
+        CHAT_DEFAULT_MODEL,
         DATA_DIR,
         APP_USERNAME,
         APP_PASSWORD,
@@ -195,6 +223,9 @@ function createConfig(options = {}) {
         STATE_BACKUP_DIR,
         AUDIT_LOG_RETENTION_DAYS,
         STATE_BACKUP_RETENTION_DAYS,
+        MAX_JSON_BODY_BYTES,
+        MAX_UPLOAD_BYTES,
+        NODE_ENV,
         MIME_TYPES
     };
 }

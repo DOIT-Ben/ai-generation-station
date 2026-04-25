@@ -66,9 +66,11 @@
   let currentUserProfile = null;
   let conversationSearchQuery = '';
   let conversationFilterMode = 'all';
+  let openConversationActionId = '';
+  let conversationManageMode = false;
   let userPreferences = {
     theme: 'dark',
-    defaultModelChat: 'MiniMax-M2.7',
+    defaultModelChat: 'gpt-4.1-mini',
     defaultVoice: 'male-qn-qingse',
     defaultMusicStyle: '',
     defaultCoverRatio: '1:1'
@@ -84,6 +86,8 @@
   const CHAT_ARCHIVED_COLLAPSED_KEY = 'aigs.chat.archived.collapsed';
   const CHAT_WORKFLOW_STATE_KEY_PREFIX = 'aigs.chat.workflow';
   const CHAT_EXCERPT_STATE_KEY_PREFIX = 'aigs.chat.excerpts';
+  const CHAT_MODEL_OPTIONS_CACHE_KEY = 'aigs.chat.model-options';
+  const CHAT_MODEL_OPTIONS_CACHE_VERSION = 2;
   let chatArchivedCollapsed = false;
   let chatWorkflowState = createDefaultChatWorkflowState();
   let chatExcerptState = createDefaultChatExcerptState();
@@ -92,13 +96,15 @@
     lyrics: { prompt: 'lyrics-prompt', style: 'lyrics-style', structure: 'lyrics-structure' },
     cover: { prompt: 'cover-prompt', ratio: 'cover-ratio', style: 'cover-style' },
     speech: { text: 'speech-text', voice_id: 'speech-voice', emotion: 'speech-emotion', speed: 'speech-speed', pitch: 'speech-pitch', vol: 'speech-vol', output_format: 'speech-format' },
+    transcription: {},
     music: { prompt: 'music-prompt', style: 'music-style', bpm: 'music-bpm', key: 'music-key', duration: 'music-duration' },
     covervoice: { prompt: 'voice-prompt', timbre: 'voice-timbre', pitch: 'voice-pitch', audio_url: 'voice-audio-url' }
   };
 
   const RESULT_IDS = {
     covervoice: 'covervoice-result',
-    speech: 'speech-result'
+    speech: 'speech-result',
+    transcription: 'transcription-result'
   };
 
   const COUNTER_IDS = {
@@ -329,6 +335,40 @@
     return !exists;
   }
 
+  function closeConversationActionMenu(options = {}) {
+    if (!openConversationActionId) return;
+    openConversationActionId = '';
+    if (options.render !== false) {
+      renderConversationList();
+    }
+  }
+
+  function toggleConversationActionMenu(conversationId) {
+    const targetId = String(conversationId || '').trim();
+    if (!targetId) return false;
+    openConversationActionId = openConversationActionId === targetId ? '' : targetId;
+    renderConversationList();
+    return openConversationActionId === targetId;
+  }
+
+  function setConversationManageMode(nextMode, options = {}) {
+    conversationManageMode = Boolean(nextMode);
+    openConversationActionId = '';
+    const button = $('btn-chat-manage-conversations');
+    if (button) {
+      button.classList.toggle('is-active', conversationManageMode);
+      button.setAttribute('aria-pressed', conversationManageMode ? 'true' : 'false');
+      button.textContent = conversationManageMode ? '完成' : '管理';
+    }
+    if (options.render !== false) {
+      renderConversationList();
+    }
+  }
+
+  function toggleConversationManageMode() {
+    setConversationManageMode(!conversationManageMode);
+  }
+
   function createDefaultChatExcerptState() {
     return {
       items: [],
@@ -438,7 +478,7 @@
   function isAssistantMessageCompact(message) {
     if (!message?.id || !isLongAssistantMessage(message)) return false;
     const uiState = getChatMessageUiState(message.id) || {};
-    return uiState.compactExpanded !== true;
+    return uiState.compactExpanded === false;
   }
 
   function getChatExcerptByMessageId(messageId) {
@@ -722,7 +762,7 @@
     const card = $('workspace-resume-card');
     if (!card) return;
 
-    if (!currentUser) {
+    if (!currentUser || currentTab === 'chat') {
       card.setAttribute('hidden', '');
       return;
     }
@@ -909,7 +949,7 @@
       return pills;
     }
 
-    pills.push({ tone: 'model', label: conversation.model || 'MiniMax-M2.7' });
+    pills.push({ tone: 'model', label: conversation.model || 'gpt-4.1-mini' });
     pills.push({ tone: 'count', label: `${conversation.messageCount || 0} 条消息` });
     if (isConversationPinned(conversation.id)) {
       pills.push({ tone: 'priority', label: '重点会话' });
@@ -920,11 +960,8 @@
     if (Number(conversation.messageCount || 0) <= 0) {
       pills.push({ tone: 'empty', label: '空白会话，可直接开始新主题' });
     }
-    pills.push({ tone: 'time', label: `最近活跃 ${getActiveConversationLastActivityLabel(conversation)}` });
     if (draftLength > 0) {
       pills.push({ tone: 'draft', label: `未发送草稿 ${draftLength} 字` });
-    } else if (workspaceState.lastSavedAt) {
-      pills.push({ tone: 'saved', label: formatRelativeSavedAt(workspaceState.lastSavedAt) });
     }
     if (isChatGenerating) {
       pills.push({ tone: 'live', label: chatQueue.length > 0 ? `正在回复中，队列 ${chatQueue.length} 条` : '正在回复中' });
@@ -970,21 +1007,8 @@
     const activeConversation = getActiveConversation();
     const draftLength = getChatDraftLength();
     const conversationMessageCount = getConversationMessageCount(activeConversation);
-    const assistantCount = getAssistantMessageCount();
     if (!currentUser || isChatGenerating || draftLength > 0) return null;
-
-    if (conversationMessageCount > 0) {
-      const prompts = getChatFollowUpPrompts();
-      if (!prompts.length) return null;
-      return {
-        tone: 'followup',
-        title: assistantCount <= 1 ? '第一轮已经开始，继续把它说透' : '继续推进当前对话',
-        description: assistantCount <= 1
-          ? '先补一句限制、目标结果或风格偏好，后面的输出会更贴你的意图。'
-          : '常见追问先帮你备好，点一下就能接着聊。',
-        prompts
-      };
-    }
+    if (conversationMessageCount > 0) return null;
 
     const prompts = getChatQuickstartPrompts();
     if (!prompts.length) return null;
@@ -1026,34 +1050,21 @@
   }
 
   function createChatStarterPanelMarkup() {
-    const starterMeta = [
-      `当前模型 ${getModelLabel($('chat-model')?.value || 'MiniMax-M2.7')}`,
-      '支持流式回复',
-      '草稿自动保存'
-    ];
     return `
       <div class="chat-starter-shell">
         <div class="chat-starter-copy">
-          <span class="chat-starter-kicker">开始一段新对话</span>
-          <h3>你好，我已经准备好了。</h3>
-          <p>如果你还没想好第一句，可以直接从下面选一个方向开始，我会顺着你的上下文继续拆下去。</p>
-        </div>
-        <div class="chat-starter-meta">
-          ${starterMeta.map(item => `<span class="chat-starter-meta-pill">${escapeHtml(item)}</span>`).join('')}
+          <h3>开始一段新对话</h3>
+          <p>选一个开头，或直接输入你的问题。</p>
         </div>
         <div class="chat-starter-grid">
-          ${CHAT_STARTER_PROMPTS.map((item, index) => `
+          ${CHAT_STARTER_PROMPTS.map(item => `
             <button
               type="button"
-              class="chat-starter-card${index === 0 ? ' is-featured' : ''}"
+              class="chat-starter-card"
               data-chat-starter-prompt="${escapeHtml(item.prompt)}">
               <strong>${escapeHtml(item.label)}</strong>
-              <span>${escapeHtml(item.description)}</span>
             </button>
           `).join('')}
-        </div>
-        <div class="chat-starter-footer">
-          点一下会先填入输入框。发出第一句后，我会自动切到继续追问节奏，帮你把话题越聊越具体。
         </div>
       </div>
     `;
@@ -1117,6 +1128,361 @@
     options.forEach(option => option.classList.toggle('active', option.dataset.value === select.value));
   }
 
+  function syncInputDropdown(inputId) {
+    const input = $(inputId);
+    if (!input) return;
+    const dropdown = $(`${inputId}-dropdown`);
+    if (!dropdown) return;
+    const valueSpan = dropdown.querySelector('.dropdown-value');
+    const options = dropdown.querySelectorAll('.dropdown-option');
+    const selected = Array.from(options).find(option => option.dataset.value === input.value) || options[0];
+    if (valueSpan && selected) valueSpan.textContent = selected.dataset.label || selected.textContent;
+    options.forEach(option => option.classList.toggle('active', option.dataset.value === input.value));
+  }
+
+  function updateDropdownScrollState(menu) {
+    if (!menu) return;
+    const hasOverflow = menu.scrollHeight - menu.clientHeight > 8;
+    const isNearBottom = menu.scrollTop + menu.clientHeight >= menu.scrollHeight - 8;
+    menu.dataset.scrollable = hasOverflow ? 'true' : 'false';
+    menu.dataset.scrollHint = hasOverflow && !isNearBottom ? 'true' : 'false';
+  }
+
+  function syncCustomDropdownValue(dropdown, hiddenInput, option) {
+    if (!dropdown || !option) return;
+    const valueSpan = dropdown.querySelector('.dropdown-value');
+    const nextValue = String(option.dataset.value || '').trim();
+    const nextLabel = String(option.dataset.label || option.textContent || '').trim();
+    const options = dropdown.querySelectorAll('.dropdown-option');
+
+    if (hiddenInput && nextValue) {
+      hiddenInput.value = nextValue;
+      hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    if (valueSpan && nextLabel) valueSpan.textContent = nextLabel;
+    options.forEach(item => item.classList.toggle('active', item.dataset.value === nextValue));
+  }
+
+  function formatChatModelDropdownLabel(label, modelId = '') {
+    const source = String(label || modelId || '').trim();
+    const value = String(modelId || source).trim();
+    const normalizedValue = value.toLowerCase();
+    if (!source && !normalizedValue) return '';
+
+    const labelMap = {
+      'gpt-5.5': 'GPT-5.5',
+      'gpt-5.4': 'GPT-5.4',
+      'gpt-5.4-mini': 'GPT-5.4 Mini',
+      'gpt-5.3-codex': 'GPT-5.3 Codex',
+      'gpt-5.3-codex-spark': 'GPT-5.3 Codex Spark',
+      'gpt-5.2': 'GPT-5.2',
+      'gpt-5.2-chat-latest': 'GPT-5.2 Chat',
+      'gpt-5.2-pro': 'GPT-5.2 Pro',
+      'gpt-4.5-preview': 'GPT-4.5 Preview',
+      'gpt-4.1': 'GPT-4.1',
+      'gpt-4.1-mini': 'GPT-4.1 Mini',
+      'gpt-4.1-nano': 'GPT-4.1 Nano',
+      'chatgpt-4o-latest': 'ChatGPT-4o Latest',
+      'gpt-4o': 'GPT-4o',
+      'gpt-4o-2024-11-20': 'GPT-4o 2024-11',
+      'gpt-4o-2024-08-06': 'GPT-4o 2024-08',
+      'gpt-4o-mini': 'GPT-4o Mini',
+      'gpt-4-turbo': 'GPT-4 Turbo',
+      'gpt-4-turbo-preview': 'GPT-4 Turbo Preview',
+      'gpt-4': 'GPT-4',
+      'gpt-3.5-turbo': 'GPT-3.5 Turbo',
+      'gpt-3.5-turbo-0125': 'GPT-3.5 0125',
+      'gpt-3.5-turbo-1106': 'GPT-3.5 1106',
+      'gpt-3.5-turbo-16k': 'GPT-3.5 16K',
+      'o1': 'o1',
+      'o1-mini': 'o1 Mini',
+      'o1-preview': 'o1 Preview',
+      'o1-pro': 'o1 Pro',
+      'o3': 'o3',
+      'o3-mini': 'o3 Mini',
+      'o3-pro': 'o3 Pro',
+      'o4-mini': 'o4 Mini'
+    };
+    if (labelMap[normalizedValue]) return labelMap[normalizedValue];
+
+    const formatToken = token => {
+      const tokenMap = {
+        mini: 'Mini',
+        nano: 'Nano',
+        pro: 'Pro',
+        preview: 'Preview',
+        latest: 'Latest',
+        turbo: 'Turbo',
+        codex: 'Codex',
+        spark: 'Spark',
+        chat: 'Chat'
+      };
+      return tokenMap[token] || token.toUpperCase();
+    };
+
+    const formatParts = (prefix, parts) => {
+      const [version, ...rest] = parts;
+      if (!version) return source;
+      const labelParts = [`${prefix}-${version}`];
+      for (let index = 0; index < rest.length; index += 1) {
+        const token = rest[index];
+        if (/^\d{4}$/.test(token) && /^\d{2}$/.test(rest[index + 1] || '') && /^\d{2}$/.test(rest[index + 2] || '')) {
+          labelParts.push(`${token}-${rest[index + 1]}-${rest[index + 2]}`);
+          index += 2;
+          continue;
+        }
+        labelParts.push(formatToken(token));
+      }
+      return labelParts.join(' ');
+    };
+
+    if (normalizedValue.startsWith('chatgpt-')) {
+      return formatParts('ChatGPT', normalizedValue.split('-').slice(1));
+    }
+    if (normalizedValue.startsWith('gpt-')) {
+      return formatParts('GPT', normalizedValue.split('-').slice(1));
+    }
+    if (/^o\d/.test(normalizedValue)) {
+      const [series, ...rest] = normalizedValue.split('-');
+      return [series, ...rest.map(formatToken)].join(' ');
+    }
+
+    return source;
+  }
+
+  function readCachedChatModelOptions() {
+    try {
+      const cached = safeParseJson(window.localStorage.getItem(CHAT_MODEL_OPTIONS_CACHE_KEY), null);
+      if (!cached || typeof cached !== 'object') return null;
+      if (Number(cached.version || 0) !== CHAT_MODEL_OPTIONS_CACHE_VERSION) return null;
+      const models = Array.isArray(cached.models) ? cached.models : [];
+      return models.length ? { models, savedAt: Number(cached.savedAt || 0) || 0 } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function writeCachedChatModelOptions(models = []) {
+    if (!Array.isArray(models) || !models.length) return;
+    try {
+      window.localStorage.setItem(CHAT_MODEL_OPTIONS_CACHE_KEY, JSON.stringify({
+        version: CHAT_MODEL_OPTIONS_CACHE_VERSION,
+        models,
+        savedAt: Date.now()
+      }));
+    } catch {
+      // Ignore localStorage write failures for model cache.
+    }
+  }
+
+  function initializeChatModelDropdownLoadingState() {
+    const input = $('chat-model');
+    const dropdown = $('chat-model-dropdown');
+    const menu = dropdown?.querySelector('.dropdown-menu');
+    if (!input || !dropdown || !menu) return;
+
+    const cached = readCachedChatModelOptions();
+    if (cached?.models?.length) {
+      applyChatModelOptions(cached.models, {
+        selectedValue: userPreferences.defaultModelChat || input.value || ''
+      });
+      dropdown.dataset.modelSource = 'cache';
+      return;
+    }
+
+    const currentValue = String(input.value || userPreferences.defaultModelChat || 'gpt-4.1-mini').trim() || 'gpt-4.1-mini';
+    const currentLabel = String(dropdown.querySelector('.dropdown-value')?.textContent || currentValue).trim() || currentValue;
+
+    menu.innerHTML = `
+      <div class="dropdown-group dropdown-group-recommended dropdown-group-loading">
+        <div class="dropdown-group-label">当前模型</div>
+        <div class="dropdown-option dropdown-option-recommended active" data-value="${escapeHtml(currentValue)}" data-label="${escapeHtml(currentLabel)}" title="${escapeHtml(currentLabel)}">
+          <span class="dropdown-option-label">${escapeHtml(currentLabel)}</span>
+        </div>
+      </div>
+      <div class="dropdown-group dropdown-group-loading">
+        <div class="dropdown-group-label">模型列表</div>
+        <div class="dropdown-option dropdown-option-loading" data-value="${escapeHtml(currentValue)}" data-label="${escapeHtml(currentLabel)}" aria-disabled="true">
+          <span class="dropdown-option-label">正在加载模型列表...</span>
+        </div>
+      </div>
+    `;
+
+    syncInputDropdown('chat-model');
+    updateDropdownScrollState(menu);
+    dropdown.dataset.modelSource = 'loading';
+  }
+
+  function applyChatModelOptions(models = [], options = {}) {
+    const input = $('chat-model');
+    const dropdown = $('chat-model-dropdown');
+    const menu = dropdown?.querySelector('.dropdown-menu');
+    if (!input || !dropdown || !menu) return;
+
+    const normalizedModels = (Array.isArray(models) ? models : [])
+      .map(item => {
+        const id = String(item?.id || '').trim();
+        const rawLabel = String(item?.label || item?.display_name || id || '').trim();
+        return {
+          id,
+          label: formatChatModelDropdownLabel(rawLabel, id),
+          tags: Array.isArray(item?.tags) ? item.tags.map(tag => String(tag || '').trim()).filter(Boolean) : []
+        };
+      })
+      .filter(item => item.id && item.label);
+    if (!normalizedModels.length) return;
+
+    const recommendedIds = [
+      'gpt-5.4',
+      'gpt-4.5-preview',
+      'gpt-4.1',
+      'gpt-4.1-mini',
+      'chatgpt-4o-latest',
+      'gpt-4o'
+    ];
+    const recommendedModels = normalizedModels.filter(item => recommendedIds.includes(item.id));
+    const remainingModels = normalizedModels.filter(item => !recommendedIds.includes(item.id));
+
+    const groupedModels = remainingModels.reduce((acc, item) => {
+      const groupLabel = getChatModelGroupLabel(item.id);
+      if (!acc.has(groupLabel)) {
+        acc.set(groupLabel, []);
+      }
+      acc.get(groupLabel).push(item);
+      return acc;
+    }, new Map());
+
+    const groupOrder = ['GPT-5.x', 'GPT-4.5', 'GPT-4.1', 'ChatGPT-4o', 'GPT-4o', 'GPT-4', 'GPT-3.5', 'o Series', 'Other'];
+    const groupedEntries = Array.from(groupedModels.entries()).sort((left, right) => {
+      const leftIndex = groupOrder.indexOf(left[0]);
+      const rightIndex = groupOrder.indexOf(right[0]);
+      const safeLeftIndex = leftIndex === -1 ? Number.MAX_SAFE_INTEGER : leftIndex;
+      const safeRightIndex = rightIndex === -1 ? Number.MAX_SAFE_INTEGER : rightIndex;
+      return safeLeftIndex - safeRightIndex;
+    });
+
+    const renderTag = tag => `<span class="dropdown-option-tag ${getChatModelTagClass(tag)}">${escapeHtml(tag)}</span>`;
+    const renderSeriesBadge = modelId => {
+      const seriesLabel = getChatModelSeriesLabel(modelId);
+      return seriesLabel
+        ? `<span class="dropdown-option-series ${getChatModelSeriesClass(seriesLabel)}">${escapeHtml(seriesLabel)}</span>`
+        : '';
+    };
+    const renderMeta = item => {
+      const seriesBadge = renderSeriesBadge(item.id);
+      const capabilityTags = item.tags.length
+        ? `<span class="dropdown-option-tags">${item.tags.slice(0, 2).map(renderTag).join('')}</span>`
+        : '';
+      if (!seriesBadge && !capabilityTags) return '';
+      return `<span class="dropdown-option-meta">${seriesBadge}${capabilityTags}</span>`;
+    };
+
+    const recommendedBlock = recommendedModels.length ? `
+      <div class="dropdown-group dropdown-group-recommended">
+        <div class="dropdown-group-label">推荐模型</div>
+        ${recommendedModels.map(item => `
+          <div class="dropdown-option dropdown-option-recommended" data-value="${escapeHtml(item.id)}" data-label="${escapeHtml(item.label)}" title="${escapeHtml(item.label)}">
+            <span class="dropdown-option-label">${escapeHtml(item.label)}</span>
+            ${renderMeta(item)}
+          </div>
+        `).join('')}
+      </div>
+    ` : '';
+
+    menu.innerHTML = `${recommendedBlock}${groupedEntries.map(([groupLabel, items]) => `
+      <div class="dropdown-group">
+        <div class="dropdown-group-label">${escapeHtml(groupLabel)}</div>
+        ${items.map(item => `
+          <div class="dropdown-option" data-value="${escapeHtml(item.id)}" data-label="${escapeHtml(item.label)}" title="${escapeHtml(item.label)}">
+            <span class="dropdown-option-label">${escapeHtml(item.label)}</span>
+            ${renderMeta(item)}
+          </div>
+        `).join('')}
+      </div>
+    `).join('')}<div class="dropdown-scroll-hint" aria-hidden="true">向下滚动查看更多</div>`;
+
+    const preferredValue = String(
+      options.selectedValue
+      || input.value
+      || userPreferences.defaultModelChat
+      || normalizedModels[0].id
+    ).trim();
+    const selected = normalizedModels.find(item => item.id === preferredValue) || normalizedModels[0];
+    input.value = selected.id;
+    syncInputDropdown('chat-model');
+    menu.scrollTop = 0;
+    updateDropdownScrollState(menu);
+  }
+
+  function getChatModelGroupLabel(modelId) {
+    const value = String(modelId || '').trim().toLowerCase();
+    if (!value) return 'Other';
+    if (value.startsWith('gpt-5')) return 'GPT-5.x';
+    if (value.startsWith('gpt-4.5')) return 'GPT-4.5';
+    if (value.startsWith('gpt-4.1')) return 'GPT-4.1';
+    if (value.startsWith('chatgpt-4o')) return 'ChatGPT-4o';
+    if (value.startsWith('gpt-4o')) return 'GPT-4o';
+    if (value.startsWith('gpt-4')) return 'GPT-4';
+    if (value.startsWith('gpt-3.5')) return 'GPT-3.5';
+    if (/^o\d/.test(value)) return 'o Series';
+    return 'Other';
+  }
+
+  function getChatModelSeriesLabel(modelId) {
+    return getChatModelGroupLabel(modelId);
+  }
+
+  function getChatModelSeriesClass(seriesLabel) {
+    const value = String(seriesLabel || '').trim();
+    if (!value) return '';
+    if (value === 'GPT-5.x') return 'series-gpt5';
+    if (value === 'GPT-4.5') return 'series-gpt45';
+    if (value === 'GPT-4.1') return 'series-gpt41';
+    if (value === 'ChatGPT-4o') return 'series-chatgpt4o';
+    if (value === 'GPT-4o') return 'series-gpt4o';
+    if (value === 'GPT-4') return 'series-gpt4';
+    if (value === 'GPT-3.5') return 'series-gpt35';
+    if (value === 'o Series') return 'series-o';
+    return 'series-other';
+  }
+
+  function getChatModelTagClass(tag) {
+    const value = String(tag || '').trim();
+    if (!value) return '';
+    if (value === '推荐') return 'tone-recommended';
+    if (value === '高质量') return 'tone-quality';
+    if (value === '快速') return 'tone-fast';
+    if (value === '预览') return 'tone-preview';
+    if (value === '均衡') return 'tone-balanced';
+    if (value === '低成本') return 'tone-budget';
+    if (value === '代码') return 'tone-code';
+    if (value === '推理') return 'tone-reasoning';
+    if (value === '轻量') return 'tone-light';
+    if (value === '通用') return 'tone-general';
+    return '';
+  }
+
+  async function loadChatModelOptions() {
+    try {
+      const response = await apiFetch('/api/chat/models', { method: 'GET' });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || '聊天模型列表加载失败');
+      }
+      const data = await response.json();
+      const models = Array.isArray(data.models) ? data.models : [];
+      if (!models.length) return;
+      writeCachedChatModelOptions(models);
+      applyChatModelOptions(models, {
+        selectedValue: userPreferences.defaultModelChat || data.defaultModel || ''
+      });
+      $('chat-model-dropdown')?.setAttribute('data-model-source', 'live');
+    } catch {
+      syncInputDropdown('chat-model');
+    }
+  }
+
   function setFieldValue(inputId, value) {
     const input = $(inputId);
     if (!input) return;
@@ -1129,6 +1495,7 @@
     input.dispatchEvent(new Event('change', { bubbles: true }));
     syncCounter(inputId);
     syncSelectDropdown(inputId);
+    syncInputDropdown(inputId);
   }
 
   function formatTime(timestamp) {
@@ -1225,7 +1592,7 @@
 
   function applyUserPreferences() {
     setTheme(userPreferences.theme || 'dark');
-    setFieldValue('chat-model', userPreferences.defaultModelChat || 'MiniMax-M2.7');
+    setFieldValue('chat-model', userPreferences.defaultModelChat || 'gpt-4.1-mini');
     setFieldValue('speech-voice', userPreferences.defaultVoice || 'male-qn-qingse');
     setFieldValue('music-style', userPreferences.defaultMusicStyle || '');
     setFieldValue('cover-ratio', userPreferences.defaultCoverRatio || '1:1');
@@ -1815,16 +2182,41 @@
   }
 
   function getConversationTitlePreview(conversation) {
-    return conversation?.title || '新对话';
+    return sanitizeConversationText(conversation?.title) || '新对话';
+  }
+
+  function getConversationCardTitle(conversation) {
+    return truncateText(getConversationTitlePreview(conversation), 15);
   }
 
   function getConversationPreview(conversation) {
-    const preview = truncateText(conversation?.preview || conversation?.lastMessagePreview || '', 72);
+    const preview = truncateText(
+      sanitizeConversationText(conversation?.preview || conversation?.lastMessagePreview || ''),
+      72
+    );
     if (preview) return preview;
     if (Number(conversation?.messageCount || 0) <= 0) {
       return '还没有消息，适合开始一个新主题。';
     }
-    return `${conversation?.messageCount || 0} 条消息 · ${conversation?.model || 'MiniMax-M2.7'}`;
+    return `${conversation?.messageCount || 0} 条消息 · ${conversation?.model || 'gpt-4.1-mini'}`;
+  }
+
+  function sanitizeConversationText(value) {
+    return String(value || '')
+      .replace(/\r\n/g, '\n')
+      .replace(/^\s*[-*_]{3,}\s*$/gm, ' ')
+      .replace(/^\s*#{1,6}\s+/gm, '')
+      .replace(/^\s*[>]+ ?/gm, '')
+      .replace(/^\s*[-*+]\s+/gm, '')
+      .replace(/^\s*\d+\.\s+/gm, '')
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1')
+      .replace(/[`*_~]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function getConversationCardPreview(conversation) {
+    return truncateText(getConversationPreview(conversation), 15);
   }
 
   function getConversationRowPillsMarkup(conversation) {
@@ -2058,12 +2450,12 @@
     const activeConversation = conversationState.list.find(item => item.id === conversationState.activeId) || null;
     if (!currentUser || !activeConversation) {
       title.textContent = '暂无进行中的对话';
-      subtitle.textContent = '新建一个对话后即可开始聊天。';
+      subtitle.textContent = '新建对话后即可开始。';
       return;
     }
 
     title.textContent = getConversationTitlePreview(activeConversation);
-    subtitle.textContent = `${activeConversation.messageCount || 0} 条消息 · ${activeConversation.model || 'MiniMax-M2.7'}`;
+    subtitle.textContent = `${activeConversation.messageCount || 0} 条消息 · ${activeConversation.model || 'gpt-4.1-mini'}`;
   }
 
   function renderConversationList() {
@@ -2104,22 +2496,19 @@
         <div class="chat-conversation-group-list">
           ${group.items.map(item => `
             <article class="chat-conversation-row${item.id === conversationState.activeId ? ' is-active' : ''}">
-              <button
-                type="button"
-                class="chat-conversation-item${item.id === conversationState.activeId ? ' active' : ''}"
-                data-conversation-id="${item.id}">
-                <div class="chat-conversation-item-top">
-                  <strong>${escapeHtml(getConversationTitlePreview(item))}</strong>
-                  <time>${escapeHtml(getConversationTimeLabel(item))}</time>
-                </div>
-                <p class="chat-conversation-preview">${escapeHtml(getConversationPreview(item))}</p>
-                <div class="chat-conversation-meta">
-                  <span>${item.messageCount || 0} 条消息</span>
-                  <span>${escapeHtml(item.model || 'MiniMax-M2.7')}</span>
-                </div>
-                <div class="chat-conversation-flags">${getConversationRowPillsMarkup(item)}</div>
-              </button>
-              <div class="chat-conversation-inline-actions">
+              <div class="chat-conversation-row-main">
+                <button
+                  type="button"
+                  class="chat-conversation-item${item.id === conversationState.activeId ? ' active' : ''}"
+                  data-conversation-id="${item.id}">
+                  <div class="chat-conversation-item-top">
+                    <strong>${escapeHtml(getConversationCardTitle(item))}</strong>
+                    <time>${escapeHtml(getConversationTimeLabel(item))}</time>
+                  </div>
+                  <p class="chat-conversation-preview">${escapeHtml(getConversationCardPreview(item))}</p>
+                </button>
+              </div>
+              <div class="chat-conversation-action-panel${conversationManageMode ? ' is-open' : ''}" ${conversationManageMode ? '' : 'hidden'}>
                 <button
                   type="button"
                   class="chat-conversation-mini-action${isConversationPinned(item.id) ? ' is-active' : ''}"
@@ -2203,11 +2592,10 @@
       <article class="chat-archived-item">
         <div class="chat-archived-copy">
           <div class="chat-conversation-item-top">
-            <strong>${escapeHtml(getConversationTitlePreview(item))}</strong>
+            <strong>${escapeHtml(getConversationCardTitle(item))}</strong>
             <time>${escapeHtml(getConversationTimeLabel(item))}</time>
           </div>
-          <p class="chat-conversation-preview">${escapeHtml(getConversationPreview(item))}</p>
-          <span>${item.messageCount || 0} 条消息 · ${escapeHtml(item.model || 'MiniMax-M2.7')}</span>
+          <p class="chat-conversation-preview">${escapeHtml(getConversationCardPreview(item))}</p>
         </div>
         <div class="chat-archived-actions">
           <button
@@ -2250,7 +2638,7 @@
     if (!currentUser || !persistence?.createConversation) return null;
     try {
       const result = await persistence.createConversation({
-        model: $('chat-model')?.value || 'MiniMax-M2.7'
+        model: $('chat-model')?.value || 'gpt-4.1-mini'
       });
       if (!result?.conversation) return null;
       conversationState.list = [result.conversation].concat(conversationState.list.filter(item => item.id !== result.conversation.id));
@@ -2301,14 +2689,9 @@
   function renderConversationMeta() {
     const title = $('chat-conversation-title');
     const subtitle = $('chat-conversation-subtitle');
-    const renameButton = $('btn-chat-rename-conversation');
-    const archiveButton = $('btn-chat-archive-conversation');
     if (!title || !subtitle) return;
 
     const activeConversation = getActiveConversation();
-    const disableManagement = !currentUser || !activeConversation || isChatGenerating;
-    if (renameButton) renameButton.disabled = disableManagement;
-    if (archiveButton) archiveButton.disabled = disableManagement;
     if (!currentUser || !activeConversation) {
       title.textContent = '暂无进行中的对话';
       subtitle.textContent = '新建一个对话后即可开始聊天。';
@@ -2321,7 +2704,7 @@
 
     title.textContent = getConversationTitlePreview(activeConversation);
     subtitle.textContent = Number(activeConversation.messageCount || 0) <= 0
-      ? `${getActiveConversationLastActivityLabel(activeConversation)} · 还没有消息，可以直接从下方快速开始。`
+      ? `${getActiveConversationLastActivityLabel(activeConversation)}`
       : `${getActiveConversationLastActivityLabel(activeConversation)} · ${getConversationPreview(activeConversation)}`;
     renderChatExperienceState();
     renderChatContextStrip();
@@ -2349,28 +2732,10 @@
       blank: '当前筛选：仅空白会话',
       today: '当前筛选：仅今日活跃'
     };
-    const utilityActions = [];
-
     if (!currentUser && totalActive <= 0 && totalArchived <= 0) {
       summary.setAttribute('hidden', '');
       summary.innerHTML = '';
       return;
-    }
-
-    if (activeConversation) {
-      utilityActions.push('<button type="button" class="chat-sidebar-tool" data-chat-focus-current="true">定位当前</button>');
-    }
-    if (pinnedCount > 0 && getConversationFilterMode() !== 'pinned') {
-      utilityActions.push('<button type="button" class="chat-sidebar-tool" data-chat-filter-shortcut="pinned">只看重点</button>');
-    }
-    if (parkedCount > 0 && getConversationFilterMode() !== 'parked') {
-      utilityActions.push('<button type="button" class="chat-sidebar-tool" data-chat-filter-shortcut="parked">只看稍后</button>');
-    }
-    if (hasFilterState) {
-      utilityActions.push('<button type="button" class="chat-sidebar-tool" data-chat-search-reset="true">清空筛选</button>');
-    }
-    if (totalArchived > 0) {
-      utilityActions.push(`<button type="button" class="chat-sidebar-tool" data-chat-archived-toggle="true">${chatArchivedCollapsed ? '展开归档' : '收起归档'}</button>`);
     }
 
     summary.innerHTML = `
@@ -2392,7 +2757,13 @@
         <span>${filterLabels[getConversationFilterMode()] || filterLabels.all}</span>
         <span>今日活跃 ${todayCount} · 稍后 ${parkedCount} · 已归档 ${totalArchived}</span>
       </div>
-      ${utilityActions.length ? `<div class="chat-sidebar-utility">${utilityActions.join('')}</div>` : ''}
+      ${(activeConversation || hasFilterState || totalArchived > 0) ? `
+        <div class="chat-sidebar-utility">
+          ${activeConversation ? '<button type="button" class="chat-sidebar-tool" data-chat-focus-current="true">定位当前</button>' : ''}
+          ${hasFilterState ? '<button type="button" class="chat-sidebar-tool" data-chat-search-reset="true">清空筛选</button>' : ''}
+          ${totalArchived > 0 ? `<button type="button" class="chat-sidebar-tool" data-chat-archived-toggle="true">${chatArchivedCollapsed ? '展开归档' : '收起归档'}</button>` : ''}
+        </div>
+      ` : ''}
     `;
     summary.removeAttribute('hidden');
   }
@@ -2523,7 +2894,7 @@
     if (!currentUser || !persistence?.createConversation) return null;
     try {
       const result = await persistence.createConversation({
-        model: $('chat-model')?.value || 'MiniMax-M2.7'
+        model: $('chat-model')?.value || 'gpt-4.1-mini'
       });
       if (!result?.conversation) return null;
       applyConversationPayload(result.conversation, result.messages);
@@ -2811,18 +3182,30 @@
 
   function updateChatScrollButton() {
     const button = $('chat-scroll-to-latest');
+    const label = button?.querySelector('.chat-scroll-to-latest-label');
     const container = $('chat-messages');
     if (!button || !container) return;
     if (conversationState.messages.length === 0 && getConversationTransientEntries().length === 0) {
+      button.dataset.state = 'idle';
+      button.dataset.visible = 'false';
       button.setAttribute('hidden', '');
       return;
     }
-    if (chatScrollState.autoFollow || container.scrollHeight <= container.clientHeight + 12) {
-      button.setAttribute('hidden', '');
-      return;
-    }
-    button.textContent = isChatGenerating ? '有新回复，回到最新' : '回到最新回复';
     button.removeAttribute('hidden');
+    if (chatScrollState.autoFollow || container.scrollHeight <= container.clientHeight + 12) {
+      button.dataset.state = 'idle';
+      button.dataset.visible = 'false';
+      return;
+    }
+    const isAttentionState = isChatGenerating;
+    const nextLabel = isAttentionState ? '有新回复，回到最新' : '回到最新回复';
+    button.dataset.state = isAttentionState ? 'attention' : 'idle';
+    button.dataset.visible = 'true';
+    if (label) {
+      label.textContent = nextLabel;
+    } else {
+      button.textContent = nextLabel;
+    }
   }
 
   function handleChatMessagesScroll() {
@@ -2987,6 +3370,10 @@
     setChatMessageUiState(messageId, {
       compactExpanded: currentState.compactExpanded === true ? false : true,
       renderNow: true
+    });
+    window.requestAnimationFrame(() => {
+      document.querySelector('.chat-input-area')?.scrollIntoView({ block: 'end', behavior: 'instant' });
+      queueChatViewportSync();
     });
   }
 
@@ -3190,6 +3577,11 @@
         startNewConversation();
         return;
       }
+      const manageConversationsButton = event.target.closest('#btn-chat-manage-conversations');
+      if (manageConversationsButton) {
+        toggleConversationManageMode();
+        return;
+      }
       const restoreConversationButton = event.target.closest('[data-restore-conversation-id]');
       if (restoreConversationButton) {
         restoreArchivedConversation(restoreConversationButton.dataset.restoreConversationId);
@@ -3210,25 +3602,34 @@
         archiveActiveConversation();
         return;
       }
+      const conversationActionsToggleButton = event.target.closest('[data-conversation-actions-toggle]');
+      if (conversationActionsToggleButton) {
+        toggleConversationActionMenu(conversationActionsToggleButton.dataset.conversationActionsToggle || '');
+        return;
+      }
       const inlineRenameConversationButton = event.target.closest('[data-conversation-rename-id]');
       if (inlineRenameConversationButton) {
+        closeConversationActionMenu({ render: false });
         renameConversationById(inlineRenameConversationButton.dataset.conversationRenameId);
         return;
       }
       const inlinePinConversationButton = event.target.closest('[data-conversation-pin-id]');
       if (inlinePinConversationButton) {
+        closeConversationActionMenu({ render: false });
         const nextPinned = toggleConversationWorkflowState(inlinePinConversationButton.dataset.conversationPinId, 'pinned');
         showToast(nextPinned ? '已设为重点会话' : '已取消重点会话', 'success', 1400);
         return;
       }
       const inlineParkConversationButton = event.target.closest('[data-conversation-park-id]');
       if (inlineParkConversationButton) {
+        closeConversationActionMenu({ render: false });
         const nextParked = toggleConversationWorkflowState(inlineParkConversationButton.dataset.conversationParkId, 'parked');
         showToast(nextParked ? '已加入稍后处理' : '已移出稍后处理', 'success', 1400);
         return;
       }
       const inlineArchiveConversationButton = event.target.closest('[data-conversation-archive-id]');
       if (inlineArchiveConversationButton) {
+        closeConversationActionMenu({ render: false });
         archiveConversationById(inlineArchiveConversationButton.dataset.conversationArchiveId);
         return;
       }
@@ -3469,6 +3870,7 @@
       }
       const conversationButton = event.target.closest('[data-conversation-id]');
       if (conversationButton) {
+        closeConversationActionMenu({ render: false });
         selectConversation(conversationButton.dataset.conversationId);
         return;
       }
@@ -3604,22 +4006,38 @@
   // ============================================
   //  Theme
   // ============================================
-  function getStoredTheme() { return userPreferences.theme || 'dark'; }
+  const THEME_SEQUENCE = ['dark', 'light', 'paper'];
+  const THEME_TIPS = {
+    dark: '深色模式',
+    light: '浅色模式',
+    paper: '护眼模式'
+  };
+
+  function normalizeTheme(theme) {
+    return THEME_SEQUENCE.includes(theme) ? theme : 'dark';
+  }
+
+  function getStoredTheme() { return normalizeTheme(userPreferences.theme || 'dark'); }
 
   function setTheme(theme) {
-    document.documentElement.setAttribute('data-theme', theme);
-    userPreferences.theme = theme;
+    const nextTheme = normalizeTheme(theme);
+    document.documentElement.setAttribute('data-theme', nextTheme);
+    userPreferences.theme = nextTheme;
     try {
-      window.localStorage.setItem('aigs.theme', theme);
+      window.localStorage.setItem('aigs.theme', nextTheme);
     } catch {
       // Ignore localStorage failures.
     }
     const btn = $('theme-toggle');
-    if (btn) btn.setAttribute('data-tip', theme === 'light' ? '浅色模式' : '深色模式');
+    if (btn) {
+      btn.setAttribute('data-tip', THEME_TIPS[nextTheme] || THEME_TIPS.dark);
+      btn.setAttribute('aria-label', `切换主题，当前为${THEME_TIPS[nextTheme] || THEME_TIPS.dark}`);
+    }
   }
 
   function toggleTheme() {
-    const nextTheme = getStoredTheme() === 'dark' ? 'light' : 'dark';
+    const currentIndex = THEME_SEQUENCE.indexOf(getStoredTheme());
+    const nextTheme = THEME_SEQUENCE[(currentIndex + 1) % THEME_SEQUENCE.length];
     setTheme(nextTheme);
     schedulePreferenceSave({ theme: nextTheme });
   }
@@ -4320,6 +4738,91 @@
     });
   }
 
+  function formatFileSize(size) {
+    const value = Number(size || 0);
+    if (!Number.isFinite(value) || value <= 0) return '未知大小';
+    if (value < 1024) return `${value} B`;
+    if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+    if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  }
+
+  function normalizeMediaTypeLabel(file) {
+    const type = String(file?.type || '').toLowerCase();
+    if (type.startsWith('audio/')) return '音频';
+    if (type.startsWith('video/')) return '视频';
+    return '媒体文件';
+  }
+
+  function getTranscriptionSelectedFile() {
+    return $('transcription-file')?.files?.[0] || null;
+  }
+
+  function syncTranscriptionFilePreview(file) {
+    const preview = $('transcription-upload-preview');
+    const fileName = $('transcription-file-name');
+    const fileMeta = $('transcription-file-meta');
+    if (!preview || !fileName || !fileMeta) return;
+
+    if (!file) {
+      preview.setAttribute('hidden', '');
+      fileName.textContent = '未选择文件';
+      fileMeta.textContent = '';
+      return;
+    }
+
+    fileName.textContent = file.name || '未命名文件';
+    fileMeta.textContent = `${normalizeMediaTypeLabel(file)} · ${formatFileSize(file.size)}`;
+    preview.removeAttribute('hidden');
+  }
+
+  function renderTranscriptionPlaceholder(file) {
+    const resultArea = $('transcription-result');
+    const meta = $('transcription-meta');
+    const title = $('transcription-result-title');
+    const subtitle = $('transcription-result-subtitle');
+    const text = $('transcription-text');
+    if (!resultArea || !title || !subtitle || !text) return;
+
+    const fileLabel = file?.name || '当前文件';
+    const typeLabel = normalizeMediaTypeLabel(file);
+    if (meta) {
+      meta.textContent = `${typeLabel} · ${formatFileSize(file?.size || 0)}`;
+    }
+    title.textContent = `${fileLabel} 的转写承接区已就绪`;
+    subtitle.textContent = '当前点击只会进入占位结果区，等你后续接入 API 后，文字结果会落在这里。';
+    text.textContent = [
+      `文件名：${fileLabel}`,
+      `文件类型：${typeLabel}`,
+      '',
+      '当前状态：',
+      '- 上传壳子已完成',
+      '- 拖拽与文件选择可用',
+      '- 结果区已预留',
+      '- 真实转写 API 尚未接入',
+      '',
+      '后续接入后，这里会显示完整识别文本或分段文本。'
+    ].join('\n');
+    resultArea.removeAttribute('hidden');
+    currentResult.transcription = {
+      text: text.textContent,
+      fileName: fileLabel
+    };
+  }
+
+  function startTranscriptionShell() {
+    const file = getTranscriptionSelectedFile();
+    if (!file) {
+      showToast('请先上传音频或视频文件', 'error');
+      return;
+    }
+
+    renderTranscriptionPlaceholder(file);
+    showToast('壳子已就绪，等待接入转写 API', 'info', 1800);
+    renderWorkspaceResumeCard();
+    scheduleWorkspaceStateSave();
+  }
+
   // ============================================
   //  Reset
   // ============================================
@@ -4328,7 +4831,8 @@
     lyrics:     [{ id: 'lyrics-prompt', tag: 'textarea' }, { id: 'lyrics-style' }, { id: 'lyrics-structure' }, { id: 'lyrics-char', val: '0' }],
     cover:      [{ id: 'cover-prompt', tag: 'textarea' }, { id: 'cover-ratio' }, { id: 'cover-style' }, { id: 'cover-char', val: '0' }],
     covervoice: [{ id: 'voice-audio-file' }, { id: 'voice-audio-url' }, { id: 'voice-prompt', tag: 'textarea' }, { id: 'voice-timbre' }, { id: 'voice-pitch' }, { id: 'voice-char', val: '0' }],
-    speech:     [{ id: 'speech-text', tag: 'textarea' }, { id: 'speech-voice' }, { id: 'speech-emotion' }, { id: 'speech-speed' }, { id: 'speech-pitch' }, { id: 'speech-vol' }, { id: 'speech-format' }, { id: 'speech-char', val: '0' }]
+    speech:     [{ id: 'speech-text', tag: 'textarea' }, { id: 'speech-voice' }, { id: 'speech-emotion' }, { id: 'speech-speed' }, { id: 'speech-pitch' }, { id: 'speech-vol' }, { id: 'speech-format' }, { id: 'speech-char', val: '0' }],
+    transcription: [{ id: 'transcription-file' }]
   };
 
   function resetFieldToDefault(inputId) {
@@ -4336,6 +4840,13 @@
       const fileInput = $('voice-audio-file');
       if (fileInput) fileInput.value = '';
       if ($('voice-file-name')) $('voice-file-name').textContent = '';
+      return;
+    }
+
+    if (inputId === 'transcription-file') {
+      const fileInput = $('transcription-file');
+      if (fileInput) fileInput.value = '';
+      syncTranscriptionFilePreview(null);
       return;
     }
 
@@ -4419,7 +4930,13 @@
   let chatHistory = [];
 
   function normalizeChatMarkdownText(value) {
-    return String(value || '').replace(/\r\n/g, '\n');
+    return String(value || '')
+      .replace(/\r\n/g, '\n')
+      .replace(/^\s*---+\s*$/gm, '')
+      .replace(/^\s*[•·]\s*(#{1,3}\s+)/gm, '$1')
+      .replace(/^\s*\*\*(#{1,3}\s+.+?)\*\*\s*$/gm, '$1')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   }
 
   function renderChatCodeBlock(language, code) {
@@ -4454,7 +4971,49 @@
       // Inline code: `text`
       .replace(/`([^`]+)`/g, '<code>$1</code>')
       // Strikethrough: ~~text~~
-      .replace(/~~(.+?)~~/g, '<del>$1</del>');
+      .replace(/~~(.+?)~~/g, '<del>$1</del>')
+      // Remove leftover unmatched markdown emphasis or heading markers.
+      .replace(/\*\*/g, '')
+      .replace(/(^|>|\s)#{1,3}(?=\s*#|\s*$)/g, '$1');
+  }
+
+  function getMarkdownTableCells(line) {
+    const normalized = String(line || '').trim().replace(/^\|/, '').replace(/\|$/, '');
+    return normalized.split('|').map(cell => cell.trim());
+  }
+
+  function isMarkdownTableSeparator(line) {
+    const cells = getMarkdownTableCells(line);
+    return cells.length > 1 && cells.every(cell => /^:?-{3,}:?$/.test(cell));
+  }
+
+  function isMarkdownTableStart(lines, index) {
+    const current = String(lines[index] || '').trim();
+    const next = String(lines[index + 1] || '').trim();
+    return current.includes('|') && next.includes('|') && isMarkdownTableSeparator(next);
+  }
+
+  function renderChatMarkdownTable(tableLines) {
+    const headerCells = getMarkdownTableCells(tableLines[0]);
+    const bodyRows = tableLines.slice(2).map(getMarkdownTableCells);
+    const columnCount = Math.max(headerCells.length, ...bodyRows.map(row => row.length));
+    const normalizeRow = row => Array.from({ length: columnCount }, (_, index) => row[index] || '');
+
+    const headerHtml = normalizeRow(headerCells)
+      .map(cell => `<th>${applyInlineMarkdown(cell)}</th>`)
+      .join('');
+    const bodyHtml = bodyRows
+      .map(row => `<tr>${normalizeRow(row).map(cell => `<td>${applyInlineMarkdown(cell)}</td>`).join('')}</tr>`)
+      .join('');
+
+    return `
+      <div class="chat-table-wrap">
+        <table>
+          <thead><tr>${headerHtml}</tr></thead>
+          <tbody>${bodyHtml}</tbody>
+        </table>
+      </div>
+    `;
   }
 
   function formatChatMessageHtml(text) {
@@ -4476,6 +5035,7 @@
       const trimmed = String(line || '').trim();
       return Boolean(
         trimmed.startsWith(placeholderPrefix) ||
+        isMarkdownTableStart(lines, index) ||
         /^#{1,3}\s+/.test(trimmed) ||
         /^&gt;\s?/.test(trimmed) ||
         /^[-*]\s+/.test(trimmed) ||
@@ -4495,6 +5055,19 @@
       if (trimmed.startsWith(placeholderPrefix)) {
         blocks.push(trimmed);
         index += 1;
+        continue;
+      }
+
+      if (isMarkdownTableStart(lines, index)) {
+        const tableLines = [lines[index], lines[index + 1]];
+        index += 2;
+        while (index < lines.length) {
+          const tableLine = String(lines[index] || '').trim();
+          if (!tableLine || !tableLine.includes('|') || isSpecialBlockStart(lines[index])) break;
+          tableLines.push(lines[index]);
+          index += 1;
+        }
+        blocks.push(renderChatMarkdownTable(tableLines));
         continue;
       }
 
@@ -4588,15 +5161,11 @@
   function buildChatMessageMeta(message, role, settings = {}) {
     const metaItems = [];
     const isUser = role === 'user';
-    const isStreaming = Boolean(settings.isStreaming);
     const roleLabel = isUser ? '你' : 'AI 助手';
     metaItems.push(`<span class="message-meta-pill tone-role">${escapeHtml(roleLabel)}</span>`);
 
     if (message?.transient) {
       metaItems.push('<span class="message-meta-pill tone-transient">临时结果</span>');
-    }
-    if (isStreaming) {
-      metaItems.push('<span class="message-meta-pill tone-live">流式输出中</span>');
     }
 
     const timeLabel = formatChatRelativeTime(message?.createdAt || message?.updatedAt || message?.timestamp || 0);
@@ -5069,7 +5638,7 @@
     const msgDiv = document.createElement('div');
     msgDiv.className = 'chat-message chatbot is-thinking';
     msgDiv.innerHTML = `
-      <div class="message-avatar">🤖</div>
+      <div class="message-avatar"><img src="/images/AG-logo.png" alt="AG Logo" class="message-avatar-logo" /></div>
       <div class="message-content">
         <div class="thinking-indicator" aria-live="polite">
           <span class="thinking-label">正在思考</span>
@@ -5090,7 +5659,9 @@
     const settings = typeof options === 'boolean' ? { isStreaming: options } : (options || {});
     const container = $('chat-messages');
     const chatContainer = document.querySelector('.chat-container');
-    const avatar = role === 'user' ? '😀' : '🤖';
+    const avatar = role === 'user'
+      ? '😀'
+      : '<img src="/images/AG-logo.png" alt="AG Logo" class="message-avatar-logo" />';
     const msgDiv = document.createElement('div');
     const messageData = settings.message && typeof settings.message === 'object' ? settings.message : null;
     const messageId = String(messageData?.id || settings.messageId || '').trim();
@@ -5402,7 +5973,7 @@
       throw new Error('会话创建失败');
     }
 
-    const model = $('chat-model')?.value || 'MiniMax-M2.7';
+    const model = $('chat-model')?.value || 'gpt-4.1-mini';
     const rewriteMessageId = String(options.rewriteMessageId || '').trim();
     const rewriteTarget = rewriteMessageId ? getConversationMessageById(rewriteMessageId) : null;
     const rewriteTurnId = String(rewriteTarget?.metadata?.turnId || '').trim();
@@ -5774,11 +6345,20 @@
 
     const trigger = dropdown.querySelector('.dropdown-trigger');
     const menu = dropdown.querySelector('.dropdown-menu');
-    const options = dropdown.querySelectorAll('.dropdown-option');
-    const valueSpan = dropdown.querySelector('.dropdown-value');
     const hiddenInput = $(inputId);
 
     if (!trigger || !menu) return;
+
+    const setDropdownOpen = (isOpen) => {
+      dropdown.classList.toggle('open', isOpen);
+      trigger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      if (isOpen) {
+        menu.removeAttribute('hidden');
+        updateDropdownScrollState(menu);
+      } else {
+        menu.setAttribute('hidden', '');
+      }
+    };
 
     // Toggle dropdown
     trigger.addEventListener('click', (e) => {
@@ -5789,57 +6369,43 @@
       document.querySelectorAll('.custom-dropdown.open').forEach(d => {
         if (d.id !== dropdownId) {
           d.classList.remove('open');
+          d.querySelector('.dropdown-trigger')?.setAttribute('aria-expanded', 'false');
           d.querySelector('.dropdown-menu')?.setAttribute('hidden', '');
         }
       });
 
-      if (isOpen) {
-        dropdown.classList.remove('open');
-        menu.setAttribute('hidden', '');
-      } else {
-        dropdown.classList.add('open');
-        menu.removeAttribute('hidden');
-      }
+      setDropdownOpen(!isOpen);
     });
 
     // Option selection
-    options.forEach(option => {
-      option.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const value = option.dataset.value;
-        const text = option.textContent;
-
-        // Update hidden input
-        if (hiddenInput) hiddenInput.value = value;
-
-        // Update display
-        if (valueSpan) valueSpan.textContent = text;
-
-        // Update active state
-        options.forEach(o => o.classList.remove('active'));
-        option.classList.add('active');
-
-        // Close dropdown
-        dropdown.classList.remove('open');
-        menu.setAttribute('hidden', '');
-      });
+    menu.addEventListener('click', (e) => {
+      const option = e.target.closest('.dropdown-option');
+      if (!option || !menu.contains(option)) return;
+      e.stopPropagation();
+      syncCustomDropdownValue(dropdown, hiddenInput, option);
+      setDropdownOpen(false);
     });
+
+    menu.addEventListener('scroll', () => {
+      updateDropdownScrollState(menu);
+    }, { passive: true });
 
     // Close on outside click
     document.addEventListener('click', () => {
       if (dropdown.classList.contains('open')) {
-        dropdown.classList.remove('open');
-        menu.setAttribute('hidden', '');
+        setDropdownOpen(false);
       }
     });
 
     // Close on escape key
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && dropdown.classList.contains('open')) {
-        dropdown.classList.remove('open');
-        menu.setAttribute('hidden', '');
+        setDropdownOpen(false);
       }
     });
+
+    syncInputDropdown(inputId);
+    updateDropdownScrollState(menu);
   }
 
   // ============================================
@@ -5935,7 +6501,7 @@
   // ============================================
   //  Init
   // ============================================
-  function init() {
+  async function init() {
     window.addEventListener('app-auth-expired', event => {
       const message = event?.detail?.message || '登录状态已失效，请重新登录';
       handleProtectedSessionLoss(message);
@@ -5997,6 +6563,13 @@
       renderWorkspaceResumeCard();
     });
 
+    $('transcription-file')?.addEventListener('change', e => {
+      const file = e.target.files?.[0] || null;
+      syncTranscriptionFilePreview(file);
+      renderWorkspaceResumeCard();
+      scheduleWorkspaceStateSave();
+    });
+
     // 歌声翻唱来源 Tab 切换
     document.querySelectorAll('.voice-source-tabs .source-tab').forEach(tab => {
       tab.addEventListener('click', () => {
@@ -6035,22 +6608,57 @@
       });
     }
 
+    const transcriptionDropZone = $('transcription-drop-zone');
+    if (transcriptionDropZone) {
+      transcriptionDropZone.addEventListener('click', e => {
+        if (e.target.tagName === 'LABEL' || e.target.closest('label')) return;
+        $('transcription-file')?.click();
+      });
+      transcriptionDropZone.addEventListener('dragover', e => {
+        e.preventDefault();
+        transcriptionDropZone.classList.add('drag-over');
+      });
+      transcriptionDropZone.addEventListener('dragleave', () => transcriptionDropZone.classList.remove('drag-over'));
+      transcriptionDropZone.addEventListener('drop', e => {
+        e.preventDefault();
+        transcriptionDropZone.classList.remove('drag-over');
+        const file = e.dataTransfer?.files?.[0];
+        if (!file) return;
+        if (!file.type.startsWith('audio/') && !file.type.startsWith('video/')) {
+          showToast('请拖拽音频或视频文件', 'error');
+          return;
+        }
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        $('transcription-file').files = dt.files;
+        syncTranscriptionFilePreview(file);
+        renderWorkspaceResumeCard();
+        scheduleWorkspaceStateSave();
+      });
+    }
+
     // Generate buttons
     $('btn-generate-music')?.addEventListener('click', generateMusic);
     $('btn-generate-lyrics')?.addEventListener('click', generateLyrics);
     $('btn-generate-cover')?.addEventListener('click', generateCover);
     $('btn-generate-voice')?.addEventListener('click', generateVoice);
+    $('btn-start-transcription')?.addEventListener('click', startTranscriptionShell);
 
     // Reset buttons
     $('btn-reset-music')?.addEventListener('click', () => resetTab('music'));
     $('btn-reset-lyrics')?.addEventListener('click', () => resetTab('lyrics'));
     $('btn-reset-cover')?.addEventListener('click', () => resetTab('cover'));
     $('btn-reset-voice')?.addEventListener('click', () => resetTab('covervoice'));
+    $('btn-reset-transcription')?.addEventListener('click', () => resetTab('transcription'));
 
     // Download buttons
     $('btn-download-music')?.addEventListener('click', () => { const src = $('music-audio')?.src; if (src) downloadFile(src, 'ai-music.mp3'); });
     $('btn-download-cover')?.addEventListener('click', () => { const src = $('cover-image')?.src; if (src) downloadFile(src, 'ai-cover.png'); });
     $('btn-download-voice')?.addEventListener('click', () => { const src = $('voice-audio')?.src; if (src) downloadFile(src, 'ai-voice-cover.mp3'); });
+    $('btn-copy-transcription-placeholder')?.addEventListener('click', () => {
+      const text = $('transcription-text')?.textContent || '';
+      if (text) copyToClipboard(text);
+    });
 
     // Copy lyrics
     $('btn-copy-lyrics')?.addEventListener('click', () => {
@@ -6126,13 +6734,15 @@
     window.visualViewport?.addEventListener('scroll', queueChatViewportSync);
 
     // Custom dropdown for chat model
+    initializeChatModelDropdownLoadingState();
     initCustomDropdown('chat-model-dropdown', 'chat-model');
+    loadChatModelOptions();
 
     // Convert all config selects to custom dropdowns
     convertAllSelectsToCustomDropdowns();
 
     $('chat-model')?.addEventListener('change', () => {
-      schedulePreferenceSave({ defaultModelChat: $('chat-model')?.value || 'MiniMax-M2.7' });
+      schedulePreferenceSave({ defaultModelChat: $('chat-model')?.value || 'gpt-4.1-mini' });
     });
     updateChatComposerState();
     queueChatViewportSync();

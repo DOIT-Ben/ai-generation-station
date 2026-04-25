@@ -453,13 +453,13 @@ async function testPortalLogoutDoesNotRedirectWhenSessionRemainsActive() {
 
 function testConversationFilter() {
   const items = [
-    { title: 'Roadmap Review', model: 'MiniMax-M2.7' },
-    { title: 'Archived Design Notes', model: 'MiniMax-M2.7-highspeed' }
+    { title: 'Roadmap Review', model: 'gpt-4.1-mini' },
+    { title: 'Archived Design Notes', model: 'gpt-4o' }
   ];
 
   assert.equal(AppShell.filterConversationSummaries(items, '').length, 2, 'blank search should return all items');
   assert.equal(AppShell.filterConversationSummaries(items, 'roadmap').length, 1, 'search should match title case-insensitively');
-  assert.equal(AppShell.filterConversationSummaries(items, 'highspeed').length, 1, 'search should match model');
+  assert.equal(AppShell.filterConversationSummaries(items, 'gpt-4o').length, 1, 'search should match model');
   assert.equal(AppShell.filterConversationSummaries(items, 'design notes').length, 1, 'search should support multiple terms');
   assert.equal(AppShell.filterConversationSummaries(items, 'missing').length, 0, 'search should drop non-matching items');
 }
@@ -479,13 +479,13 @@ function testPersistence() {
   assert.equal(history.length, AppShell.MAX_HISTORY_ITEMS, 'history should be trimmed to max size');
   assert.equal(history[0].id, AppShell.MAX_HISTORY_ITEMS + 2, 'newest history item should be first');
 
-  const untitledConversation = persistence.createConversation('studio', { model: 'MiniMax-M2.7' });
+  const untitledConversation = persistence.createConversation('studio', { model: 'gpt-4.1-mini' });
   assert.equal(untitledConversation.title, '新对话', 'untitled conversations should default to localized Chinese copy');
 
-  const conversation = persistence.createConversation('studio', { title: 'Test Chat', model: 'MiniMax-M2.7-highspeed' });
+  const conversation = persistence.createConversation('studio', { title: 'Test Chat', model: 'gpt-4o' });
   assert.ok(conversation.id, 'conversation should get an id');
   assert.equal(conversation.title, 'Test Chat', 'conversation should store title');
-  assert.equal(conversation.model, 'MiniMax-M2.7-highspeed', 'conversation should store model');
+  assert.equal(conversation.model, 'gpt-4o', 'conversation should store model');
 
   persistence.saveConversationMessages('studio', conversation.id, [
     { role: 'user', content: 'hello' },

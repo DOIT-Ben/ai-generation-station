@@ -9,7 +9,7 @@ const path = require('path');
 const https = require('https');
 
 const { createConfig } = require('./config');
-const { ROUTE_METHODS, API_KEY_REQUIRED_ROUTES } = require('./route-meta');
+const { ROUTE_METHODS, API_KEY_REQUIRED_ROUTES, AUTH_REQUIRED_ROUTES } = require('./route-meta');
 const { matchRoute, readJsonBody, sendJson, serveStaticFile, parseCookies } = require('./lib/http');
 const { createLocalRoutes } = require('./routes/local');
 const { createServiceRoutes } = require('./routes/service');
@@ -34,6 +34,9 @@ function createServer(options = {}) {
         OUTPUT_DIR,
         API_HOST,
         API_KEY,
+        CHAT_API_BASE_URL,
+        CHAT_API_KEY,
+        CHAT_DEFAULT_MODEL,
         APP_USERNAME,
         APP_PASSWORD,
         APP_BASE_URL,
@@ -59,6 +62,7 @@ function createServer(options = {}) {
         RESEND_API_KEY,
         MIME_TYPES
     } = config;
+    const MAX_JSON_BODY_BYTES = Number(config.MAX_JSON_BODY_BYTES || 8 * 1024 * 1024);
     const startedAt = Date.now();
 
     const musicTasks = new Map();
@@ -122,8 +126,19 @@ function createServer(options = {}) {
                 csrfSecret: CSRF_SECRET
             }
         }),
-        ...createLocalRoutes({ OUTPUT_DIR, MIME_TYPES, musicTasks, coverTasks, imageTasks, stateStore }),
-        ...createServiceRoutes({ https: httpsClient, API_HOST, API_KEY, OUTPUT_DIR, trackUsage, stateStore }),
+        ...createLocalRoutes({ OUTPUT_DIR, MIME_TYPES, musicTasks, coverTasks, imageTasks, stateStore, maxUploadBytes: config.MAX_UPLOAD_BYTES }),
+        ...createServiceRoutes({
+            https: httpsClient,
+            API_HOST,
+            API_KEY,
+            OUTPUT_DIR,
+            trackUsage,
+            stateStore,
+            chatBaseUrl: CHAT_API_BASE_URL,
+            chatApiKey: CHAT_API_KEY,
+            chatDefaultModel: CHAT_DEFAULT_MODEL,
+            chatFetch: options.chatFetch
+        }),
         ...createTaskRoutes({ https: httpsClient, API_HOST, API_KEY, OUTPUT_DIR, musicTasks, imageTasks, coverTasks, trackUsage, stateStore })
     };
 
@@ -162,6 +177,41 @@ function createServer(options = {}) {
             const allowedMethods = ROUTE_METHODS[matchedRoute] || ['GET', 'POST'];
             if (!allowedMethods.includes(req.method)) {
                 sendJson(res, 405, { error: `Method ${req.method} not allowed` });
+                return;
+            }
+        }
+
+        if (handler && AUTH_REQUIRED_ROUTES.has(matchedRoute)) {
+            if (!req.authSession) {
+                if (sessionToken) {
+                    sendJson(res, 401, {
+                        authenticated: false,
+                        reason: 'session_expired',
+                        error: '登录状态已失效，请重新登录'
+                    });
+                    return;
+                }
+                sendJson(res, 401, {
+                    authenticated: false,
+                    reason: 'anonymous',
+                    error: '未登录'
+                });
+                return;
+            }
+
+            if (stateStore.isPasswordResetRequired(req.authSession.userId)) {
+                sendJson(res, 403, {
+                    authenticated: true,
+                    reason: 'password_reset_required',
+                    error: '请先修改临时密码后再继续使用',
+                    user: {
+                        id: req.authSession.userId,
+                        username: req.authSession.username,
+                        role: req.authSession.role,
+                        planCode: req.authSession.planCode,
+                        mustResetPassword: true
+                    }
+                });
                 return;
             }
         }
@@ -220,14 +270,26 @@ function createServer(options = {}) {
             let body = {};
             if (req.method === 'POST') {
                 try {
-                    body = await readJsonBody(req);
-                } catch {
+                    body = await readJsonBody(req, { maxBytes: MAX_JSON_BODY_BYTES });
+                } catch (error) {
+                    if (error?.statusCode === 413) {
+                        sendJson(res, 413, {
+                            error: '请求体过大',
+                            reason: error.reason || 'body_too_large'
+                        });
+                        return;
+                    }
                     sendJson(res, 400, { error: 'Invalid JSON body' });
                     return;
                 }
             }
 
-            if (API_KEY_REQUIRED_ROUTES.has(matchedRoute) && !API_KEY) {
+            if (matchedRoute === '/api/chat' || matchedRoute === '/api/chat/models') {
+                if (!CHAT_API_KEY) {
+                    sendJson(res, 503, { error: 'CHAT_API_KEY is not configured' });
+                    return;
+                }
+            } else if (API_KEY_REQUIRED_ROUTES.has(matchedRoute) && !API_KEY) {
                 sendJson(res, 503, { error: 'MINIMAX_API_KEY is not configured' });
                 return;
             }

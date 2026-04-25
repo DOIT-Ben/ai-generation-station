@@ -18,10 +18,26 @@ function matchRoute(pathname, routes) {
     return { handler, matchedRoute };
 }
 
-async function readJsonBody(req) {
+async function readJsonBody(req, options = {}) {
+    const maxBytes = Number(options.maxBytes || 0) || 0;
     let rawBody = '';
-    req.on('data', chunk => rawBody += chunk);
-    await new Promise(resolve => req.on('end', resolve));
+    let receivedBytes = 0;
+
+    await new Promise((resolve, reject) => {
+        req.on('data', chunk => {
+            receivedBytes += Buffer.byteLength(chunk);
+            if (maxBytes > 0 && receivedBytes > maxBytes) {
+                const error = new Error('Request body too large');
+                error.statusCode = 413;
+                error.reason = 'body_too_large';
+                reject(error);
+                return;
+            }
+            rawBody += chunk;
+        });
+        req.on('end', resolve);
+        req.on('error', reject);
+    });
     return JSON.parse(rawBody || '{}');
 }
 

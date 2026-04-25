@@ -1,3 +1,6 @@
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const dns = require('dns').promises;
 const { createServer } = require('./server/index');
 const { createConfig } = require('./server/config');
@@ -45,12 +48,23 @@ function parseArgs(argv) {
 
 async function withServer(port, fn) {
     const previousPort = process.env.PORT;
+    const previousStateDb = process.env.APP_STATE_DB;
+    const previousStateFile = process.env.APP_STATE_FILE;
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'aigs-regression-'));
+    const tempStateDb = path.join(tempRoot, 'app-state.db');
+    const tempStateFile = path.join(tempRoot, 'app-state.json');
+    fs.writeFileSync(tempStateFile, JSON.stringify({ sessions: {}, history: {} }, null, 2));
+
     process.env.PORT = String(port);
+    process.env.APP_STATE_DB = tempStateDb;
+    process.env.APP_STATE_FILE = tempStateFile;
     const server = createServer({
         config: createConfig({
             env: {
                 ...process.env,
-                PORT: String(port)
+                PORT: String(port),
+                APP_STATE_DB: tempStateDb,
+                APP_STATE_FILE: tempStateFile
             }
         })
     });
@@ -64,6 +78,17 @@ async function withServer(port, fn) {
         } else {
             process.env.PORT = previousPort;
         }
+        if (previousStateDb === undefined) {
+            delete process.env.APP_STATE_DB;
+        } else {
+            process.env.APP_STATE_DB = previousStateDb;
+        }
+        if (previousStateFile === undefined) {
+            delete process.env.APP_STATE_FILE;
+        } else {
+            process.env.APP_STATE_FILE = previousStateFile;
+        }
+        fs.rmSync(tempRoot, { recursive: true, force: true });
     }
 }
 

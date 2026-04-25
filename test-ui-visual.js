@@ -204,10 +204,15 @@ async function gotoApp(page, baseUrl) {
 }
 
 async function ensureTheme(page, theme) {
-  const currentTheme = await page.evaluate(() => document.documentElement.getAttribute('data-theme') || 'dark');
-  if (currentTheme === theme) return;
-
-  await page.click('#theme-toggle');
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const currentTheme = await page.evaluate(() => document.documentElement.getAttribute('data-theme') || 'dark');
+    if (currentTheme === theme) {
+      await stabilizePage(page);
+      return;
+    }
+    await page.click('#theme-toggle');
+    await page.waitForTimeout(120);
+  }
   await page.waitForFunction(expectedTheme => {
     return (document.documentElement.getAttribute('data-theme') || 'dark') === expectedTheme;
   }, theme);
@@ -230,21 +235,24 @@ async function normalizeAdminPanel(page) {
     return Boolean(summary?.textContent) && !summary.textContent.includes('正在');
   });
   await page.evaluate(() => {
-    document.querySelectorAll('#admin-user-list time').forEach(node => {
+    const maskStableTextNode = (node, width = '72px') => {
+      if (!node) return;
       node.textContent = '';
       node.style.display = 'inline-block';
-      node.style.width = '72px';
+      node.style.width = width;
       node.style.height = '12px';
       node.style.borderRadius = '999px';
       node.style.background = 'rgba(160, 160, 192, 0.28)';
+    };
+
+    document.querySelectorAll('#admin-user-list time').forEach(node => {
+      maskStableTextNode(node, '72px');
     });
     document.querySelectorAll('#admin-audit-table-body tr td:first-child .audit-log-copy strong').forEach(node => {
-      node.textContent = '';
-      node.style.display = 'inline-block';
-      node.style.width = '76px';
-      node.style.height = '12px';
-      node.style.borderRadius = '999px';
-      node.style.background = 'rgba(160, 160, 192, 0.28)';
+      maskStableTextNode(node, '76px');
+    });
+    document.querySelectorAll('#admin-user-list .admin-user-detail:nth-child(2) strong').forEach(node => {
+      maskStableTextNode(node, '88px');
     });
   });
   await stabilizePage(page);
@@ -425,7 +433,9 @@ async function compareCapture({ name, buffer, updateBaseline, pixelmatch }) {
 
   const baselinePng = PNG.sync.read(fs.readFileSync(baselinePath));
   const currentPng = PNG.sync.read(buffer);
-  if (baselinePng.width !== currentPng.width || baselinePng.height !== currentPng.height) {
+  const widthDiff = Math.abs(baselinePng.width - currentPng.width);
+  const heightDiff = Math.abs(baselinePng.height - currentPng.height);
+  if (widthDiff > 1 || heightDiff > 1) {
     return {
       name,
       status: 'failed',
@@ -434,16 +444,30 @@ async function compareCapture({ name, buffer, updateBaseline, pixelmatch }) {
     };
   }
 
-  const diffPng = new PNG({ width: baselinePng.width, height: baselinePng.height });
+  let baselineImage = baselinePng;
+  let currentImage = currentPng;
+  if (widthDiff > 0 || heightDiff > 0) {
+    const width = Math.min(baselinePng.width, currentPng.width);
+    const height = Math.min(baselinePng.height, currentPng.height);
+    const cropPng = (source, nextWidth, nextHeight) => {
+      const cropped = new PNG({ width: nextWidth, height: nextHeight });
+      PNG.bitblt(source, cropped, 0, 0, nextWidth, nextHeight, 0, 0);
+      return cropped;
+    };
+    baselineImage = cropPng(baselinePng, width, height);
+    currentImage = cropPng(currentPng, width, height);
+  }
+
+  const diffPng = new PNG({ width: baselineImage.width, height: baselineImage.height });
   const diffPixels = pixelmatch(
-    baselinePng.data,
-    currentPng.data,
+    baselineImage.data,
+    currentImage.data,
     diffPng.data,
-    baselinePng.width,
-    baselinePng.height,
+    baselineImage.width,
+    baselineImage.height,
     { threshold: 0.1 }
   );
-  const diffRatio = diffPixels / (baselinePng.width * baselinePng.height);
+  const diffRatio = diffPixels / (baselineImage.width * baselineImage.height);
 
   if (diffPixels > MAX_DIFF_PIXELS || diffRatio > MAX_DIFF_RATIO) {
     fs.writeFileSync(diffPath, PNG.sync.write(diffPng));

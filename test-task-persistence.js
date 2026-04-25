@@ -5,23 +5,42 @@ const { createServer } = require('./server/index');
 const { createConfig } = require('./server/config');
 const { dispatchRequest } = require('./test-live-utils');
 
-async function request(server, requestPath, method, body) {
+async function request(server, requestPath, method, body, headers = {}) {
   if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(String(method || 'GET').toUpperCase())) {
-    return dispatchRequest(server, requestPath, method, body);
+    return dispatchRequest(server, requestPath, method, body, { headers });
   }
 
-  const csrfBootstrap = await dispatchRequest(server, '/api/auth/csrf', 'GET');
+  const csrfBootstrap = await dispatchRequest(server, '/api/auth/csrf', 'GET', null, { headers });
   const csrfToken = csrfBootstrap.data?.csrfToken;
   const rawSetCookie = csrfBootstrap.headers?.['set-cookie'];
   const csrfCookie = Array.isArray(rawSetCookie) ? rawSetCookie[0] : rawSetCookie;
   const csrfCookieHeader = String(csrfCookie || '').split(';')[0];
+  const mergedCookie = [headers.Cookie || headers.cookie, csrfCookieHeader].filter(Boolean).join('; ');
 
   return dispatchRequest(server, requestPath, method, body, {
     headers: {
-      Cookie: csrfCookieHeader,
+      ...headers,
+      ...(mergedCookie ? { Cookie: mergedCookie } : {}),
       ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {})
     }
   });
+}
+
+async function loginAsAdmin(server) {
+  const login = await request(server, '/api/auth/login', 'POST', {
+    username: 'studio',
+    password: 'AIGS2026!'
+  });
+  if (login.status !== 200) {
+    throw new Error(`Expected admin login to succeed, got ${login.status}`);
+  }
+  const rawCookieHeader = login.headers?.['set-cookie'];
+  const cookieHeader = Array.isArray(rawCookieHeader) ? rawCookieHeader[0] : rawCookieHeader;
+  const cookie = String(cookieHeader || '').split(';')[0];
+  if (!cookie) {
+    throw new Error('Expected admin login to return a session cookie');
+  }
+  return cookie;
 }
 
 function createRuntime(dbPath) {
@@ -66,6 +85,7 @@ async function main() {
 
   try {
     server = createRuntime(dbPath);
+    const cookie = await loginAsAdmin(server);
     server.appStateStore.createTask({
       taskId: 'music_persisted_task',
       userId: null,
@@ -79,7 +99,7 @@ async function main() {
     server = null;
 
     server = createRuntime(dbPath);
-    const status = await request(server, '/api/music/status', 'POST', { taskId: 'music_persisted_task' });
+    const status = await request(server, '/api/music/status', 'POST', { taskId: 'music_persisted_task' }, { Cookie: cookie });
     if (status.status !== 200) throw new Error(`Expected 200, got ${status.status}`);
     if (status.data.status !== 'completed') throw new Error(`Expected completed task, got ${status.data.status}`);
     if (status.data.url !== '/output/test.mp3') throw new Error('Expected persisted task url to survive restart');
@@ -97,7 +117,8 @@ async function main() {
     server = null;
 
     server = createRuntime(dbPath);
-    const interrupted = await request(server, '/api/music-cover/status', 'POST', { taskId: 'cover_interrupted_task' });
+    const thirdCookie = await loginAsAdmin(server);
+    const interrupted = await request(server, '/api/music-cover/status', 'POST', { taskId: 'cover_interrupted_task' }, { Cookie: thirdCookie });
     if (interrupted.status !== 200) throw new Error(`Expected 200, got ${interrupted.status}`);
     if (interrupted.data.status !== 'error') {
       throw new Error(`Expected interrupted task to become error, got ${interrupted.data.status}`);

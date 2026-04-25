@@ -20,6 +20,7 @@
     lyrics: { title: '歌词创作', historyTitle: '歌词历史' },
     cover: { title: '图片生成', historyTitle: '图片历史' },
     speech: { title: '语音合成', historyTitle: '语音历史' },
+    transcription: { title: '语音转文字', historyTitle: '转写历史' },
     music: { title: '音乐生成', historyTitle: '音乐历史' },
     covervoice: { title: '歌声翻唱', historyTitle: '翻唱历史' }
   };
@@ -715,7 +716,7 @@
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok || !data?.csrfToken) {
-          throw new Error(data.error || 'CSRF token bootstrap failed');
+          throw new Error(data.error || '服务连接失败，请刷新页面重试');
         }
         csrfToken = String(data.csrfToken);
         return csrfToken;
@@ -827,7 +828,7 @@
         const conversation = {
           id: `conv-${now}`,
           title: normalizeConversationTitle(payload.title || '新对话'),
-          model: payload.model || 'MiniMax-M2.7',
+          model: payload.model || 'gpt-4.1-mini',
           messageCount: 0,
           lastMessageAt: null,
           createdAt: now,

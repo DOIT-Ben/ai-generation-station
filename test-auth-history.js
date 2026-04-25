@@ -96,9 +96,44 @@ function createHttpsStub(responses = []) {
   };
 }
 
+function createChatFetchStub(responses = []) {
+  const calls = [];
+  let responseIndex = 0;
+
+  return {
+    calls,
+    async fetch(url, options = {}) {
+      let parsedBody = null;
+      try {
+        parsedBody = options.body ? JSON.parse(options.body) : null;
+      } catch {
+        parsedBody = options.body || null;
+      }
+      calls.push({
+        url,
+        options,
+        body: parsedBody
+      });
+
+      const payload = responses[responseIndex] || responses[responses.length - 1] || {};
+      responseIndex += 1;
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return payload;
+        }
+      };
+    }
+  };
+}
+
 async function withServer(fn, options = {}) {
   const stateDb = path.join(os.tmpdir(), `aigs-state-${Date.now()}.sqlite`);
   const httpsStub = createHttpsStub(options.httpsResponses || [
+    {}
+  ]);
+  const chatFetchStub = createChatFetchStub(options.chatResponses || [
     {
       content: [{ type: 'text', text: 'First reply from stub' }],
       usage: { input_tokens: 11, output_tokens: 7 }
@@ -110,6 +145,7 @@ async function withServer(fn, options = {}) {
   ]);
   const server = createServer({
     https: httpsStub,
+    chatFetch: chatFetchStub.fetch,
     notificationService: options.notificationService,
     notificationFetch: options.notificationFetch,
     config: createConfig({
@@ -125,7 +161,7 @@ async function withServer(fn, options = {}) {
   });
 
   try {
-    return await fn(stateDb, server, httpsStub);
+    return await fn(stateDb, server, httpsStub, chatFetchStub);
   } finally {
     server.appStateStore?.close?.();
     if (fs.existsSync(stateDb)) {
@@ -138,6 +174,9 @@ async function withServer(fn, options = {}) {
 
 function createTestServer(options = {}) {
   const httpsStub = createHttpsStub(options.httpsResponses || [
+    {}
+  ]);
+  const chatFetchStub = createChatFetchStub(options.chatResponses || [
     {
       content: [{ type: 'text', text: 'First reply from stub' }],
       usage: { input_tokens: 11, output_tokens: 7 }
@@ -150,6 +189,7 @@ function createTestServer(options = {}) {
 
   const server = createServer({
     https: httpsStub,
+    chatFetch: chatFetchStub.fetch,
     notificationService: options.notificationService,
     notificationFetch: options.notificationFetch,
     config: createConfig({
@@ -163,7 +203,7 @@ function createTestServer(options = {}) {
     })
   });
 
-  return { server, httpsStub };
+  return { server, httpsStub, chatFetchStub };
 }
 
 function createNotificationFetchStub(responses = []) {
@@ -204,7 +244,7 @@ function extractPublicTokenFromEmail(message, param) {
 }
 
 async function main() {
-  await withServer(async (_stateDb, server, httpsStub) => {
+  await withServer(async (_stateDb, server, httpsStub, chatFetchStub) => {
     const anonymous = await request(server, '/api/auth/session', 'GET');
     if (anonymous.status !== 401) throw new Error(`Expected 401 before login, got ${anonymous.status}`);
 
@@ -394,7 +434,7 @@ async function main() {
     if (secondChat.data.messages?.length !== 4) {
       throw new Error('Expected second turn to append to the same conversation chain');
     }
-    if (!Array.isArray(httpsStub.calls[1]?.messages) || httpsStub.calls[1].messages.length !== 3) {
+    if (!Array.isArray(chatFetchStub.calls[1]?.body?.messages) || chatFetchStub.calls[1].body.messages.length !== 3) {
       throw new Error('Expected upstream payload to include previous conversation context');
     }
 
