@@ -197,7 +197,14 @@ function createLocalRoutes({ OUTPUT_DIR, MIME_TYPES, musicTasks, coverTasks, ima
 
         '/output/*': async (req, res) => {
             const parsedUrl = new URL(req.url, 'http://localhost');
-            const rawFilename = decodeURIComponent(parsedUrl.pathname.replace(/^\/output\/?/, ''));
+            let rawFilename = '';
+            try {
+                rawFilename = decodeURIComponent(parsedUrl.pathname.replace(/^\/output\/?/, ''));
+            } catch {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: '无效的文件路径编码', reason: 'invalid_path_encoding' }));
+                return null;
+            }
             if (!rawFilename || rawFilename.includes('/') || rawFilename.includes('\\')) {
                 res.writeHead(403, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ error: 'Forbidden' }));

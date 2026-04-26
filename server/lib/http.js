@@ -48,7 +48,12 @@ function parseCookies(cookieHeader) {
         .filter(Boolean)
         .reduce((acc, part) => {
             const [key, ...rest] = part.split('=');
-            acc[key] = decodeURIComponent(rest.join('='));
+            const rawValue = rest.join('=');
+            try {
+                acc[key] = decodeURIComponent(rawValue);
+            } catch {
+                acc[key] = rawValue;
+            }
             return acc;
         }, {});
 }

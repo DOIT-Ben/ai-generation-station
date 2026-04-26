@@ -215,10 +215,42 @@ async function testDisallowedOriginAndSecureCookie() {
   });
 }
 
+async function testMalformedCookieAndOutputPathHandling() {
+  await withServer(async server => {
+    const malformedCookie = await request(server, '/api/health', 'GET', null, {
+      Cookie: 'bad=%E0%A4%A'
+    });
+    assert(malformedCookie.status === 200, `Expected malformed cookie request to remain safe, got ${malformedCookie.status}`);
+    assert(malformedCookie.data.status === 'ok', 'Expected malformed cookie request to still reach the health handler');
+
+    const csrfBootstrap = await request(server, '/api/auth/csrf', 'GET');
+    assert(csrfBootstrap.status === 200, `Expected CSRF bootstrap to return 200, got ${csrfBootstrap.status}`);
+    const csrfCookie = findCookie(csrfBootstrap, 'aigs_csrf');
+    assert(Boolean(csrfCookie), 'Expected CSRF bootstrap to set the CSRF cookie');
+    const login = await request(server, '/api/auth/login', 'POST', {
+      username: 'studio',
+      password: 'AIGS2026!'
+    }, {
+      Cookie: getCookieHeader(csrfCookie),
+      'X-CSRF-Token': csrfBootstrap.data.csrfToken
+    });
+    assert(login.status === 200, `Expected login before malformed output-path test to succeed, got ${login.status}`);
+    const sessionCookie = findCookie(login, 'aigs_session');
+    assert(Boolean(sessionCookie), 'Expected login to return the session cookie');
+
+    const malformedOutputPath = await request(server, '/output/%E0%A4%A', 'GET', null, {
+      Cookie: getCookieHeader(sessionCookie)
+    });
+    assert(malformedOutputPath.status === 400, `Expected malformed output path to return 400, got ${malformedOutputPath.status}`);
+    assert(malformedOutputPath.data.reason === 'invalid_path_encoding', 'Expected malformed output path to fail with invalid_path_encoding');
+  });
+}
+
 async function main() {
   await testHealthAndSecurityHeaders();
   await testSameOriginAndAllowedCors();
   await testDisallowedOriginAndSecureCookie();
+  await testMalformedCookieAndOutputPathHandling();
   console.log('Security gateway tests passed');
 }
 
