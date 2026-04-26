@@ -400,6 +400,50 @@
         setTimeoutFn: (callback, delay) => window.setTimeout(callback, delay)
       })
     : null;
+  const workspaceAuthTools = window.AigsWorkspaceAuthTools?.createTools
+    ? window.AigsWorkspaceAuthTools.createTools({
+        getWindow: () => window,
+        getCurrentUser: () => currentUser,
+        setCurrentUser: value => {
+          currentUser = value;
+        },
+        getCurrentUserProfile: () => currentUserProfile,
+        setCurrentUserProfile: value => {
+          currentUserProfile = value;
+        },
+        getPersistence: () => persistence,
+        getUserPreferences: () => userPreferences,
+        setUserPreferences: value => {
+          userPreferences = value;
+        },
+        updateWorkspaceStateFromPreferences,
+        applyUserPreferences,
+        isProtectedSessionError,
+        showToast,
+        getCurrentUserProfileState: () => currentUserProfile,
+        getCurrentUserNameState: () => currentUser,
+        getPlanDisplayName,
+        logout,
+        resetAuthenticatedWorkspaceState,
+        getAuthRecoveryLocked: () => authRecoveryLocked,
+        setAuthRecoveryLocked: value => {
+          authRecoveryLocked = value;
+        },
+        setTimeoutFn: (callback, delay) => window.setTimeout(callback, delay),
+        loadTemplateLibraries,
+        refreshUsageToday,
+        loadConversations,
+        loadAllHistories,
+        hydrateChatWorkflowState,
+        hydrateChatExcerptState,
+        restoreWorkspaceDrafts,
+        setWorkspaceStateReady: value => {
+          workspaceStateReady = Boolean(value);
+        },
+        getElement: $,
+        getCurrentAppPath
+      })
+    : null;
   const workspaceInitTools = window.AigsWorkspaceInitTools?.createTools
     ? window.AigsWorkspaceInitTools.createTools({
         getElement: $,
@@ -1616,17 +1660,7 @@
   }
 
   function getPublicAuthIntentFromUrl() {
-    if (typeof window === 'undefined') return null;
-    const url = new URL(window.location.href);
-    const inviteToken = String(url.searchParams.get('invite') || '').trim();
-    if (inviteToken) {
-      return { mode: 'invite', token: inviteToken };
-    }
-    const resetToken = String(url.searchParams.get('reset') || '').trim();
-    if (resetToken) {
-      return { mode: 'reset', token: resetToken };
-    }
-    return null;
+    return requireWorkspaceAuthTools().getPublicAuthIntentFromUrl();
   }
 
   function getCurrentAppPath() {
@@ -1636,18 +1670,11 @@
   }
 
   function buildAuthPagePath(nextPath = '/') {
-    const url = new URL('/login/', window.location.origin);
-    if (nextPath) url.searchParams.set('next', nextPath);
-    return `${url.pathname}${url.search}`;
+    return requireWorkspaceAuthTools().buildAuthPagePath(nextPath);
   }
 
   function buildAccountPagePath(params = {}) {
-    const url = new URL('/account/', window.location.origin);
-    Object.entries(params || {}).forEach(([key, value]) => {
-      if (value == null || value === '') return;
-      url.searchParams.set(key, String(value));
-    });
-    return `${url.pathname}${url.search}`;
+    return requireWorkspaceAuthTools().buildAccountPagePath(params);
   }
 
   function applyUserPreferences() {
@@ -1659,19 +1686,7 @@
   }
 
   async function loadUserPreferences() {
-    if (!currentUser || !persistence?.getPreferences) return;
-    try {
-      const preferences = await persistence.getPreferences();
-      userPreferences = {
-        ...userPreferences,
-        ...preferences
-      };
-      updateWorkspaceStateFromPreferences(userPreferences);
-      applyUserPreferences();
-    } catch (error) {
-      if (isProtectedSessionError(error)) return;
-      showToast('用户偏好加载失败，已使用默认设置', 'error', 1800);
-    }
+    return requireWorkspaceAuthTools().loadUserPreferences();
   }
 
   function schedulePreferenceSave(patch) {
@@ -1717,31 +1732,7 @@
   }
 
   function renderUserPanel() {
-    const panel = $('user-panel');
-    if (!panel) return;
-    if (!currentUser) {
-      panel.innerHTML = '<a class="topbar-login-button" id="btn-open-auth" href="/login/?next=%2F"><span>登录</span></a>';
-      return;
-    }
-    const roleLabel = currentUserProfile?.role === 'admin' ? '管理员' : '成员';
-    const planLabel = getPlanDisplayName(currentUserProfile?.planCode);
-    const avatarLabel = String(currentUser || '?').trim().slice(0, 1).toUpperCase();
-    const summaryLabel = currentUserProfile?.mustResetPassword
-      ? '已登录 · 需先改密'
-      : `已登录 · ${roleLabel} · ${planLabel}`;
-    panel.innerHTML = `
-      <div class="topbar-account">
-        <div class="topbar-account-avatar">${avatarLabel}</div>
-        <div class="topbar-account-copy">
-          <strong>${currentUser}</strong>
-          <span>${summaryLabel}</span>
-        </div>
-        <a href="/account/" class="topbar-account-action topbar-account-action--account"><span>个人中心</span></a>
-        ${currentUserProfile?.role === 'admin' ? '<a href="/admin/" class="topbar-account-action"><span>后台</span></a>' : ''}
-        <button id="btn-logout" class="topbar-account-action topbar-account-action--logout" type="button"><span>退出</span></button>
-      </div>
-    `;
-    $('btn-logout')?.addEventListener('click', logout);
+    return requireWorkspaceAuthTools().renderUserPanel();
   }
 
   function resetAuthenticatedWorkspaceState() {
@@ -1774,14 +1765,7 @@
       }
 
   function handleProtectedSessionLoss(message = '登录状态已失效，请重新登录') {
-    if (authRecoveryLocked) return;
-    authRecoveryLocked = true;
-    resetAuthenticatedWorkspaceState();
-    showToast(message, 'error', 1800);
-    window.setTimeout(() => {
-      window.location.href = buildAuthPagePath(getCurrentAppPath());
-    }, 120);
-    setTimeout(() => { authRecoveryLocked = false; }, 600);
+    return requireWorkspaceAuthTools().handleProtectedSessionLoss(message);
   }
 
   function isProtectedSessionError(error) {
@@ -1790,54 +1774,15 @@
   }
 
   function handlePasswordResetRequired(detail = {}) {
-    if (detail.user) {
-      currentUserProfile = {
-        ...(currentUserProfile || {}),
-        ...detail.user,
-        mustResetPassword: true
-      };
-      currentUser = currentUserProfile.username || currentUser;
-    } else if (currentUserProfile) {
-      currentUserProfile = {
-        ...currentUserProfile,
-        mustResetPassword: true
-      };
-    }
-
-    renderUserPanel();
-    window.location.href = buildAccountPagePath({
-      mode: 'reset-required',
-      next: getCurrentAppPath()
-    });
+    return requireWorkspaceAuthTools().handlePasswordResetRequired(detail);
   }
 
   async function loadAuthenticatedWorkspaceData() {
-    hydrateChatWorkflowState();
-    hydrateChatExcerptState();
-    await loadUserPreferences();
-    await refreshUsageToday();
-    await loadTemplateLibraries();
-    await loadConversations();
-    await loadAllHistories();
-    restoreWorkspaceDrafts();
-    workspaceStateReady = true;
+    return requireWorkspaceAuthTools().loadAuthenticatedWorkspaceData();
       }
 
   async function completeAuthenticatedBootstrap({ showWelcomeToast = false } = {}) {
-    renderUserPanel();
-
-    if (currentUserProfile?.mustResetPassword) {
-      handlePasswordResetRequired({
-        user: currentUserProfile,
-        message: '请先修改临时密码后再继续使用'
-      });
-      return;
-    }
-
-    await loadAuthenticatedWorkspaceData();
-    if (showWelcomeToast) {
-      showToast(`欢迎回来，${currentUser}`, 'success', 1800);
-    }
+    return requireWorkspaceAuthTools().completeAuthenticatedBootstrap({ showWelcomeToast });
   }
 
   async function logout() {
@@ -1857,30 +1802,7 @@
   }
 
   async function bootstrapAuth() {
-    renderUserPanel();
-    const publicAuthIntent = getPublicAuthIntentFromUrl();
-    if (publicAuthIntent?.mode && publicAuthIntent?.token) {
-      const redirectUrl = new URL('/login/', window.location.origin);
-      redirectUrl.searchParams.set(publicAuthIntent.mode === 'invite' ? 'invite' : 'reset', publicAuthIntent.token);
-      window.location.replace(`${redirectUrl.pathname}${redirectUrl.search}`);
-      return;
-    }
-    let restoredSession = false;
-    try {
-      const session = await persistence?.loadSession();
-      if (session?.username) {
-        currentUserProfile = session;
-        currentUser = session.username;
-        restoredSession = true;
-        await completeAuthenticatedBootstrap();
-      }
-    } catch {
-      restoredSession = false;
-    }
-
-    if (!restoredSession) {
-      window.location.replace(buildAuthPagePath(getCurrentAppPath()));
-    }
+    return requireWorkspaceAuthTools().bootstrapAuth();
   }
 
   function ensureFeatureExtensions() {
@@ -2131,6 +2053,13 @@
       throw new Error('AigsWorkspacePageInitTools 未加载');
     }
     return workspacePageInitTools;
+  }
+
+  function requireWorkspaceAuthTools() {
+    if (!workspaceAuthTools) {
+      throw new Error('AigsWorkspaceAuthTools 未加载');
+    }
+    return workspaceAuthTools;
   }
 
   function requireWorkspaceInitTools() {

@@ -35,6 +35,7 @@ function main() {
   const workspaceShellToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'workspace-shell-tools.js'), 'utf8');
   const workspaceUiToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'workspace-ui-tools.js'), 'utf8');
   const workspacePageInitToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'workspace-page-init-tools.js'), 'utf8');
+  const workspaceAuthToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'workspace-auth-tools.js'), 'utf8');
   const workspaceInitToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'workspace-init-tools.js'), 'utf8');
   const conversationWorkflowToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'conversation-workflow-tools.js'), 'utf8');
   const conversationListToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'conversation-list-tools.js'), 'utf8');
@@ -62,6 +63,7 @@ function main() {
   assert.ok(html.includes('/js/workspace-shell-tools.js'), 'index should load the workspace shell utility module before app.js');
   assert.ok(html.includes('/js/workspace-ui-tools.js'), 'index should load the workspace ui utility module before app.js');
   assert.ok(html.includes('/js/workspace-page-init-tools.js'), 'index should load the workspace page-init utility module before app.js');
+  assert.ok(html.includes('/js/workspace-auth-tools.js'), 'index should load the workspace auth utility module before app.js');
   assert.ok(html.includes('/js/workspace-init-tools.js'), 'index should load the workspace init utility module before app.js');
   assert.ok(html.includes('/js/conversation-workflow-tools.js'), 'index should load the conversation workflow utility module before app.js');
   assert.ok(html.includes('/js/conversation-list-tools.js'), 'index should load the conversation list utility module before app.js');
@@ -86,6 +88,7 @@ function main() {
   assert.ok(workspaceShellToolsJs.includes('AigsWorkspaceShellTools'), 'workspace shell utilities should publish a dedicated browser module');
   assert.ok(workspaceUiToolsJs.includes('AigsWorkspaceUiTools'), 'workspace ui utilities should publish a dedicated browser module');
   assert.ok(workspacePageInitToolsJs.includes('AigsWorkspacePageInitTools'), 'workspace page-init utilities should publish a dedicated browser module');
+  assert.ok(workspaceAuthToolsJs.includes('AigsWorkspaceAuthTools'), 'workspace auth utilities should publish a dedicated browser module');
   assert.ok(workspaceInitToolsJs.includes('AigsWorkspaceInitTools'), 'workspace init utilities should publish a dedicated browser module');
   assert.ok(conversationWorkflowToolsJs.includes('AigsConversationWorkflowTools'), 'conversation workflow utilities should publish a dedicated browser module');
   assert.ok(conversationListToolsJs.includes('AigsConversationListTools'), 'conversation list utilities should publish a dedicated browser module');
@@ -234,6 +237,7 @@ function main() {
   assert.ok(appJs.includes('requireWorkspaceShellTools'), 'workspace should wire the dedicated shell module through app assembly');
   assert.ok(appJs.includes('requireWorkspaceUiTools'), 'workspace should wire the dedicated ui module through app assembly');
   assert.ok(appJs.includes('requireWorkspacePageInitTools'), 'workspace should wire the dedicated page-init module through app assembly');
+  assert.ok(appJs.includes('requireWorkspaceAuthTools'), 'workspace should wire the dedicated auth module through app assembly');
   assert.ok(appJs.includes('requireWorkspaceInitTools'), 'workspace should wire the dedicated init module through app assembly');
   assert.ok(appJs.includes('requireChatEntryTools'), 'workspace should wire the dedicated chat entry module through app assembly');
   assert.ok(appJs.includes('requireChatMessageMetaTools'), 'workspace should wire the dedicated chat message meta module through app assembly');
@@ -269,10 +273,10 @@ function main() {
   assert.ok(accountPageJs.includes('密码已更新，当前会话已保留。'), 'account page should surface password update success feedback');
   assert.ok(adminPageJs.includes('已撤销'), 'admin page should support invitation revocation copy');
   assert.ok(adminHtml.includes('审计日志'), 'admin page should expose localized audit log copy');
-  assert.ok(appJs.includes('登录状态已失效，请重新登录'), 'session expiry copy should be localized to Chinese');
-  assert.ok(appJs.includes('/login/'), 'workspace should redirect unauthenticated users to the login page');
-  assert.ok(appJs.includes('/account/'), 'workspace should link authenticated users to the account page');
-  assert.ok(appJs.includes('/admin/'), 'workspace should link admin users to the admin page');
+  assert.ok(workspaceAuthToolsJs.includes('登录状态已失效，请重新登录'), 'session expiry copy should be localized to Chinese');
+  assert.ok(workspaceAuthToolsJs.includes('/login/'), 'workspace should redirect unauthenticated users to the login page');
+  assert.ok(workspaceAuthToolsJs.includes('/account/'), 'workspace should link authenticated users to the account page');
+  assert.ok(workspaceAuthToolsJs.includes('/admin/'), 'workspace should link admin users to the admin page');
 
   console.log('✅ Page markup tests passed');
 }
