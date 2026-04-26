@@ -653,6 +653,7 @@ async function testTokenLifecycleBoundaries() {
     const uniqueSuffix = `${Date.now()}${Math.random().toString(16).slice(2, 8)}`;
     const targetUsername = `token_${uniqueSuffix}`;
     const targetEmail = `${targetUsername}@example.com`;
+    const overlongToken = 'x'.repeat(4096);
 
     const adminLogin = await loginWithCsrf(server, {
       username: 'studio',
@@ -770,6 +771,74 @@ async function testTokenLifecycleBoundaries() {
     }
     assert(expiredResetLookup.status === 404, `Expected expired password-reset token lookup to return 404, got ${expiredResetLookup.status}`);
     assert(expiredResetLookup.data?.reason === 'token_invalid', 'Expected expired password-reset token lookup to fail with token_invalid');
+
+    const expiredInvite = server.appStateStore.issueUserToken(targetUserId, 'invite_activation', {
+      ttlMs: 1,
+      requestedIdentity: targetUsername,
+      metadata: { source: 'test_expired_invite' }
+    });
+    assert(Boolean(expiredInvite?.token), 'Expected direct expired-invite token issue to succeed');
+    const originalDateNowForInvite = Date.now;
+    let expiredInviteLookup = null;
+    let expiredInviteActivate = null;
+    try {
+      Date.now = () => originalDateNowForInvite() + (2 * 60 * 1000);
+      expiredInviteLookup = await request(server, `/api/auth/invitation?token=${encodeURIComponent(expiredInvite.token)}`, 'GET');
+      expiredInviteActivate = await request(server, '/api/auth/invitation/activate', 'POST', {
+        token: expiredInvite.token,
+        password: 'TokenPass999!'
+      }, {
+        Cookie: adminCookies,
+        'X-CSRF-Token': adminLogin.csrfToken
+      });
+    } finally {
+      Date.now = originalDateNowForInvite;
+    }
+    assert(expiredInviteLookup.status === 404, `Expected expired invitation token lookup to return 404, got ${expiredInviteLookup.status}`);
+    assert(expiredInviteLookup.data?.reason === 'token_invalid', 'Expected expired invitation token lookup to fail with token_invalid');
+    assert(expiredInviteActivate.status === 404, `Expected expired invitation token activation to return 404, got ${expiredInviteActivate.status}`);
+    assert(expiredInviteActivate.data?.reason === 'token_invalid', 'Expected expired invitation token activation to fail with token_invalid');
+
+    const overlongInviteLookup = await request(server, `/api/auth/invitation?token=${overlongToken}`, 'GET');
+    assert(overlongInviteLookup.status === 404, `Expected overlong invitation token lookup to return 404, got ${overlongInviteLookup.status}`);
+    assert(overlongInviteLookup.data?.reason === 'token_invalid', 'Expected overlong invitation token lookup to fail with token_invalid');
+
+    const malformedInviteLookup = await request(server, '/api/auth/invitation?token=%E0%A4%A', 'GET');
+    assert(malformedInviteLookup.status === 404, `Expected malformed invitation token lookup to return 404, got ${malformedInviteLookup.status}`);
+    assert(malformedInviteLookup.data?.reason === 'token_invalid', 'Expected malformed invitation token lookup to fail with token_invalid');
+
+    const overlongInviteActivate = await request(server, '/api/auth/invitation/activate', 'POST', {
+      token: overlongToken,
+      password: 'TokenPass321!'
+    }, {
+      Cookie: adminCookies,
+      'X-CSRF-Token': adminLogin.csrfToken
+    });
+    assert(overlongInviteActivate.status === 404, `Expected overlong invitation token activation to return 404, got ${overlongInviteActivate.status}`);
+    assert(overlongInviteActivate.data?.reason === 'token_invalid', 'Expected overlong invitation token activation to fail with token_invalid');
+
+    const malformedResetLookup = await request(server, '/api/auth/password-reset?token=%E0%A4%A', 'GET');
+    assert(malformedResetLookup.status === 404, `Expected malformed password-reset token lookup to return 404, got ${malformedResetLookup.status}`);
+    assert(malformedResetLookup.data?.reason === 'token_invalid', 'Expected malformed password-reset token lookup to fail with token_invalid');
+
+    const overlongResetComplete = await request(server, '/api/auth/password-reset/complete', 'POST', {
+      token: overlongToken,
+      password: 'ResetPass789!'
+    }, {
+      Cookie: forgotPasswordCsrf.csrfCookieHeader,
+      'X-CSRF-Token': forgotPasswordCsrf.csrfToken
+    });
+    assert(overlongResetComplete.status === 404, `Expected overlong password-reset completion to return 404, got ${overlongResetComplete.status}`);
+    assert(overlongResetComplete.data?.reason === 'token_invalid', 'Expected overlong password-reset completion to fail with token_invalid');
+
+    const malformedSessionCookie = await request(server, '/api/auth/session', 'GET', null, {
+      Cookie: 'bad=%E0%A4%A; aigs_session=%E0%A4%A'
+    });
+    assert(malformedSessionCookie.status === 401, `Expected malformed session cookie request to return 401, got ${malformedSessionCookie.status}`);
+    assert(malformedSessionCookie.data?.reason === 'session_expired', 'Expected malformed session cookie request to fail with session_expired');
+    const clearedSessionCookie = findCookie(malformedSessionCookie, 'aigs_session');
+    assert(Boolean(clearedSessionCookie), 'Expected malformed session cookie request to clear the broken session cookie');
+    assert(String(clearedSessionCookie).includes('Max-Age=0'), 'Expected malformed session cookie response to expire the session cookie');
   }, {
     env: {
       PORT: '18812',
