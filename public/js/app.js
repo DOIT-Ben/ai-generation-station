@@ -38,6 +38,23 @@
   const apiFetch = apiClient?.fetch ? apiClient.fetch.bind(apiClient) : window.fetch.bind(window);
   const persistence = appShell && window.fetch ? appShell.createRemotePersistence(window.fetch.bind(window)) : null;
   const resolveApiAssetUrl = appShell?.resolveApiAssetUrl || (value => value);
+  const workspaceChatModelTools = window.AigsWorkspaceChatModelTools?.createTools
+    ? window.AigsWorkspaceChatModelTools.createTools({
+        getElement: $,
+        getUserPreferences: () => userPreferences,
+        safeParseJson,
+        getLocalStorage: () => window.localStorage,
+        escapeHtml,
+        syncInputDropdown,
+        updateDropdownScrollState,
+        apiFetch,
+        formatChatModelDropdownLabel: (label, modelId) => requireChatModelUtils().formatChatModelDropdownLabel(label, modelId),
+        getChatModelGroupLabel: modelId => requireChatModelUtils().getChatModelGroupLabel(modelId),
+        getChatModelSeriesLabel: modelId => requireChatModelUtils().getChatModelSeriesLabel(modelId),
+        getChatModelSeriesClass: seriesLabel => requireChatModelUtils().getChatModelSeriesClass(seriesLabel),
+        getChatModelTagClass: tag => requireChatModelUtils().getChatModelTagClass(tag)
+      })
+    : null;
   const filterConversationSummaries = appShell?.filterConversationSummaries || ((items, query) => {
     const collection = Array.isArray(items) ? items.slice() : [];
     const normalizedQuery = String(query || '').replace(/\s+/g, ' ').trim().toLowerCase();
@@ -540,8 +557,6 @@
   const CHAT_ARCHIVED_COLLAPSED_KEY = 'aigs.chat.archived.collapsed';
   const CHAT_WORKFLOW_STATE_KEY_PREFIX = 'aigs.chat.workflow';
   const CHAT_EXCERPT_STATE_KEY_PREFIX = 'aigs.chat.excerpts';
-  const CHAT_MODEL_OPTIONS_CACHE_KEY = 'aigs.chat.model-options';
-  const CHAT_MODEL_OPTIONS_CACHE_VERSION = 2;
   let chatArchivedCollapsed = false;
   let chatWorkflowState = createDefaultChatWorkflowState();
   let chatExcerptState = createDefaultChatExcerptState();
@@ -669,6 +684,13 @@
       throw new Error('AigsChatModelUtils 未加载');
     }
     return chatModelUtils;
+  }
+
+  function requireWorkspaceChatModelTools() {
+    if (!workspaceChatModelTools) {
+      throw new Error('AigsWorkspaceChatModelTools 未加载');
+    }
+    return workspaceChatModelTools;
   }
 
   function requireConversationWorkflowTools() {
@@ -1391,208 +1413,16 @@
     options.forEach(item => item.classList.toggle('active', item.dataset.value === nextValue));
   }
 
-  function formatChatModelDropdownLabel(label, modelId = '') {
-    return requireChatModelUtils().formatChatModelDropdownLabel(label, modelId);
-  }
-
-  function readCachedChatModelOptions() {
-    try {
-      const cached = safeParseJson(window.localStorage.getItem(CHAT_MODEL_OPTIONS_CACHE_KEY), null);
-      if (!cached || typeof cached !== 'object') return null;
-      if (Number(cached.version || 0) !== CHAT_MODEL_OPTIONS_CACHE_VERSION) return null;
-      const models = Array.isArray(cached.models) ? cached.models : [];
-      return models.length ? { models, savedAt: Number(cached.savedAt || 0) || 0 } : null;
-    } catch {
-      return null;
-    }
-  }
-
-  function writeCachedChatModelOptions(models = []) {
-    if (!Array.isArray(models) || !models.length) return;
-    try {
-      window.localStorage.setItem(CHAT_MODEL_OPTIONS_CACHE_KEY, JSON.stringify({
-        version: CHAT_MODEL_OPTIONS_CACHE_VERSION,
-        models,
-        savedAt: Date.now()
-      }));
-    } catch {
-      // Ignore localStorage write failures for model cache.
-    }
-  }
-
   function initializeChatModelDropdownLoadingState() {
-    const input = $('chat-model');
-    const dropdown = $('chat-model-dropdown');
-    const menu = dropdown?.querySelector('.dropdown-menu');
-    if (!input || !dropdown || !menu) return;
-
-    const cached = readCachedChatModelOptions();
-    if (cached?.models?.length) {
-      applyChatModelOptions(cached.models, {
-        selectedValue: userPreferences.defaultModelChat || input.value || ''
-      });
-      dropdown.dataset.modelSource = 'cache';
-      return;
-    }
-
-    const currentValue = String(input.value || userPreferences.defaultModelChat || 'gpt-4.1-mini').trim() || 'gpt-4.1-mini';
-    const currentLabel = String(dropdown.querySelector('.dropdown-value')?.textContent || currentValue).trim() || currentValue;
-
-    menu.innerHTML = `
-      <div class="dropdown-group dropdown-group-recommended dropdown-group-loading">
-        <div class="dropdown-group-label">当前模型</div>
-        <div class="dropdown-option dropdown-option-recommended active" data-value="${escapeHtml(currentValue)}" data-label="${escapeHtml(currentLabel)}" title="${escapeHtml(currentLabel)}">
-          <span class="dropdown-option-label">${escapeHtml(currentLabel)}</span>
-        </div>
-      </div>
-      <div class="dropdown-group dropdown-group-loading">
-        <div class="dropdown-group-label">模型列表</div>
-        <div class="dropdown-option dropdown-option-loading" data-value="${escapeHtml(currentValue)}" data-label="${escapeHtml(currentLabel)}" aria-disabled="true">
-          <span class="dropdown-option-label">正在加载模型列表...</span>
-        </div>
-      </div>
-    `;
-
-    syncInputDropdown('chat-model');
-    updateDropdownScrollState(menu);
-    dropdown.dataset.modelSource = 'loading';
+    return requireWorkspaceChatModelTools().initializeChatModelDropdownLoadingState();
   }
 
   function applyChatModelOptions(models = [], options = {}) {
-    const input = $('chat-model');
-    const dropdown = $('chat-model-dropdown');
-    const menu = dropdown?.querySelector('.dropdown-menu');
-    if (!input || !dropdown || !menu) return;
-
-    const normalizedModels = (Array.isArray(models) ? models : [])
-      .map(item => {
-        const id = String(item?.id || '').trim();
-        const rawLabel = String(item?.label || item?.display_name || id || '').trim();
-        return {
-          id,
-          label: formatChatModelDropdownLabel(rawLabel, id),
-          tags: Array.isArray(item?.tags) ? item.tags.map(tag => String(tag || '').trim()).filter(Boolean) : []
-        };
-      })
-      .filter(item => item.id && item.label);
-    if (!normalizedModels.length) return;
-
-    const recommendedIds = [
-      'gpt-5.4',
-      'gpt-4.5-preview',
-      'gpt-4.1',
-      'gpt-4.1-mini',
-      'chatgpt-4o-latest',
-      'gpt-4o'
-    ];
-    const recommendedModels = normalizedModels.filter(item => recommendedIds.includes(item.id));
-    const remainingModels = normalizedModels.filter(item => !recommendedIds.includes(item.id));
-
-    const groupedModels = remainingModels.reduce((acc, item) => {
-      const groupLabel = getChatModelGroupLabel(item.id);
-      if (!acc.has(groupLabel)) {
-        acc.set(groupLabel, []);
-      }
-      acc.get(groupLabel).push(item);
-      return acc;
-    }, new Map());
-
-    const groupOrder = ['GPT-5.x', 'GPT-4.5', 'GPT-4.1', 'ChatGPT-4o', 'GPT-4o', 'GPT-4', 'GPT-3.5', 'o Series', 'Other'];
-    const groupedEntries = Array.from(groupedModels.entries()).sort((left, right) => {
-      const leftIndex = groupOrder.indexOf(left[0]);
-      const rightIndex = groupOrder.indexOf(right[0]);
-      const safeLeftIndex = leftIndex === -1 ? Number.MAX_SAFE_INTEGER : leftIndex;
-      const safeRightIndex = rightIndex === -1 ? Number.MAX_SAFE_INTEGER : rightIndex;
-      return safeLeftIndex - safeRightIndex;
-    });
-
-    const renderTag = tag => `<span class="dropdown-option-tag ${getChatModelTagClass(tag)}">${escapeHtml(tag)}</span>`;
-    const renderSeriesBadge = modelId => {
-      const seriesLabel = getChatModelSeriesLabel(modelId);
-      return seriesLabel
-        ? `<span class="dropdown-option-series ${getChatModelSeriesClass(seriesLabel)}">${escapeHtml(seriesLabel)}</span>`
-        : '';
-    };
-    const renderMeta = item => {
-      const seriesBadge = renderSeriesBadge(item.id);
-      const capabilityTags = item.tags.length
-        ? `<span class="dropdown-option-tags">${item.tags.slice(0, 2).map(renderTag).join('')}</span>`
-        : '';
-      if (!seriesBadge && !capabilityTags) return '';
-      return `<span class="dropdown-option-meta">${seriesBadge}${capabilityTags}</span>`;
-    };
-
-    const recommendedBlock = recommendedModels.length ? `
-      <div class="dropdown-group dropdown-group-recommended">
-        <div class="dropdown-group-label">推荐模型</div>
-        ${recommendedModels.map(item => `
-          <div class="dropdown-option dropdown-option-recommended" data-value="${escapeHtml(item.id)}" data-label="${escapeHtml(item.label)}" title="${escapeHtml(item.label)}">
-            <span class="dropdown-option-label">${escapeHtml(item.label)}</span>
-            ${renderMeta(item)}
-          </div>
-        `).join('')}
-      </div>
-    ` : '';
-
-    menu.innerHTML = `${recommendedBlock}${groupedEntries.map(([groupLabel, items]) => `
-      <div class="dropdown-group">
-        <div class="dropdown-group-label">${escapeHtml(groupLabel)}</div>
-        ${items.map(item => `
-          <div class="dropdown-option" data-value="${escapeHtml(item.id)}" data-label="${escapeHtml(item.label)}" title="${escapeHtml(item.label)}">
-            <span class="dropdown-option-label">${escapeHtml(item.label)}</span>
-            ${renderMeta(item)}
-          </div>
-        `).join('')}
-      </div>
-    `).join('')}<div class="dropdown-scroll-hint" aria-hidden="true">向下滚动查看更多</div>`;
-
-    const preferredValue = String(
-      options.selectedValue
-      || input.value
-      || userPreferences.defaultModelChat
-      || normalizedModels[0].id
-    ).trim();
-    const selected = normalizedModels.find(item => item.id === preferredValue) || normalizedModels[0];
-    input.value = selected.id;
-    syncInputDropdown('chat-model');
-    menu.scrollTop = 0;
-    updateDropdownScrollState(menu);
-  }
-
-  function getChatModelGroupLabel(modelId) {
-    return requireChatModelUtils().getChatModelGroupLabel(modelId);
-  }
-
-  function getChatModelSeriesLabel(modelId) {
-    return requireChatModelUtils().getChatModelSeriesLabel(modelId);
-  }
-
-  function getChatModelSeriesClass(seriesLabel) {
-    return requireChatModelUtils().getChatModelSeriesClass(seriesLabel);
-  }
-
-  function getChatModelTagClass(tag) {
-    return requireChatModelUtils().getChatModelTagClass(tag);
+    return requireWorkspaceChatModelTools().applyChatModelOptions(models, options);
   }
 
   async function loadChatModelOptions() {
-    try {
-      const response = await apiFetch('/api/chat/models', { method: 'GET' });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.error || '聊天模型列表加载失败');
-      }
-      const data = await response.json();
-      const models = Array.isArray(data.models) ? data.models : [];
-      if (!models.length) return;
-      writeCachedChatModelOptions(models);
-      applyChatModelOptions(models, {
-        selectedValue: userPreferences.defaultModelChat || data.defaultModel || ''
-      });
-      $('chat-model-dropdown')?.setAttribute('data-model-source', 'live');
-    } catch {
-      syncInputDropdown('chat-model');
-    }
+    return requireWorkspaceChatModelTools().loadChatModelOptions();
   }
 
   function setFieldValue(inputId, value) {

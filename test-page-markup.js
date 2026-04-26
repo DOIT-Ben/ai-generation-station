@@ -16,6 +16,7 @@ function main() {
   const adminPageJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'admin-page.js'), 'utf8');
   const siteShellJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'site-shell.js'), 'utf8');
   const chatModelUtilsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'chat-model-utils.js'), 'utf8');
+  const workspaceChatModelToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'workspace-chat-model-tools.js'), 'utf8');
   const chatMarkdownJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'chat-markdown.js'), 'utf8');
   const chatExcerptToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'chat-excerpt-tools.js'), 'utf8');
   const chatMessageMetaToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'chat-message-meta-tools.js'), 'utf8');
@@ -45,6 +46,7 @@ function main() {
   assert.ok(html.includes('/js/app-shell.js'), 'index should load app-shell.js before app.js');
   assert.ok(html.includes('/js/site-shell.js'), 'index should load site-shell.js before app.js for queued auth feedback');
   assert.ok(html.includes('/js/chat-model-utils.js'), 'index should load the chat model utility module before app.js');
+  assert.ok(html.includes('/js/workspace-chat-model-tools.js'), 'index should load the workspace chat-model utility module before app.js');
   assert.ok(html.includes('/js/chat-markdown.js'), 'index should load the chat markdown utility module before app.js');
   assert.ok(html.includes('/js/chat-excerpt-tools.js'), 'index should load the chat excerpt utility module before app.js');
   assert.ok(html.includes('/js/chat-message-meta-tools.js'), 'index should load the chat message meta utility module before app.js');
@@ -71,6 +73,7 @@ function main() {
   assert.ok(html.includes('/js/conversation-list-tools.js'), 'index should load the conversation list utility module before app.js');
   assert.ok(html.includes('/js/conversation-action-tools.js'), 'index should load the conversation action utility module before app.js');
   assert.ok(chatModelUtilsJs.includes('AigsChatModelUtils'), 'chat model utilities should publish a dedicated browser module');
+  assert.ok(workspaceChatModelToolsJs.includes('AigsWorkspaceChatModelTools'), 'workspace chat-model utilities should publish a dedicated browser module');
   assert.ok(chatMarkdownJs.includes('AigsChatMarkdown'), 'chat markdown utilities should publish a dedicated browser module');
   assert.ok(chatExcerptToolsJs.includes('AigsChatExcerptTools'), 'chat excerpt utilities should publish a dedicated browser module');
   assert.ok(chatMessageMetaToolsJs.includes('AigsChatMessageMetaTools'), 'chat message meta utilities should publish a dedicated browser module');
@@ -202,10 +205,12 @@ function main() {
   assert.ok(chatMessageNodeToolsJs.includes('正在思考'), 'workspace should surface a visible thinking state before chat replies stream in');
   assert.ok(appJs.includes('formatChatMessageHtml'), 'workspace should format chat replies with structured rich text rendering');
   assert.ok(appJs.includes('updateDropdownScrollState'), 'workspace should keep the chat model dropdown scroll hint state in sync');
-  assert.ok(appJs.includes('dropdown-scroll-hint'), 'workspace should render a scroll hint for long chat model lists');
+  assert.ok(workspaceChatModelToolsJs.includes('dropdown-scroll-hint'), 'workspace chat-model utilities should render a scroll hint for long chat model lists');
   assert.ok(workspaceUiToolsJs.includes("menu.addEventListener('click'"), 'workspace ui utilities should delegate chat model option clicks after async model loading');
   assert.ok(appJs.includes('initializeChatModelDropdownLoadingState'), 'workspace should initialize chat model dropdown loading state before async models return');
-  assert.ok(appJs.includes('正在加载模型列表...'), 'workspace should expose a visible loading placeholder for chat model dropdown initialization');
+  assert.ok(workspaceChatModelToolsJs.includes('正在加载模型列表...'), 'workspace chat-model utilities should expose a visible loading placeholder for chat model dropdown initialization');
+  assert.ok(appJs.includes('requireWorkspaceChatModelTools'), 'workspace should wire the dedicated chat-model module through app assembly');
+  assert.ok(workspaceChatModelToolsJs.includes('loadChatModelOptions'), 'workspace chat-model utilities should own chat model remote loading');
   assert.ok(workspaceInitToolsJs.includes('loadChatModelOptions'), 'workspace init utilities should start loading chat models without blocking the rest of chat initialization');
   assert.ok(chatStreamToolsJs.includes('conversation_state'), 'workspace should handle streamed conversation state events');
   assert.ok(appJs.includes('rewriteAssistantMessage'), 'workspace should expose assistant rewrite actions');
