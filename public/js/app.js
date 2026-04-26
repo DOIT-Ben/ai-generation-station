@@ -1526,24 +1526,7 @@
   }
 
   async function loadTemplateLibraries() {
-    if (!currentUser || !persistence?.getTemplates) {
-      renderTemplateLibraries();
-      return;
-    }
-    try {
-      const features = Object.keys(featureMeta);
-      const responses = await Promise.all(features.map(feature => persistence.getTemplates(feature)));
-      const nextTemplates = {};
-      responses.forEach((response, index) => {
-        nextTemplates[features[index]] = response.groups || [];
-      });
-      templates = nextTemplates;
-    } catch (error) {
-      if (isProtectedSessionError(error)) return;
-      templates = appShell?.TEMPLATE_LIBRARY || {};
-      showToast('模板库加载失败，已使用本地模板', 'error', 1800);
-    }
-    renderTemplateLibraries();
+    return requireWorkspaceTemplateTools().loadTemplateLibraries();
   }
 
   function getPlanDisplayName(planCode) {
@@ -1779,6 +1762,46 @@
         getElement: $
       })
     : null;
+  const workspaceTemplateTools = window.AigsWorkspaceTemplateTools?.createTools
+    ? window.AigsWorkspaceTemplateTools.createTools({
+        getCurrentUser: () => currentUser,
+        getPersistence: () => persistence,
+        getTemplates: () => templates,
+        setTemplates: value => {
+          templates = value || {};
+        },
+        getAppShellTemplateLibrary: () => appShell?.TEMPLATE_LIBRARY || {},
+        getFeatureMeta: () => featureMeta,
+        getHistoryState: () => historyState,
+        setHistoryEntries: (feature, items) => {
+          historyState[feature] = Array.isArray(items) ? items.slice() : [];
+        },
+        getAppShellMaxHistoryItems: () => appShell?.MAX_HISTORY_ITEMS || 12,
+        getTemplateDraft,
+        renderTemplateLibraries: () => renderTemplateLibraries(),
+        renderHistory: feature => renderHistory(feature),
+        showToast,
+        isProtectedSessionError,
+        getElement: $,
+        setFieldValue,
+        applyFeatureInputs,
+        applyVoiceSourceMode,
+        renderFeatureResult,
+        scheduleWorkspaceStateSave,
+        getWorkspaceState: () => workspaceState,
+        setCurrentTab: value => {
+          currentTab = value;
+        },
+        getCurrentTab: () => currentTab,
+        queryAll: selector => document.querySelectorAll(selector),
+        queryOne: selector => document.querySelector(selector),
+        sendChatMessage,
+        recordRecentTemplateUse,
+        formatTime,
+        truncateText,
+        escapeHtml
+      })
+    : null;
   const conversationListTools = window.AigsConversationListTools?.createTools
     ? window.AigsConversationListTools.createTools({
         getConversationState: () => conversationState,
@@ -1858,6 +1881,13 @@
     return templateTools;
   }
 
+  function requireWorkspaceTemplateTools() {
+    if (!workspaceTemplateTools) {
+      throw new Error('AigsWorkspaceTemplateTools 未加载');
+    }
+    return workspaceTemplateTools;
+  }
+
   function requireConversationListTools() {
     if (!conversationListTools) {
       throw new Error('AigsConversationListTools 未加载');
@@ -1921,43 +1951,11 @@
   }
 
   async function saveCurrentTemplate(feature) {
-    if (!currentUser || !persistence?.createTemplate) {
-      showToast('请先登录后再保存模板', 'error', 1600);
-      return;
-    }
-
-    const draft = getTemplateDraft(feature);
-    if (draft.error) {
-      showToast(draft.error, 'error', 1600);
-      return;
-    }
-
-    try {
-      await persistence.createTemplate(feature, draft);
-      if ($(`template-label-${feature}`)) $(`template-label-${feature}`).value = '';
-      if ($(`template-desc-${feature}`)) $(`template-desc-${feature}`).value = '';
-      await loadTemplateLibraries();
-      showToast('模板已保存到你的账号', 'success', 1600);
-    } catch (error) {
-      if (isProtectedSessionError(error)) return;
-      showToast(error.message || '模板保存失败', 'error', 1800);
-    }
+    return requireWorkspaceTemplateTools().saveCurrentTemplate(feature);
   }
 
   async function toggleTemplateFavoriteAction(feature, templateId) {
-    if (!currentUser || !persistence?.toggleTemplateFavorite) {
-      showToast('请先登录后再收藏模板', 'error', 1600);
-      return;
-    }
-
-    try {
-      const result = await persistence.toggleTemplateFavorite(feature, templateId);
-      await loadTemplateLibraries();
-      showToast(result.favorite ? '模板已加入收藏' : '模板已取消收藏', 'success', 1400);
-    } catch (error) {
-      if (isProtectedSessionError(error)) return;
-      showToast(error.message || '模板收藏失败', 'error', 1800);
-    }
+    return requireWorkspaceTemplateTools().toggleTemplateFavoriteAction(feature, templateId);
   }
 
   function getFeatureInputs(feature) {
@@ -2339,65 +2337,15 @@
   }
 
   function renderHistory(feature) {
-    if (feature === 'chat') return;
-    const list = $(`history-list-${feature}`);
-    const empty = $(`history-empty-${feature}`);
-    if (!list || !empty) return;
-    const entries = historyState[feature] || [];
-    if (!currentUser || entries.length === 0) {
-      list.innerHTML = '';
-      empty.removeAttribute('hidden');
-      return;
-    }
-    empty.setAttribute('hidden', '');
-    list.innerHTML = entries.map((entry, index) => `
-      <article class="history-item">
-        <div class="history-item-header">
-          <strong>${entry.title}</strong>
-          <time>${formatTime(entry.timestamp)}</time>
-        </div>
-        <p>${entry.summary || '无摘要'}</p>
-        <div class="history-actions">
-          <button type="button" data-history-feature="${feature}" data-history-index="${index}" data-history-action="restore">恢复</button>
-          ${feature === 'chat' ? '<button type="button" data-history-feature="chat" data-history-index="' + index + '" data-history-action="reuse">继续对话</button>' : ''}
-        </div>
-      </article>
-    `).join('');
+    return requireWorkspaceTemplateTools().renderHistory(feature);
   }
 
   async function loadAllHistories() {
-    if (!currentUser || !persistence) {
-      Object.keys(featureMeta).filter(feature => feature !== 'chat').forEach(feature => {
-        historyState[feature] = [];
-        renderHistory(feature);
-      });
-      return;
-    }
-
-    await Promise.all(Object.keys(featureMeta).filter(feature => feature !== 'chat').map(async feature => {
-      try {
-        historyState[feature] = await persistence.getHistory(currentUser, feature);
-      } catch (error) {
-        if (isProtectedSessionError(error)) return;
-        historyState[feature] = [];
-      }
-      renderHistory(feature);
-    }));
+    return requireWorkspaceTemplateTools().loadAllHistories();
   }
 
   function saveHistoryEntry(feature, entry) {
-    if (feature === 'chat') return;
-    if (!currentUser || !persistence) return;
-    historyState[feature] = [entry].concat(historyState[feature] || []).slice(0, appShell?.MAX_HISTORY_ITEMS || 12);
-    renderHistory(feature);
-    persistence.appendHistory(currentUser, feature, entry)
-      .then(items => {
-        historyState[feature] = items;
-        renderHistory(feature);
-      })
-      .catch(() => {
-        showToast(`${featureMeta[feature]?.title || feature} 历史保存失败`, 'error', 1800);
-      });
+    return requireWorkspaceTemplateTools().saveHistoryEntry(feature, entry);
   }
 
   function isChatNearBottom(container) {
@@ -2590,53 +2538,11 @@
   }
 
   function restoreHistoryEntry(feature, index, action) {
-    const entry = historyState[feature]?.[index];
-    if (!entry) return;
-    switchTab(feature);
-    if (feature === 'chat') {
-      restoreChatMessages(entry.state?.messages || []);
-      if (action === 'reuse') {
-        $('chat-input')?.focus();
-      }
-            return;
-    }
-    applyFeatureInputs(feature, entry.state?.inputs || {});
-    if (feature === 'covervoice' && entry.state?.inputs?.audio_url) {
-      applyVoiceSourceMode('url');
-    }
-    if (entry.state?.result) {
-      renderFeatureResult(feature, entry.state.result, entry.state.inputs || {});
-    }
-    scheduleWorkspaceStateSave();
-        showToast(`${featureMeta[feature]?.title || feature} 历史已恢复`, 'success', 1600);
+    return requireWorkspaceTemplateTools().restoreHistoryEntry(feature, index, action);
   }
 
   function applyTemplate(feature, groupIndex, itemIndex) {
-    const template = templates?.[feature]?.[groupIndex]?.items?.[itemIndex];
-    if (!template) return;
-    recordRecentTemplateUse(feature, {
-      label: template.label || '未命名模板',
-      groupIndex,
-      itemIndex
-    });
-    renderTemplateLibraries();
-    switchTab(feature);
-    if (feature === 'chat') {
-      const input = $('chat-input');
-      if (input) {
-        input.value = template.message;
-        input.focus();
-      }
-      scheduleWorkspaceStateSave();
-            sendChatMessage(template.message);
-      return;
-    }
-    applyFeatureInputs(feature, template.values || {});
-    if (feature === 'covervoice') {
-      applyVoiceSourceMode('url');
-    }
-    scheduleWorkspaceStateSave();
-        showToast(`${template.label} 模板已应用`, 'success', 1400);
+    return requireWorkspaceTemplateTools().applyTemplate(feature, groupIndex, itemIndex);
   }
 
   function bindEnhancementEvents() {
@@ -2963,14 +2869,6 @@
     $$('.nav-item').forEach(btn => {
       btn.addEventListener('click', () => switchTab(btn.dataset.tab));
     });
-  }
-
-  function switchTab(tab) {
-    $$('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-    $$('.tab-content').forEach(c => c.classList.toggle('active', c.id === `tab-${tab}`));
-    currentTab = tab;
-    workspaceState.lastTab = tab;
-        scheduleWorkspaceStateSave();
   }
 
   // ============================================
@@ -5053,41 +4951,8 @@
     if (errorEl) errorEl.remove();
   }
 
-  // Tab switching with animation
   function switchTab(tab) {
-    const currentContent = document.querySelector('.tab-content.active');
-    const newContent = $(`tab-${tab}`);
-    const currentNav = document.querySelector('.nav-item.active');
-    const newNav = document.querySelector(`.nav-item[data-tab="${tab}"]`);
-
-    if (newContent && currentContent !== newContent) {
-      // Animate out current
-      currentContent?.classList.add('tab-exit');
-      setTimeout(() => {
-        currentContent?.classList.remove('active', 'tab-exit');
-        // Animate in new
-        newContent.classList.add('tab-enter');
-        requestAnimationFrame(() => {
-          newContent.classList.add('active');
-          setTimeout(() => newContent.classList.remove('tab-enter'), 300);
-        });
-      }, 150);
-    }
-
-    // Update nav
-    currentNav?.classList.remove('active');
-    newNav?.classList.add('active');
-    $$('.nav-item').forEach(item => {
-      if (item.dataset.tab === tab) {
-        item.setAttribute('aria-current', 'page');
-      } else {
-        item.removeAttribute('aria-current');
-      }
-    });
-
-    currentTab = tab;
-    workspaceState.lastTab = tab;
-        scheduleWorkspaceStateSave();
+    return requireWorkspaceTemplateTools().switchTab(tab);
   }
 
   // Initialize

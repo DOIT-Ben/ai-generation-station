@@ -32,6 +32,7 @@ const {
     buildAuditLogQuery,
     buildSystemTemplateSeed
 } = require('./state-store-helpers');
+const { createStateStoreMutations } = require('./state-store-mutations');
 
 const LOGIN_FAILURE_LOCK_THRESHOLD = 5;
 const LOGIN_FAILURE_LOCK_MS = 15 * 60 * 1000;
@@ -989,6 +990,98 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         };
     }
 
+    function getConversationTimelineSnapshot(userId, conversationId, limit = 400) {
+        const conversation = normalizeConversation(selectConversationByIdStmt.get(conversationId, userId));
+        if (!conversation) return null;
+        return buildConversationTimeline(
+            listConversationMessagesStmt.all(conversationId, Number(limit || 400))
+                .map(row => normalizeConversationMessage(row))
+                .filter(Boolean)
+        );
+    }
+
+    function getConversationMessageSnapshot(userId, conversationId, messageId) {
+        const conversation = normalizeConversation(selectConversationByIdStmt.get(conversationId, userId));
+        if (!conversation || !messageId) return null;
+
+        const row = selectConversationMessageByIdStmt.get(messageId, conversationId);
+        if (!row) return null;
+
+        const message = normalizeConversationMessage(row);
+        if (!message) return null;
+
+        const timeline = getConversationTimelineSnapshot(userId, conversationId, 400) || [];
+        return timeline.find(item => item.id === message.id) || message;
+    }
+
+    const stateStoreMutations = createStateStoreMutations({
+        db,
+        maxHistoryItems,
+        buildConversationTitle,
+        normalizeConversationMessage,
+        safeParseJson,
+        normalizePreferences,
+        normalizeTask,
+        getUsageDate,
+        groupTemplates,
+        normalizeTemplateRow,
+        getConversation: (userId, conversationId) => normalizeConversation(selectConversationByIdStmt.get(conversationId, userId)),
+        getArchivedConversation: (userId, conversationId) => normalizeConversation(selectArchivedConversationByIdStmt.get(conversationId, userId)),
+        getConversationMessage: getConversationMessageSnapshot,
+        getConversationTimeline: getConversationTimelineSnapshot,
+        getConversationMessages: (userId, conversationId, limit = 200) => {
+            const timeline = getConversationTimelineSnapshot(userId, conversationId, limit);
+            if (!timeline) return null;
+            return buildDisplayedConversationMessages(timeline);
+        },
+        getPreferences: userId => normalizePreferences(getPreferencesStmt.get(userId)),
+        getUsageDaily: (userId, usageDate = getUsageDate()) => getUsageDailyStmt.get(userId, usageDate) || getEmptyUsage(usageDate),
+        getTask: taskId => normalizeTask(getTaskStmt.get(taskId)),
+        listTemplates: (feature, userId) => {
+            const favorites = new Set(
+                listTemplateFavoritesStmt.all(userId, feature)
+                    .map(row => `${row.templateKind}:${row.templateId}`)
+            );
+            const systemTemplates = selectSystemTemplatesStmt.all(feature)
+                .map(row => normalizeTemplateRow(row, 'system', favorites))
+                .filter(Boolean);
+            const userTemplates = userId
+                ? selectUserTemplatesStmt.all(userId, feature)
+                    .map(row => normalizeTemplateRow(row, 'user', favorites))
+                    .filter(Boolean)
+                : [];
+
+            return {
+                feature,
+                groups: groupTemplates(systemTemplates.concat(userTemplates))
+            };
+        },
+        insertConversationStmt,
+        updateConversationStmt,
+        archiveConversationStmt,
+        restoreConversationStmt,
+        deleteArchivedConversationStmt,
+        insertConversationMessageStmt,
+        listConversationMessagesStmt,
+        insertHistoryStmt,
+        pruneHistoryStmt,
+        selectHistoryStmt,
+        getPreferencesStmt,
+        upsertPreferencesStmt,
+        getUsageDailyStmt,
+        upsertUsageStmt,
+        insertTaskStmt,
+        updateTaskStmt,
+        getTaskStmt,
+        listTemplateFavoritesStmt,
+        selectSystemTemplatesStmt,
+        selectUserTemplatesStmt,
+        insertUserTemplateStmt,
+        getTemplateFavoriteStmt,
+        deleteTemplateFavoriteStmt,
+        insertTemplateFavoriteStmt
+    });
+
     return {
         getUserByUsername(username) {
             return normalizeUserRecord(findUserByUsernameStmt.get(username));
@@ -1551,20 +1644,7 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         },
 
         createConversation(userId, payload = {}) {
-            const now = Date.now();
-            const id = `conv_${crypto.randomUUID()}`;
-            insertConversationStmt.run(
-                id,
-                userId,
-                'chat',
-                buildConversationTitle(payload.title || '新对话'),
-                payload.model || 'gpt-4.1-mini',
-                0,
-                null,
-                now,
-                now
-            );
-            return this.getConversation(userId, id);
+            return stateStoreMutations.createConversation(userId, payload);
         },
 
         getConversation(userId, conversationId) {
@@ -1576,54 +1656,19 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         },
 
         updateConversation(userId, conversationId, payload = {}) {
-            const conversation = this.getConversation(userId, conversationId);
-            if (!conversation) return null;
-
-            const nextTitle = Object.prototype.hasOwnProperty.call(payload, 'title')
-                ? buildConversationTitle(payload.title)
-                : conversation.title;
-            const nextModel = Object.prototype.hasOwnProperty.call(payload, 'model') && String(payload.model || '').trim()
-                ? String(payload.model || '').trim()
-                : conversation.model;
-            const now = Date.now();
-
-            updateConversationStmt.run(
-                nextTitle,
-                nextModel,
-                conversation.messageCount,
-                conversation.lastMessageAt,
-                now,
-                conversationId,
-                userId
-            );
-
-            return this.getConversation(userId, conversationId);
+            return stateStoreMutations.updateConversation(userId, conversationId, payload);
         },
 
         archiveConversation(userId, conversationId) {
-            const conversation = this.getConversation(userId, conversationId);
-            if (!conversation) return null;
-
-            const now = Date.now();
-            archiveConversationStmt.run(now, now, conversationId, userId);
-            return this.getArchivedConversation(userId, conversationId);
+            return stateStoreMutations.archiveConversation(userId, conversationId);
         },
 
         restoreConversation(userId, conversationId) {
-            const conversation = this.getArchivedConversation(userId, conversationId);
-            if (!conversation) return null;
-
-            const now = Date.now();
-            restoreConversationStmt.run(now, conversationId, userId);
-            return this.getConversation(userId, conversationId);
+            return stateStoreMutations.restoreConversation(userId, conversationId);
         },
 
         deleteArchivedConversation(userId, conversationId) {
-            const conversation = this.getArchivedConversation(userId, conversationId);
-            if (!conversation) return null;
-
-            deleteArchivedConversationStmt.run(conversationId, userId);
-            return conversation;
+            return stateStoreMutations.deleteArchivedConversation(userId, conversationId);
         },
 
         getConversationMessageTimeline(userId, conversationId, limit = 400) {
@@ -1701,79 +1746,15 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         },
 
         appendConversationMessage(userId, conversationId, message = {}) {
-            const conversation = this.getConversation(userId, conversationId);
-            if (!conversation) return null;
-
-            const role = String(message.role || '').trim();
-            const content = String(message.content || '').trim();
-            if (!['user', 'assistant'].includes(role) || !content) {
-                throw new Error('invalid conversation message');
-            }
-
-            const metadata = message.metadata && typeof message.metadata === 'object'
-                ? { ...message.metadata }
-                : {};
-            const now = Number(message.createdAt || Date.now());
-            const nextMessageCount = conversation.messageCount + 1;
-            const nextTitle = conversation.messageCount === 0 && role === 'user'
-                ? buildConversationTitle(content)
-                : conversation.title;
-            const nextModel = message.model || conversation.model || 'gpt-4.1-mini';
-            const messageId = crypto.randomUUID();
-
-            db.exec('BEGIN');
-            try {
-                insertConversationMessageStmt.run(
-                    messageId,
-                    conversationId,
-                    role,
-                    content,
-                    JSON.stringify(message.tokens || null),
-                    JSON.stringify(metadata),
-                    now
-                );
-                updateConversationStmt.run(
-                    nextTitle,
-                    nextModel,
-                    nextMessageCount,
-                    now,
-                    now,
-                    conversationId,
-                    userId
-                );
-                db.exec('COMMIT');
-            } catch (error) {
-                db.exec('ROLLBACK');
-                throw error;
-            }
-
-            return {
-                conversation: this.getConversation(userId, conversationId),
-                message: this.getConversationMessage(userId, conversationId, messageId)
-            };
+            return stateStoreMutations.appendConversationMessage(userId, conversationId, message);
         },
 
         getHistory(userId, feature) {
-            return selectHistoryStmt.all(userId, feature, maxHistoryItems)
-                .map(row => safeParseJson(row.payload, null))
-                .filter(Boolean);
+            return stateStoreMutations.getHistory(userId, feature);
         },
 
         appendHistory(userId, feature, entry) {
-            const now = Number(entry?.timestamp || Date.now());
-            db.exec('BEGIN');
-            try {
-                insertHistoryStmt.run(userId, feature, JSON.stringify(entry), now);
-                pruneHistoryStmt.run(userId, feature, userId, feature, maxHistoryItems);
-                const items = selectHistoryStmt.all(userId, feature, maxHistoryItems)
-                    .map(row => safeParseJson(row.payload, null))
-                    .filter(Boolean);
-                db.exec('COMMIT');
-                return items;
-            } catch (error) {
-                db.exec('ROLLBACK');
-                throw error;
-            }
+            return stateStoreMutations.appendHistory(userId, feature, entry);
         },
 
         getPreferences(userId) {
@@ -1785,24 +1766,7 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         },
 
         updatePreferences(userId, patch = {}) {
-            const current = this.getPreferences(userId);
-            const next = {
-                ...current,
-                ...patch
-            };
-            const now = Date.now();
-            upsertPreferencesStmt.run(
-                userId,
-                next.theme,
-                next.defaultModelChat,
-                next.defaultVoice,
-                next.defaultMusicStyle,
-                next.defaultCoverRatio,
-                typeof next.templatePreferencesJson === 'string' ? next.templatePreferencesJson : JSON.stringify(next.templatePreferencesJson || {}),
-                current.createdAt || now,
-                now
-            );
-            return this.getPreferences(userId);
+            return stateStoreMutations.updatePreferences(userId, patch);
         },
 
         getUsageDaily(userId, usageDate = getUsageDate()) {
@@ -1810,64 +1774,15 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         },
 
         incrementUsageDaily(userId, feature, metrics = {}) {
-            const counters = {
-                chat: [1, 0, 0, 0, 0, 0],
-                lyrics: [0, 1, 0, 0, 0, 0],
-                music: [0, 0, 1, 0, 0, 0],
-                image: [0, 0, 0, 1, 0, 0],
-                speech: [0, 0, 0, 0, 1, 0],
-                cover: [0, 0, 0, 0, 0, 1]
-            }[feature] || [0, 0, 0, 0, 0, 0];
-
-            const usageDate = metrics.usageDate || getUsageDate();
-            upsertUsageStmt.run(
-                userId,
-                usageDate,
-                counters[0],
-                counters[1],
-                counters[2],
-                counters[3],
-                counters[4],
-                counters[5],
-                Number(metrics.inputTokens || 0),
-                Number(metrics.outputTokens || 0),
-                Number(metrics.storageBytes || 0)
-            );
-            return this.getUsageDaily(userId, usageDate);
+            return stateStoreMutations.incrementUsageDaily(userId, feature, metrics);
         },
 
         createTask(task) {
-            const now = Date.now();
-            insertTaskStmt.run(
-                task.taskId,
-                task.userId || null,
-                task.feature,
-                task.status || 'pending',
-                Number(task.progress || 0),
-                JSON.stringify(task.inputPayload || {}),
-                JSON.stringify(task.outputPayload || {}),
-                task.error || null,
-                task.createdAt || now,
-                now
-            );
-            return this.getTask(task.taskId);
+            return stateStoreMutations.createTask(task);
         },
 
         updateTask(taskId, patch = {}) {
-            const current = this.getTask(taskId);
-            if (!current) return null;
-            const nextOutput = patch.outputPayload !== undefined
-                ? patch.outputPayload
-                : current.outputPayload || {};
-            updateTaskStmt.run(
-                patch.status || current.status,
-                patch.progress != null ? Number(patch.progress) : Number(current.progress || 0),
-                JSON.stringify(nextOutput || {}),
-                patch.error !== undefined ? patch.error : current.error || null,
-                Date.now(),
-                taskId
-            );
-            return this.getTask(taskId);
+            return stateStoreMutations.updateTask(taskId, patch);
         },
 
         getTask(taskId) {
@@ -1895,34 +1810,11 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         },
 
         createUserTemplate(userId, feature, template) {
-            const payload = template.message ? { message: String(template.message) } : { values: template.values || {} };
-            const now = Date.now();
-            const id = `usr_${crypto.randomUUID()}`;
-            insertUserTemplateStmt.run(
-                id,
-                userId,
-                feature,
-                template.category || '我的模板',
-                template.label,
-                template.description || '',
-                JSON.stringify(payload),
-                now,
-                now
-            );
-            return this.listTemplates(feature, userId).groups
-                .flatMap(group => group.items)
-                .find(item => item.id === id) || null;
+            return stateStoreMutations.createUserTemplate(userId, feature, template);
         },
 
         toggleTemplateFavorite(userId, feature, templateId) {
-            const templateKind = String(templateId || '').startsWith('usr_') ? 'user' : 'system';
-            const existing = getTemplateFavoriteStmt.get(userId, templateKind, templateId);
-            if (existing) {
-                deleteTemplateFavoriteStmt.run(userId, templateKind, templateId);
-                return { favorite: false, templateId, templateKind };
-            }
-            insertTemplateFavoriteStmt.run(userId, feature, templateKind, templateId, Date.now());
-            return { favorite: true, templateId, templateKind };
+            return stateStoreMutations.toggleTemplateFavorite(userId, feature, templateId);
         },
 
         appendAuditLog(event = {}) {
