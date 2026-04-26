@@ -121,6 +121,32 @@
         buildTransientMessageId
       })
     : null;
+  const chatEntryTools = window.AigsChatEntryTools?.createTools
+    ? window.AigsChatEntryTools.createTools({
+        getElement: $,
+        getConversationState: () => conversationState,
+        getIsChatGenerating: () => isChatGenerating,
+        setIsChatGenerating: value => {
+          isChatGenerating = value;
+        },
+        getChatQueue: () => chatQueue,
+        pushChatQueue: message => {
+          chatQueue.push(message);
+        },
+        getConversationMessageById,
+        clearConversationTransientEntries,
+        restoreChatMessages,
+        performChatSend,
+        drainChatQueue,
+        describeChatFailure,
+        updateQueueIndicator,
+        renderConversationMeta,
+        renderArchivedConversationList,
+        updateChatComposerState,
+        scheduleWorkspaceStateSave,
+        showToast
+      })
+    : null;
   const chatMessageActionTools = window.AigsChatMessageActionTools?.createTools
     ? window.AigsChatMessageActionTools.createTools({
         getConversationState: () => conversationState,
@@ -590,6 +616,13 @@
       throw new Error('AigsChatFailureTools 未加载');
     }
     return chatFailureTools;
+  }
+
+  function requireChatEntryTools() {
+    if (!chatEntryTools) {
+      throw new Error('AigsChatEntryTools 未加载');
+    }
+    return chatEntryTools;
   }
 
   function requireChatMessageActionTools() {
@@ -3539,78 +3572,11 @@
   }
 
   async function retryTransientAssistantMessage(messageId) {
-    const message = getConversationMessageById(messageId);
-    const retryPayload = message?.retryPayload || null;
-    if (!retryPayload) return;
-    if (isChatGenerating) {
-      showToast('请等待当前回复完成后再重试。', 'info', 1800);
-      return;
-    }
-
-    const conversationId = conversationState.activeId;
-    if (conversationId) {
-      clearConversationTransientEntries(conversationId);
-      restoreChatMessages(conversationState.messages, { forceFollow: false });
-    }
-
-    isChatGenerating = true;
-    renderConversationMeta();
-    renderArchivedConversationList();
-
-    try {
-      await performChatSend(retryPayload.message, { rewriteMessageId: retryPayload.rewriteMessageId || '' });
-      showToast('已重新发起这条回复', 'success', 1400);
-    } catch (error) {
-      const failure = describeChatFailure(error);
-      showToast(failure.toast, failure.tone === 'warning' ? 'info' : 'error', 2200);
-    } finally {
-      isChatGenerating = false;
-      updateQueueIndicator();
-      renderConversationMeta();
-      renderArchivedConversationList();
-    }
+    return requireChatEntryTools().retryTransientAssistantMessage(messageId);
   }
 
   async function sendChatMessage(forcedMessage) {
-    const input = $('chat-input');
-    const isDomEvent = forcedMessage && typeof forcedMessage === 'object' && (
-      typeof forcedMessage.preventDefault === 'function' ||
-      typeof forcedMessage.stopPropagation === 'function' ||
-      Object.prototype.hasOwnProperty.call(forcedMessage, 'type')
-    );
-    const message = String(!isDomEvent && forcedMessage != null ? forcedMessage : input?.value || '').trim();
-    if (!message) return;
-
-    if (isChatGenerating) {
-      chatQueue.push(message);
-      updateQueueIndicator();
-      showToast(`消息已加入队列（还有 ${chatQueue.length} 条等待）`, 'info', 1800);
-      if (input) input.value = '';
-            updateChatComposerState();
-      scheduleWorkspaceStateSave();
-      return;
-    }
-
-    isChatGenerating = true;
-    renderConversationMeta();
-    renderArchivedConversationList();
-    if (input) input.value = '';
-        updateChatComposerState();
-    scheduleWorkspaceStateSave();
-
-    try {
-      await performChatSend(message);
-      await drainChatQueue();
-    } catch (error) {
-      const failure = describeChatFailure(error);
-      showToast(failure.toast, failure.tone === 'warning' ? 'info' : 'error', 2200);
-    } finally {
-      isChatGenerating = false;
-      updateQueueIndicator();
-      renderConversationMeta();
-      renderArchivedConversationList();
-      updateChatComposerState();
-    }
+    return requireChatEntryTools().sendChatMessage(forcedMessage);
   }
 
   async function sendChatMessageFromQueue(message) {

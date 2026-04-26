@@ -38,6 +38,7 @@ const { createStateStoreMaintenance } = require('./state-store-maintenance');
 const { createStateStoreQueries } = require('./state-store-queries');
 const { createStateStoreConversations } = require('./state-store-conversations');
 const { createStateStoreBootstrap } = require('./state-store-bootstrap');
+const { createStateStoreCore } = require('./state-store-core');
 const { createStateStoreSnapshots } = require('./state-store-snapshots');
 const { createStateStoreUsers } = require('./state-store-users');
 
@@ -808,51 +809,10 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         LIMIT ?
     `);
 
-    function runInTransaction(work) {
-        db.exec('BEGIN');
-        try {
-            const result = work();
-            db.exec('COMMIT');
-            return result;
-        } catch (error) {
-            db.exec('ROLLBACK');
-            throw error;
-        }
-    }
-
-    function appendAuditLogRecord(event = {}) {
-        const action = String(event.action || '').trim();
-        if (!action) {
-            throw new Error('audit action is required');
-        }
-        const createdAt = Number(event.createdAt || Date.now());
-        insertAuditLogStmt.run(
-            action,
-            event.actorUserId || null,
-            event.targetUserId || null,
-            event.actorUsername || null,
-            event.targetUsername || null,
-            event.actorRole || null,
-            event.targetRole || null,
-            event.actorIp || null,
-            event.actorUserAgent || null,
-            JSON.stringify(event.details || {}),
-            createdAt
-        );
-        return {
-            action,
-            actorUserId: event.actorUserId || null,
-            targetUserId: event.targetUserId || null,
-            actorUsername: event.actorUsername || null,
-            targetUsername: event.targetUsername || null,
-            actorRole: event.actorRole || null,
-            targetRole: event.targetRole || null,
-            actorIp: event.actorIp || null,
-            actorUserAgent: event.actorUserAgent || null,
-            details: event.details || {},
-            createdAt
-        };
-    }
+    const stateStoreCore = createStateStoreCore({
+        db,
+        insertAuditLogStmt
+    });
 
     const stateStoreBootstrap = createStateStoreBootstrap({
         fs,
@@ -909,8 +869,8 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         buildAuthTokenSummary,
         cleanupExpiredSessions: stateStoreSnapshots.cleanupExpiredSessions,
         cleanupAuthTokens: stateStoreSnapshots.cleanupAuthTokens,
-        runInTransaction,
-        appendAuditLogRecord,
+        runInTransaction: stateStoreCore.runInTransaction,
+        appendAuditLogRecord: stateStoreCore.appendAuditLogRecord,
         getUserByUsername: username => normalizeUserRecord(findUserByUsernameStmt.get(username)),
         getUserById: userId => normalizeUserRecord(findUserByIdStmt.get(userId)),
         insertUserStmt,
@@ -934,7 +894,7 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
     });
 
     const stateStoreMaintenance = createStateStoreMaintenance({
-        runInTransaction,
+        runInTransaction: stateStoreCore.runInTransaction,
         cleanupExpiredRateLimitEvents: stateStoreSnapshots.cleanupExpiredRateLimitEvents,
         countUsersStmt,
         countSessionsStmt,
@@ -978,8 +938,8 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
 
     const stateStoreUsers = createStateStoreUsers({
         normalizeUserRecord,
-        runInTransaction,
-        appendAuditLogRecord,
+        runInTransaction: stateStoreCore.runInTransaction,
+        appendAuditLogRecord: stateStoreCore.appendAuditLogRecord,
         findUserByUsernameStmt,
         findUserByIdStmt,
         findUserByEmailStmt,
