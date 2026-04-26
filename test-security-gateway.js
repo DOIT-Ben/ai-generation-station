@@ -54,6 +54,11 @@ function findCookie(response, cookieName) {
   return getSetCookies(response).find(cookie => String(cookie).startsWith(`${cookieName}=`)) || null;
 }
 
+function getPreviewToken(previewUrl, key) {
+  const url = new URL(String(previewUrl || ''), 'http://localhost');
+  return String(url.searchParams.get(key) || '').trim();
+}
+
 function mergeCookieHeaders(...cookieHeaders) {
   const cookieMap = new Map();
   cookieHeaders
@@ -589,6 +594,191 @@ async function testRateLimitsAndAuditTrails() {
   });
 }
 
+async function testPublicRegistrationRateLimitAndAudit() {
+  await withServer(async server => {
+    const uniqueSuffix = `${Date.now()}${Math.random().toString(16).slice(2, 8)}`;
+    const firstUsername = `register_${uniqueSuffix}_a`;
+    const firstEmail = `${firstUsername}@example.com`;
+    const secondUsername = `register_${uniqueSuffix}_b`;
+    const secondEmail = `${secondUsername}@example.com`;
+
+    const firstRegistration = await registerWithCsrf(server, {
+      username: firstUsername,
+      email: firstEmail,
+      password: 'RegisterPass123!',
+      displayName: 'Register One'
+    });
+    assert(firstRegistration.response.status === 200, `Expected first public registration to succeed, got ${firstRegistration.response.status}`);
+
+    const secondRegistration = await registerWithCsrf(server, {
+      username: secondUsername,
+      email: secondEmail,
+      password: 'RegisterPass456!',
+      displayName: 'Register Two'
+    });
+    assert(secondRegistration.response.status === 429, `Expected second public registration to be rate-limited, got ${secondRegistration.response.status}`);
+    assert(secondRegistration.response.data?.reason === 'public_register_rate_limited', 'Expected second public registration to hit public_register_rate_limited');
+
+    const adminLogin = await loginWithCsrf(server, {
+      username: 'studio',
+      password: 'AIGS2026!'
+    });
+    assert(adminLogin.response.status === 200, `Expected admin login after public registration to succeed, got ${adminLogin.response.status}`);
+
+    const auditLogs = await request(
+      server,
+      `/api/admin/audit-logs?action=user_public_register&targetUsername=${encodeURIComponent(firstUsername)}`,
+      'GET',
+      null,
+      { Cookie: adminLogin.sessionCookieHeader }
+    );
+    assert(auditLogs.status === 200, `Expected public-register audit-log query to succeed, got ${auditLogs.status}`);
+    const registerEntry = Array.isArray(auditLogs.data?.items)
+      ? auditLogs.data.items.find(item => item.action === 'user_public_register' && item.targetUsername === firstUsername)
+      : null;
+    assert(Boolean(registerEntry), 'Expected audit logs to contain the public registration record');
+    assert(registerEntry.details?.email === firstEmail, 'Expected public registration audit log to capture email');
+    assert(registerEntry.details?.source === 'public_registration', 'Expected public registration audit log to capture source');
+  }, {
+    env: {
+      PORT: '18811',
+      PUBLIC_REGISTRATION_ENABLED: 'true',
+      PUBLIC_REGISTER_RATE_LIMIT_MAX: '1'
+    }
+  });
+}
+
+async function testTokenLifecycleBoundaries() {
+  await withServer(async server => {
+    const uniqueSuffix = `${Date.now()}${Math.random().toString(16).slice(2, 8)}`;
+    const targetUsername = `token_${uniqueSuffix}`;
+    const targetEmail = `${targetUsername}@example.com`;
+
+    const adminLogin = await loginWithCsrf(server, {
+      username: 'studio',
+      password: 'AIGS2026!'
+    });
+    assert(adminLogin.response.status === 200, `Expected admin login before token lifecycle tests to succeed, got ${adminLogin.response.status}`);
+    const adminCookies = mergeCookieHeaders(adminLogin.csrfCookieHeader, adminLogin.sessionCookieHeader);
+
+    const createUser = await request(server, '/api/admin/users', 'POST', {
+      username: targetUsername,
+      email: targetEmail,
+      password: 'TokenPass123!',
+      displayName: 'Token Target',
+      role: 'user',
+      planCode: 'free'
+    }, {
+      Cookie: adminCookies,
+      'X-CSRF-Token': adminLogin.csrfToken
+    });
+    assert(createUser.status === 200, `Expected admin create-user before token lifecycle tests to succeed, got ${createUser.status}`);
+    const targetUserId = createUser.data?.user?.id;
+    assert(Boolean(targetUserId), 'Expected token lifecycle test user id to exist');
+
+    const missingInviteToken = await request(server, '/api/auth/invitation', 'GET');
+    assert(missingInviteToken.status === 400, `Expected missing invitation token to return 400, got ${missingInviteToken.status}`);
+
+    const issueInvite = await request(server, `/api/admin/users/${targetUserId}/invite`, 'POST', {}, {
+      Cookie: adminCookies,
+      'X-CSRF-Token': adminLogin.csrfToken
+    });
+    assert(issueInvite.status === 200, `Expected invite issue before lifecycle checks to succeed, got ${issueInvite.status}`);
+    const inviteToken = getPreviewToken(issueInvite.data?.previewUrl, 'invite');
+    assert(Boolean(inviteToken), 'Expected invite issue response to expose a preview invite token');
+
+    const validInvite = await request(server, `/api/auth/invitation?token=${encodeURIComponent(inviteToken)}`, 'GET');
+    assert(validInvite.status === 200, `Expected issued invite token to be queryable, got ${validInvite.status}`);
+
+    const activateInvite = await request(server, '/api/auth/invitation/activate', 'POST', {
+      token: inviteToken,
+      password: 'TokenPass456!'
+    }, {
+      Cookie: adminCookies,
+      'X-CSRF-Token': adminLogin.csrfToken
+    });
+    assert(activateInvite.status === 200, `Expected invite activation to succeed, got ${activateInvite.status}`);
+
+    const reusedInviteGet = await request(server, `/api/auth/invitation?token=${encodeURIComponent(inviteToken)}`, 'GET');
+    assert(reusedInviteGet.status === 404, `Expected consumed invite token lookup to return 404, got ${reusedInviteGet.status}`);
+    assert(reusedInviteGet.data?.reason === 'token_invalid', 'Expected consumed invite token lookup to fail with token_invalid');
+
+    const reusedInvitePost = await request(server, '/api/auth/invitation/activate', 'POST', {
+      token: inviteToken,
+      password: 'TokenPass789!'
+    }, {
+      Cookie: adminCookies,
+      'X-CSRF-Token': adminLogin.csrfToken
+    });
+    assert(reusedInvitePost.status === 404, `Expected consumed invite token reuse to return 404, got ${reusedInvitePost.status}`);
+    assert(reusedInvitePost.data?.reason === 'token_invalid', 'Expected consumed invite token reuse to fail with token_invalid');
+
+    const missingResetToken = await request(server, '/api/auth/password-reset', 'GET');
+    assert(missingResetToken.status === 400, `Expected missing password-reset token to return 400, got ${missingResetToken.status}`);
+
+    const forgotPasswordCsrf = await bootstrapCsrf(server);
+    assert(forgotPasswordCsrf.response.status === 200, `Expected CSRF bootstrap before password-reset lifecycle tests to return 200, got ${forgotPasswordCsrf.response.status}`);
+    const forgotPassword = await request(server, '/api/auth/forgot-password', 'POST', {
+      username: targetUsername
+    }, {
+      Cookie: forgotPasswordCsrf.csrfCookieHeader,
+      'X-CSRF-Token': forgotPasswordCsrf.csrfToken
+    });
+    assert(forgotPassword.status === 200, `Expected forgot-password request to succeed, got ${forgotPassword.status}`);
+    const resetToken = getPreviewToken(forgotPassword.data?.previewUrl, 'reset');
+    assert(Boolean(resetToken), 'Expected forgot-password preview to expose a reset token');
+
+    const validReset = await request(server, `/api/auth/password-reset?token=${encodeURIComponent(resetToken)}`, 'GET');
+    assert(validReset.status === 200, `Expected issued password-reset token to be queryable, got ${validReset.status}`);
+
+    const completeReset = await request(server, '/api/auth/password-reset/complete', 'POST', {
+      token: resetToken,
+      password: 'ResetPass123!'
+    }, {
+      Cookie: forgotPasswordCsrf.csrfCookieHeader,
+      'X-CSRF-Token': forgotPasswordCsrf.csrfToken
+    });
+    assert(completeReset.status === 200, `Expected password-reset completion to succeed, got ${completeReset.status}`);
+
+    const reusedResetGet = await request(server, `/api/auth/password-reset?token=${encodeURIComponent(resetToken)}`, 'GET');
+    assert(reusedResetGet.status === 404, `Expected consumed password-reset token lookup to return 404, got ${reusedResetGet.status}`);
+    assert(reusedResetGet.data?.reason === 'token_invalid', 'Expected consumed password-reset token lookup to fail with token_invalid');
+
+    const reusedResetPost = await request(server, '/api/auth/password-reset/complete', 'POST', {
+      token: resetToken,
+      password: 'ResetPass456!'
+    }, {
+      Cookie: forgotPasswordCsrf.csrfCookieHeader,
+      'X-CSRF-Token': forgotPasswordCsrf.csrfToken
+    });
+    assert(reusedResetPost.status === 404, `Expected consumed password-reset token reuse to return 404, got ${reusedResetPost.status}`);
+    assert(reusedResetPost.data?.reason === 'token_invalid', 'Expected consumed password-reset token reuse to fail with token_invalid');
+
+    const expiredReset = server.appStateStore.issueUserToken(targetUserId, 'password_reset', {
+      ttlMs: 1,
+      requestedIdentity: targetUsername,
+      metadata: { source: 'test_expired_reset' }
+    });
+    assert(Boolean(expiredReset?.token), 'Expected direct expired-reset token issue to succeed');
+    const originalDateNow = Date.now;
+    let expiredResetLookup = null;
+    try {
+      Date.now = () => originalDateNow() + (2 * 60 * 1000);
+      expiredResetLookup = await request(server, `/api/auth/password-reset?token=${encodeURIComponent(expiredReset.token)}`, 'GET');
+    } finally {
+      Date.now = originalDateNow;
+    }
+    assert(expiredResetLookup.status === 404, `Expected expired password-reset token lookup to return 404, got ${expiredResetLookup.status}`);
+    assert(expiredResetLookup.data?.reason === 'token_invalid', 'Expected expired password-reset token lookup to fail with token_invalid');
+  }, {
+    env: {
+      PORT: '18812',
+      PUBLIC_REGISTRATION_ENABLED: 'true',
+      NOTIFICATION_DELIVERY_MODE: 'local_preview'
+    }
+  });
+}
+
 async function main() {
   await testHealthAndSecurityHeaders();
   await testSameOriginAndAllowedCors();
@@ -597,6 +787,8 @@ async function main() {
   await testAdminAccessBoundaries();
   await testUploadInputGuards();
   await testRateLimitsAndAuditTrails();
+  await testPublicRegistrationRateLimitAndAudit();
+  await testTokenLifecycleBoundaries();
   console.log('Security gateway tests passed');
 }
 
