@@ -37,6 +37,7 @@ const { createStateStoreAuth } = require('./state-store-auth');
 const { createStateStoreMaintenance } = require('./state-store-maintenance');
 const { createStateStoreQueries } = require('./state-store-queries');
 const { createStateStoreConversations } = require('./state-store-conversations');
+const { createStateStoreBootstrap } = require('./state-store-bootstrap');
 const { createStateStoreSnapshots } = require('./state-store-snapshots');
 const { createStateStoreUsers } = require('./state-store-users');
 
@@ -853,99 +854,32 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         };
     }
 
-    function ensureSeedUser() {
-        if (!seedUser?.username || !seedUser?.password) return;
-        const existing = normalizeUserRecord(findUserByUsernameStmt.get(seedUser.username));
-        const now = Date.now();
-        if (!existing) {
-            const userId = crypto.randomUUID();
-            insertUserStmt.run(
-                userId,
-                seedUser.username,
-                seedUser.email || null,
-                seedUser.displayName || seedUser.username,
-                'active',
-                seedUser.role || 'admin',
-                seedUser.planCode || 'internal',
-                'Asia/Shanghai',
-                'zh-CN',
-                now,
-                now
-            );
-            upsertCredentialStmt.run(userId, hashPassword(seedUser.password), now, 0);
-            return;
-        }
+    const stateStoreBootstrap = createStateStoreBootstrap({
+        fs,
+        crypto,
+        db,
+        legacyFilePath,
+        sessionTtlMs,
+        seedUser,
+        hashPassword,
+        safeParseJson,
+        normalizeUserRecord,
+        normalizeCredentialRecord,
+        buildSystemTemplateSeed,
+        findUserByUsernameStmt,
+        getCredentialStmt,
+        insertUserStmt,
+        upsertCredentialStmt,
+        countSessionsStmt,
+        countHistoryStmt,
+        insertSessionStmt,
+        insertHistoryStmt,
+        countSystemTemplatesStmt,
+        insertSystemTemplateStmt,
+        markInterruptedTasksStmt
+    });
 
-        if (!normalizeCredentialRecord(getCredentialStmt.get(existing.id))) {
-            upsertCredentialStmt.run(existing.id, hashPassword(seedUser.password), now, 0);
-        }
-    }
-
-    function migrateLegacyJsonIfNeeded() {
-        if (!legacyFilePath || !fs.existsSync(legacyFilePath)) {
-            return;
-        }
-
-        const hasRows = (countSessionsStmt.get().count || 0) > 0 || (countHistoryStmt.get().count || 0) > 0;
-        if (hasRows) {
-            return;
-        }
-
-        const legacy = safeParseJson(fs.readFileSync(legacyFilePath, 'utf8'), { sessions: {}, history: {} });
-        db.exec('BEGIN');
-        try {
-            const defaultUser = normalizeUserRecord(findUserByUsernameStmt.get(seedUser?.username || 'studio'));
-            Object.entries(legacy.sessions || {}).forEach(([token, session]) => {
-                if (!token || !session?.username || !defaultUser || session.username !== defaultUser.username) return;
-                insertSessionStmt.run(
-                    crypto.randomUUID(),
-                    defaultUser.id,
-                    token,
-                    Number(session.createdAt || Date.now()),
-                    Number(session.createdAt || Date.now()),
-                    Number(session.expiresAt || Date.now() + sessionTtlMs)
-                );
-            });
-
-            Object.entries(legacy.history || {}).forEach(([username, features]) => {
-                if (!defaultUser || username !== defaultUser.username) return;
-                Object.entries(features || {}).forEach(([feature, entries]) => {
-                    (entries || []).slice().reverse().forEach((entry, index) => {
-                        insertHistoryStmt.run(
-                            defaultUser.id,
-                            feature,
-                            JSON.stringify(entry),
-                            Number(entry?.timestamp || Date.now() - index)
-                        );
-                    });
-                });
-            });
-            db.exec('COMMIT');
-        } catch (error) {
-            db.exec('ROLLBACK');
-            throw error;
-        }
-    }
-
-    ensureSeedUser();
-    migrateLegacyJsonIfNeeded();
-    if ((countSystemTemplatesStmt.get().count || 0) === 0) {
-        const now = Date.now();
-        buildSystemTemplateSeed().forEach(template => {
-            insertSystemTemplateStmt.run(
-                template.id,
-                template.feature,
-                template.category,
-                template.label,
-                template.description,
-                JSON.stringify(template.payload || {}),
-                template.sortOrder,
-                now,
-                now
-            );
-        });
-    }
-    markInterruptedTasksStmt.run(Date.now());
+    stateStoreBootstrap.runStartupBootstrap();
 
     const stateStoreSnapshots = createStateStoreSnapshots({
         deleteExpiredSessionsStmt,

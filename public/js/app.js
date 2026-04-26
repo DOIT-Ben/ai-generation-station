@@ -328,6 +328,16 @@
         }
       })
     : null;
+  const workspaceShellTools = window.AigsWorkspaceShellTools?.createTools
+    ? window.AigsWorkspaceShellTools.createTools({
+        getElement: $,
+        getLocalStorage: () => window.localStorage,
+        getDocumentElement: () => document.documentElement,
+        getUserPreferences: () => userPreferences,
+        schedulePreferenceSave: patch => schedulePreferenceSave(patch),
+        loadQuota: () => loadQuota()
+      })
+    : null;
   const workspaceInitTools = window.AigsWorkspaceInitTools?.createTools
     ? window.AigsWorkspaceInitTools.createTools({
         getElement: $,
@@ -344,9 +354,7 @@
         },
         getReadChatArchivedCollapsedPreference: () => readChatArchivedCollapsedPreference(),
         syncChatArchivedSectionState,
-        setQuotaCollapsed: value => {
-          quotaCollapsed = value;
-        },
+        setQuotaCollapsed: value => setQuotaCollapsed(value),
         getReadQuotaCollapsedPreference: () => readQuotaCollapsedPreference(),
         syncQuotaCardState,
         bindQuotaToggle,
@@ -2035,6 +2043,13 @@
     return workspaceStateTools;
   }
 
+  function requireWorkspaceShellTools() {
+    if (!workspaceShellTools) {
+      throw new Error('AigsWorkspaceShellTools 未加载');
+    }
+    return workspaceShellTools;
+  }
+
   function requireWorkspaceInitTools() {
     if (!workspaceInitTools) {
       throw new Error('AigsWorkspaceInitTools 未加载');
@@ -3032,144 +3047,53 @@
     }, duration);
   }
 
-  // ============================================
-  //  Theme
-  // ============================================
-  const THEME_SEQUENCE = ['dark', 'light', 'paper'];
-  const THEME_TIPS = {
-    dark: '深色模式',
-    light: '浅色模式',
-    paper: '护眼模式'
-  };
-
   function normalizeTheme(theme) {
-    return THEME_SEQUENCE.includes(theme) ? theme : 'dark';
+    return requireWorkspaceShellTools().normalizeTheme(theme);
   }
 
-  function getStoredTheme() { return normalizeTheme(userPreferences.theme || 'dark'); }
+  function getStoredTheme() { return requireWorkspaceShellTools().getStoredTheme(); }
 
   function setTheme(theme) {
-    const nextTheme = normalizeTheme(theme);
-    document.documentElement.setAttribute('data-theme', nextTheme);
-    userPreferences.theme = nextTheme;
-    try {
-      window.localStorage.setItem('aigs.theme', nextTheme);
-    } catch {
-      // Ignore localStorage failures.
-    }
-    const btn = $('theme-toggle');
-    if (btn) {
-      btn.setAttribute('data-tip', THEME_TIPS[nextTheme] || THEME_TIPS.dark);
-      btn.setAttribute('aria-label', `切换主题，当前为${THEME_TIPS[nextTheme] || THEME_TIPS.dark}`);
-    }
+    return requireWorkspaceShellTools().setTheme(theme);
   }
 
   function toggleTheme() {
-    const currentIndex = THEME_SEQUENCE.indexOf(getStoredTheme());
-    const nextTheme = THEME_SEQUENCE[(currentIndex + 1) % THEME_SEQUENCE.length];
-    setTheme(nextTheme);
-    schedulePreferenceSave({ theme: nextTheme });
+    return requireWorkspaceShellTools().toggleTheme();
   }
 
   function initTheme() {
-    setTheme(getStoredTheme());
-    $('theme-toggle')?.addEventListener('click', toggleTheme);
+    return requireWorkspaceShellTools().initTheme();
   }
 
-  // ============================================
-  //  Quota
-  // ============================================
   let quotaLoading = false;
-  const QUOTA_COLLAPSED_KEY = 'aigs.quota.collapsed';
-  let quotaCollapsed = false;
-  const MODEL_LABELS = {
-    'MiniMax-M*': '通用对话', 'speech-hd': '语音合成',
-    'music-2.5': '音乐生成', 'music-2.6': '音乐生成',
-    'music-cover': '歌声翻唱', 'lyrics_generation': '歌词创作',
-    'image-01': '封面生成', 'MiniMax-Hailuo-2.3-Fast-6s-768p': '视频生成',
-    'MiniMax-Hailuo-2.3-6s-768p': '视频生成',
-  };
-  const LABEL_ORDER = ['通用对话', '音乐生成', '歌声翻唱', '歌词创作', '封面生成', '语音合成', '视频生成'];
-
-  function getModelLabel(name) { return MODEL_LABELS[name] || name || '其他'; }
+  function getModelLabel(name) { return requireWorkspaceShellTools().getModelLabel(name); }
 
   function readQuotaCollapsedPreference() {
-    try {
-      return window.localStorage.getItem(QUOTA_COLLAPSED_KEY) === '1';
-    } catch {
-      return false;
-    }
+    return requireWorkspaceShellTools().readQuotaCollapsedPreference();
   }
 
   function persistQuotaCollapsedPreference(value) {
-    try {
-      window.localStorage.setItem(QUOTA_COLLAPSED_KEY, value ? '1' : '0');
-    } catch {
-      // noop
-    }
+    return requireWorkspaceShellTools().persistQuotaCollapsedPreference(value);
   }
 
   function buildQuotaSummary(items = [], stateText = '') {
-    if (stateText) return stateText;
-    if (!Array.isArray(items) || items.length === 0) return '暂无可用额度数据';
-
-    const totalModels = items.length;
-    const highestUsageItem = items.reduce((selected, current) => {
-      const selectedPct = selected?.current_interval_total_count > 0
-        ? selected.current_interval_usage_count / selected.current_interval_total_count
-        : -1;
-      const currentPct = current?.current_interval_total_count > 0
-        ? current.current_interval_usage_count / current.current_interval_total_count
-        : -1;
-      return currentPct > selectedPct ? current : selected;
-    }, null);
-
-    if (!highestUsageItem) {
-      return `${totalModels} 项额度可用`;
-    }
-
-    const used = Number(highestUsageItem.current_interval_usage_count || 0);
-    const total = Number(highestUsageItem.current_interval_total_count || 0);
-    const pct = total > 0 ? Math.round((used / total) * 100) : 0;
-    return `${totalModels} 项额度 · ${getModelLabel(highestUsageItem.model_name)} 已用 ${pct}%`;
+    return requireWorkspaceShellTools().buildQuotaSummary(items, stateText);
   }
 
   function syncQuotaCardState() {
-    const card = $('quota-info');
-    const toggle = $('btn-quota-toggle');
-    const label = toggle?.querySelector('.quota-toggle-label');
-    if (!card || !toggle || !label) return;
-    card.dataset.collapsed = quotaCollapsed ? 'true' : 'false';
-    toggle.setAttribute('aria-expanded', quotaCollapsed ? 'false' : 'true');
-    toggle.setAttribute('title', quotaCollapsed ? '展开额度详情' : '收起额度详情');
-    label.textContent = quotaCollapsed ? '展开' : '收起';
+    return requireWorkspaceShellTools().syncQuotaCardState();
   }
 
   function setQuotaCollapsed(nextValue) {
-    quotaCollapsed = Boolean(nextValue);
-    persistQuotaCollapsedPreference(quotaCollapsed);
-    syncQuotaCardState();
+    return requireWorkspaceShellTools().setQuotaCollapsed(nextValue);
   }
 
   function renderQuotaContent({ items = [], summaryText = '', bodyHtml = '' } = {}) {
-    const summary = $('quota-summary');
-    const body = $('quota-body');
-    if (summary) {
-      summary.textContent = buildQuotaSummary(items, summaryText);
-    }
-    if (body) {
-      body.innerHTML = bodyHtml || '<div class="quota-loading">暂无可用额度数据</div>';
-    }
-    $('btn-quota-refresh')?.addEventListener('click', e => {
-      e.stopPropagation();
-      loadQuota();
-    });
+    return requireWorkspaceShellTools().renderQuotaContent({ items, summaryText, bodyHtml });
   }
 
   function bindQuotaToggle() {
-    $('btn-quota-toggle')?.addEventListener('click', () => {
-      setQuotaCollapsed(!quotaCollapsed);
-    });
+    return requireWorkspaceShellTools().bindQuotaToggle();
   }
 
   function escapeHtml(str) {
@@ -3201,6 +3125,7 @@
       if (!res.ok) throw new Error();
       const data = await res.json();
       const models = data.model_remains || [];
+      const labelOrder = requireWorkspaceShellTools().getQuotaLabelOrder();
 
       if (models.length === 0) {
         renderQuotaContent({
@@ -3217,8 +3142,8 @@
         .filter(m => m.current_interval_total_count > 0)
         .filter(m => { const l = getModelLabel(m.model_name); return !seen.has(l) && seen.add(l); })
         .sort((a, b) => {
-          const ia = LABEL_ORDER.indexOf(getModelLabel(a.model_name));
-          const ib = LABEL_ORDER.indexOf(getModelLabel(b.model_name));
+          const ia = labelOrder.indexOf(getModelLabel(a.model_name));
+          const ib = labelOrder.indexOf(getModelLabel(b.model_name));
           return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
         })
         .slice(0, 8);
