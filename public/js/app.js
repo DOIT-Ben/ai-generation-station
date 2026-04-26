@@ -300,6 +300,62 @@
         }
       })
     : null;
+  const workspaceInitTools = window.AigsWorkspaceInitTools?.createTools
+    ? window.AigsWorkspaceInitTools.createTools({
+        getElement: $,
+        queryAll: selector => document.querySelectorAll(selector),
+        createElement: tagName => document.createElement(tagName),
+        getDocument: () => document,
+        getWindow: () => window,
+        getCurrentResult: () => currentResult,
+        getCurrentTab: () => currentTab,
+        getResolveApiAssetUrl: () => resolveApiAssetUrl,
+        getHiddenInputValue: (inputId, fallback = '') => $(inputId)?.value || fallback,
+        setChatArchivedCollapsed: value => {
+          chatArchivedCollapsed = value;
+        },
+        getReadChatArchivedCollapsedPreference: () => readChatArchivedCollapsedPreference(),
+        syncChatArchivedSectionState,
+        setQuotaCollapsed: value => {
+          quotaCollapsed = value;
+        },
+        getReadQuotaCollapsedPreference: () => readQuotaCollapsedPreference(),
+        syncQuotaCardState,
+        bindQuotaToggle,
+        loadQuota,
+        initSpeechTab,
+        scheduleWorkspaceStateSave,
+        syncTranscriptionFilePreview,
+        applyVoiceSourceMode,
+        resetTab,
+        generateMusic,
+        generateLyrics,
+        generateCover,
+        generateVoice,
+        startTranscriptionShell,
+        downloadFile,
+        copyToClipboard,
+        switchTab,
+        showToast,
+        closeImageModal,
+        sendChatMessage,
+        stopChatGeneration,
+        clearFeatureDraft,
+        updateChatComposerState,
+        queueChatViewportSync,
+        ensureChatComposerVisible,
+        handleChatMessagesScroll,
+        initializeChatModelDropdownLoadingState,
+        initCustomDropdown,
+        loadChatModelOptions,
+        schedulePreferenceSave,
+        updateChatScrollButton,
+        setChatAutoFollow,
+        isChatNearBottom,
+        setIntervalFn: (callback, delay) => setInterval(callback, delay),
+        setTimeoutFn: (callback, delay) => setTimeout(callback, delay)
+      })
+    : null;
   let templates = appShell?.TEMPLATE_LIBRARY || {};
   const featureMeta = appShell?.FEATURE_META || {};
   const historyState = {};
@@ -1935,6 +1991,13 @@
       throw new Error('AigsWorkspaceStateTools 未加载');
     }
     return workspaceStateTools;
+  }
+
+  function requireWorkspaceInitTools() {
+    if (!workspaceInitTools) {
+      throw new Error('AigsWorkspaceInitTools 未加载');
+    }
+    return workspaceInitTools;
   }
 
   function requireConversationListTools() {
@@ -3977,419 +4040,24 @@
     }
     captureInitialFieldValues();
     bootstrapAuth();
-    $('chat-messages')?.addEventListener('scroll', () => {
-      setChatAutoFollow(isChatNearBottom($('chat-messages')));
-    });
-    updateChatScrollButton();
-
-    // Char counters
-    [['music-prompt', 'music-char'], ['lyrics-prompt', 'lyrics-char'],
-     ['cover-prompt', 'cover-char'], ['voice-prompt', 'voice-char'], ['speech-text', 'speech-char']].forEach(([id, counterId]) => {
-      const el = $(id);
-      const counter = $(counterId);
-      if (el && counter) el.addEventListener('input', () => { counter.textContent = el.value.length; });
-    });
-
-    // Example chips - click to fill input
-    document.querySelectorAll('.example-chip').forEach(chip => {
-      chip.addEventListener('click', () => {
-        const targetId = chip.dataset.target;
-        const text = chip.dataset.text;
-        const targetInput = $(targetId);
-        const counterId = targetId === 'music-prompt' ? 'music-char' :
-                         targetId === 'lyrics-prompt' ? 'lyrics-char' :
-                         targetId === 'cover-prompt' ? 'cover-char' :
-                         targetId === 'voice-prompt' ? 'voice-char' :
-                         targetId === 'speech-text' ? 'speech-char' : null;
-
-        if (targetInput) {
-          targetInput.value = text;
-          targetInput.focus();
-          // Update counter if exists
-          if (counterId) {
-            const counter = $(counterId);
-            if (counter) counter.textContent = text.length;
-          }
-          // Visual feedback
-          chip.style.transform = 'scale(0.95)';
-          setTimeout(() => chip.style.transform = '', 150);
-        }
-      });
-    });
-
-    // 文件上传选中后显示文件名
-    $('voice-audio-file')?.addEventListener('change', e => {
-      const file = e.target.files?.[0];
-      $('voice-file-name').textContent = file ? file.name : '';
-          });
-
-    $('transcription-file')?.addEventListener('change', e => {
-      const file = e.target.files?.[0] || null;
-      syncTranscriptionFilePreview(file);
-            scheduleWorkspaceStateSave();
-    });
-
-    // 歌声翻唱来源 Tab 切换
-    document.querySelectorAll('.voice-source-tabs .source-tab').forEach(tab => {
-      tab.addEventListener('click', () => {
-        applyVoiceSourceMode(tab.dataset.source);
-                scheduleWorkspaceStateSave();
-      });
-    });
-
-    // 拖拽上传
-    const dropZone = $('voice-drop-zone');
-    if (dropZone) {
-      // 点击区域触发文件选择
-      dropZone.addEventListener('click', e => {
-        // 避免点击label时重复触发
-        if (e.target.tagName === 'LABEL' || e.target.closest('label')) return;
-        $('voice-audio-file')?.click();
-      });
-      dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
-      dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-      dropZone.addEventListener('drop', e => {
-        e.preventDefault();
-        dropZone.classList.remove('drag-over');
-        const file = e.dataTransfer?.files?.[0];
-        if (file && file.type.startsWith('audio/')) {
-          const dt = new DataTransfer();
-          dt.items.add(file);
-          $('voice-audio-file').files = dt.files;
-          $('voice-file-name').textContent = file.name;
-          // 自动切换到文件模式
-          applyVoiceSourceMode('file');
-                  } else {
-          showToast('请拖拽音频文件', 'error');
-        }
-      });
-    }
-
-    const transcriptionDropZone = $('transcription-drop-zone');
-    if (transcriptionDropZone) {
-      transcriptionDropZone.addEventListener('click', e => {
-        if (e.target.tagName === 'LABEL' || e.target.closest('label')) return;
-        $('transcription-file')?.click();
-      });
-      transcriptionDropZone.addEventListener('dragover', e => {
-        e.preventDefault();
-        transcriptionDropZone.classList.add('drag-over');
-      });
-      transcriptionDropZone.addEventListener('dragleave', () => transcriptionDropZone.classList.remove('drag-over'));
-      transcriptionDropZone.addEventListener('drop', e => {
-        e.preventDefault();
-        transcriptionDropZone.classList.remove('drag-over');
-        const file = e.dataTransfer?.files?.[0];
-        if (!file) return;
-        if (!file.type.startsWith('audio/') && !file.type.startsWith('video/')) {
-          showToast('请拖拽音频或视频文件', 'error');
-          return;
-        }
-        const dt = new DataTransfer();
-        dt.items.add(file);
-        $('transcription-file').files = dt.files;
-        syncTranscriptionFilePreview(file);
-                scheduleWorkspaceStateSave();
-      });
-    }
-
-    // Generate buttons
-    $('btn-generate-music')?.addEventListener('click', generateMusic);
-    $('btn-generate-lyrics')?.addEventListener('click', generateLyrics);
-    $('btn-generate-cover')?.addEventListener('click', generateCover);
-    $('btn-generate-voice')?.addEventListener('click', generateVoice);
-    $('btn-start-transcription')?.addEventListener('click', startTranscriptionShell);
-
-    // Reset buttons
-    $('btn-reset-music')?.addEventListener('click', () => resetTab('music'));
-    $('btn-reset-lyrics')?.addEventListener('click', () => resetTab('lyrics'));
-    $('btn-reset-cover')?.addEventListener('click', () => resetTab('cover'));
-    $('btn-reset-voice')?.addEventListener('click', () => resetTab('covervoice'));
-    $('btn-reset-transcription')?.addEventListener('click', () => resetTab('transcription'));
-
-    // Download buttons
-    $('btn-download-music')?.addEventListener('click', () => { const src = $('music-audio')?.src; if (src) downloadFile(src, 'ai-music.mp3'); });
-    $('btn-download-cover')?.addEventListener('click', () => { const src = $('cover-image')?.src; if (src) downloadFile(src, 'ai-cover.png'); });
-    $('btn-download-voice')?.addEventListener('click', () => { const src = $('voice-audio')?.src; if (src) downloadFile(src, 'ai-voice-cover.mp3'); });
-    $('btn-copy-transcription-placeholder')?.addEventListener('click', () => {
-      const text = $('transcription-text')?.textContent || '';
-      if (text) copyToClipboard(text);
-    });
-
-    // Copy lyrics
-    $('btn-copy-lyrics')?.addEventListener('click', () => {
-      const text = currentResult.lyrics?.lyrics || currentResult.lyrics?.content || '';
-      copyToClipboard(text);
-    });
-
-    // Use lyrics in music
-    $('btn-use-lyrics')?.addEventListener('click', () => {
-      const lyrics = currentResult.lyrics?.lyrics || currentResult.lyrics?.content || '';
-      if (!lyrics) return;
-      switchTab('music');
-      const el = $('music-prompt');
-      if (el) {
-        el.value = lyrics;
-        $('music-char').textContent = lyrics.length;
-      }
-            scheduleWorkspaceStateSave();
-      showToast('歌词已导入到音乐生成', 'success');
-    });
-
-    // Image modal
-    $('modal-close')?.addEventListener('click', closeImageModal);
-    $('image-modal')?.addEventListener('click', e => { if (e.target === $('image-modal')) closeImageModal(); });
-    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeImageModal(); });
-
-    // Quota
-    quotaCollapsed = readQuotaCollapsedPreference();
-    syncQuotaCardState();
-    bindQuotaToggle();
-    loadQuota();
-    setInterval(loadQuota, 30000);
-
-    chatArchivedCollapsed = readChatArchivedCollapsedPreference();
-    syncChatArchivedSectionState();
-
-    // Keyboard shortcuts
-    document.addEventListener('keydown', e => {
-      if (e.key !== 'Enter' || e.ctrlKey || e.shiftKey || e.altKey) return;
-      const tag = document.activeElement.tagName;
-      if (tag === 'TEXTAREA' || tag === 'INPUT') return;
-      const handlers = { music: generateMusic, lyrics: generateLyrics, cover: generateCover, covervoice: generateVoice, chat: sendChatMessage };
-      handlers[currentTab]?.();
-    });
-
-    // Speech tab
-    initSpeechTab();
-
-    // Chat
-    $('btn-chat-send')?.addEventListener('click', sendChatMessage);
-    $('btn-chat-stop')?.addEventListener('click', stopChatGeneration);
-    $('btn-chat-clear')?.addEventListener('click', () => {
-      clearFeatureDraft('chat', { clearResult: false });
-      $('chat-input')?.focus();
-    });
-    $('chat-input')?.addEventListener('input', () => {
-      updateChatComposerState();
-    });
-    $('chat-input')?.addEventListener('focus', () => {
-      queueChatViewportSync();
-      ensureChatComposerVisible();
-    });
-    $('chat-input')?.addEventListener('blur', () => {
-      queueChatViewportSync();
-    });
-    $('chat-input')?.addEventListener('keydown', e => {
-      if (e.key === 'Enter' && !e.ctrlKey && !e.shiftKey && !e.altKey) { e.preventDefault(); sendChatMessage(); }
-    });
-    $('chat-messages')?.addEventListener('scroll', handleChatMessagesScroll);
-    window.addEventListener('resize', queueChatViewportSync);
-    window.visualViewport?.addEventListener('resize', queueChatViewportSync);
-    window.visualViewport?.addEventListener('scroll', queueChatViewportSync);
-
-    // Custom dropdown for chat model
-    initializeChatModelDropdownLoadingState();
-    initCustomDropdown('chat-model-dropdown', 'chat-model');
-    loadChatModelOptions();
-
-    // Convert all config selects to custom dropdowns
-    convertAllSelectsToCustomDropdowns();
-
-    $('chat-model')?.addEventListener('change', () => {
-      schedulePreferenceSave({ defaultModelChat: $('chat-model')?.value || 'gpt-4.1-mini' });
-    });
-    updateChatComposerState();
-    queueChatViewportSync();
-    $('speech-voice')?.addEventListener('change', () => {
-      schedulePreferenceSave({ defaultVoice: $('speech-voice')?.value || 'male-qn-qingse' });
-    });
-    $('music-style')?.addEventListener('change', () => {
-      schedulePreferenceSave({ defaultMusicStyle: $('music-style')?.value || '' });
-    });
-    $('cover-ratio')?.addEventListener('change', () => {
-      schedulePreferenceSave({ defaultCoverRatio: $('cover-ratio')?.value || '1:1' });
-    });
+    requireWorkspaceInitTools().bindWorkspaceInteractions();
   }
 
   // ============================================
   //  Convert Selects to Custom Dropdowns
   // ============================================
   function convertAllSelectsToCustomDropdowns() {
-    // Find all selects that need to be converted
-    const selectsToConvert = [
-      'music-style', 'music-bpm', 'music-key', 'music-duration',
-      'lyrics-style', 'lyrics-structure',
-      'cover-ratio', 'cover-style',
-      'voice-timbre', 'voice-pitch',
-      'speech-voice', 'speech-emotion', 'speech-format'
-    ];
-
-    selectsToConvert.forEach(selectId => {
-      const select = $(selectId);
-      if (!select) return;
-      if (select.closest('.custom-dropdown-sm')) return; // Already converted
-
-      const parent = select.parentElement;
-      if (!parent) return;
-
-      const options = Array.from(select.options);
-      const selectedValue = select.value;
-      const selectedText = options.find(o => o.value === selectedValue)?.text || options[0]?.text || '';
-
-      // Build custom dropdown HTML
-      const dropdownId = `${selectId}-dropdown`;
-      const dropdownHTML = `
-        <div class="custom-dropdown-sm" id="${dropdownId}">
-          <div class="dropdown-trigger">
-            <span class="dropdown-value">${selectedText}</span>
-            <svg class="dropdown-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="6 9 12 15 18 9"></polyline>
-            </svg>
-          </div>
-          <div class="dropdown-menu" hidden>
-            ${options.map(opt => `<div class="dropdown-option ${opt.value === selectedValue ? 'active' : ''}" data-value="${opt.value}">${opt.text}</div>`).join('')}
-          </div>
-        </div>
-      `;
-
-      // Replace select with custom dropdown
-      select.style.display = 'none'; // Hide original select
-      const wrapper = document.createElement('div');
-      wrapper.innerHTML = dropdownHTML;
-      parent.insertBefore(wrapper.firstElementChild, select);
-
-      // Initialize the custom dropdown
-      initCustomDropdownSm(dropdownId, selectId);
-    });
+    return requireWorkspaceInitTools().convertAllSelectsToCustomDropdowns();
   }
 
   // Initialize small dropdown (for config items)
   function initCustomDropdownSm(dropdownId, inputId) {
-    const dropdown = document.getElementById(dropdownId);
-    if (!dropdown) return;
-
-    const trigger = dropdown.querySelector('.dropdown-trigger');
-    const menu = dropdown.querySelector('.dropdown-menu');
-    const options = dropdown.querySelectorAll('.dropdown-option');
-    const valueSpan = dropdown.querySelector('.dropdown-value');
-    const hiddenInput = document.getElementById(inputId);
-
-    if (!trigger || !menu) return;
-
-    // Toggle dropdown
-    trigger.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const isOpen = dropdown.classList.contains('open');
-
-      // Close all other dropdowns
-      document.querySelectorAll('.custom-dropdown-sm.open, .custom-dropdown.open').forEach(d => {
-        if (d.id !== dropdownId) {
-          d.classList.remove('open');
-          d.querySelector('.dropdown-menu')?.setAttribute('hidden', '');
-        }
-      });
-
-      if (isOpen) {
-        dropdown.classList.remove('open');
-        menu.setAttribute('hidden', '');
-      } else {
-        dropdown.classList.add('open');
-        menu.removeAttribute('hidden');
-      }
-    });
-
-    // Option selection
-    options.forEach(option => {
-      option.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const value = option.dataset.value;
-        const text = option.textContent;
-
-        // Update hidden select
-        if (hiddenInput) {
-          hiddenInput.value = value;
-          // Trigger change event
-          hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-
-        // Update display
-        if (valueSpan) valueSpan.textContent = text;
-
-        // Update active state
-        options.forEach(o => o.classList.remove('active'));
-        option.classList.add('active');
-
-        // Close dropdown
-        dropdown.classList.remove('open');
-        menu.setAttribute('hidden', '');
-      });
-    });
-
-    // Close on outside click
-    document.addEventListener('click', () => {
-      if (dropdown.classList.contains('open')) {
-        dropdown.classList.remove('open');
-        menu.setAttribute('hidden', '');
-      }
-    });
-
-    // Close on escape key
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && dropdown.classList.contains('open')) {
-        dropdown.classList.remove('open');
-        menu.setAttribute('hidden', '');
-      }
-    });
+    return requireWorkspaceInitTools().initCustomDropdownSm(dropdownId, inputId);
   }
 
   // Mobile sidebar toggle
   function initMobileSidebar() {
-    const toggle = $('sidebar-toggle');
-    const sidebar = document.querySelector('.sidebar');
-    const overlay = $('sidebar-overlay');
-
-    if (!toggle || !sidebar) return;
-
-    function openSidebar() {
-      sidebar.classList.add('open');
-      overlay?.classList.add('show');
-      toggle.setAttribute('aria-expanded', 'true');
-      document.body.style.overflow = 'hidden';
-    }
-
-    function closeSidebar() {
-      sidebar.classList.remove('open');
-      overlay?.classList.remove('show');
-      toggle.setAttribute('aria-expanded', 'false');
-      document.body.style.overflow = '';
-    }
-
-    toggle.addEventListener('click', () => {
-      if (sidebar.classList.contains('open')) {
-        closeSidebar();
-      } else {
-        openSidebar();
-      }
-    });
-
-    overlay?.addEventListener('click', closeSidebar);
-
-    // Close sidebar when clicking a nav item on mobile
-    $$('.nav-item').forEach(item => {
-      item.addEventListener('click', () => {
-        if (window.innerWidth <= 767) {
-          closeSidebar();
-        }
-      });
-    });
-
-    // Handle window resize
-    window.addEventListener('resize', () => {
-      if (window.innerWidth > 767) {
-        closeSidebar();
-      }
-    });
+    return requireWorkspaceInitTools().initMobileSidebar();
   }
 
   // Form validation helpers

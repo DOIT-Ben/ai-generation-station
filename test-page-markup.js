@@ -29,6 +29,7 @@ function main() {
   const workspaceGenerationToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'workspace-generation-tools.js'), 'utf8');
   const workspaceConversationToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'workspace-conversation-tools.js'), 'utf8');
   const workspaceStateToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'workspace-state-tools.js'), 'utf8');
+  const workspaceInitToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'workspace-init-tools.js'), 'utf8');
   const conversationWorkflowToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'conversation-workflow-tools.js'), 'utf8');
   const conversationListToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'conversation-list-tools.js'), 'utf8');
   const conversationActionToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'conversation-action-tools.js'), 'utf8');
@@ -49,6 +50,7 @@ function main() {
   assert.ok(html.includes('/js/workspace-generation-tools.js'), 'index should load the workspace generation utility module before app.js');
   assert.ok(html.includes('/js/workspace-conversation-tools.js'), 'index should load the workspace conversation utility module before app.js');
   assert.ok(html.includes('/js/workspace-state-tools.js'), 'index should load the workspace state utility module before app.js');
+  assert.ok(html.includes('/js/workspace-init-tools.js'), 'index should load the workspace init utility module before app.js');
   assert.ok(html.includes('/js/conversation-workflow-tools.js'), 'index should load the conversation workflow utility module before app.js');
   assert.ok(html.includes('/js/conversation-list-tools.js'), 'index should load the conversation list utility module before app.js');
   assert.ok(html.includes('/js/conversation-action-tools.js'), 'index should load the conversation action utility module before app.js');
@@ -66,6 +68,7 @@ function main() {
   assert.ok(workspaceGenerationToolsJs.includes('AigsWorkspaceGenerationTools'), 'workspace generation utilities should publish a dedicated browser module');
   assert.ok(workspaceConversationToolsJs.includes('AigsWorkspaceConversationTools'), 'workspace conversation utilities should publish a dedicated browser module');
   assert.ok(workspaceStateToolsJs.includes('AigsWorkspaceStateTools'), 'workspace state utilities should publish a dedicated browser module');
+  assert.ok(workspaceInitToolsJs.includes('AigsWorkspaceInitTools'), 'workspace init utilities should publish a dedicated browser module');
   assert.ok(conversationWorkflowToolsJs.includes('AigsConversationWorkflowTools'), 'conversation workflow utilities should publish a dedicated browser module');
   assert.ok(conversationListToolsJs.includes('AigsConversationListTools'), 'conversation list utilities should publish a dedicated browser module');
   assert.ok(conversationActionToolsJs.includes('AigsConversationActionTools'), 'conversation action utilities should publish a dedicated browser module');
@@ -179,7 +182,7 @@ function main() {
   assert.ok(appJs.includes("menu.addEventListener('click'"), 'workspace should delegate chat model option clicks after async model loading');
   assert.ok(appJs.includes('initializeChatModelDropdownLoadingState'), 'workspace should initialize chat model dropdown loading state before async models return');
   assert.ok(appJs.includes('正在加载模型列表...'), 'workspace should expose a visible loading placeholder for chat model dropdown initialization');
-  assert.ok(appJs.includes("loadChatModelOptions();"), 'workspace should start loading chat models without blocking the rest of chat initialization');
+  assert.ok(workspaceInitToolsJs.includes('loadChatModelOptions'), 'workspace init utilities should start loading chat models without blocking the rest of chat initialization');
   assert.ok(chatStreamToolsJs.includes('conversation_state'), 'workspace should handle streamed conversation state events');
   assert.ok(appJs.includes('rewriteAssistantMessage'), 'workspace should expose assistant rewrite actions');
   assert.ok(appJs.includes('copyAssistantMessage'), 'workspace should expose assistant copy actions');
@@ -208,6 +211,7 @@ function main() {
   assert.ok(appJs.includes('requireWorkspaceGenerationTools'), 'workspace should wire the dedicated generation module through app assembly');
   assert.ok(appJs.includes('requireWorkspaceConversationTools'), 'workspace should wire the dedicated conversation module through app assembly');
   assert.ok(appJs.includes('requireWorkspaceStateTools'), 'workspace should wire the dedicated state module through app assembly');
+  assert.ok(appJs.includes('requireWorkspaceInitTools'), 'workspace should wire the dedicated init module through app assembly');
   assert.ok(workspaceGenerationToolsJs.includes('/api/generate/music'), 'workspace generation utilities should own music generation orchestration');
   assert.ok(workspaceGenerationToolsJs.includes('/api/generate/cover'), 'workspace generation utilities should own cover generation orchestration');
   assert.ok(workspaceGenerationToolsJs.includes('/api/generate/voice'), 'workspace generation utilities should own voice generation orchestration');
@@ -216,6 +220,8 @@ function main() {
   assert.ok(workspaceConversationToolsJs.includes('createConversationAndSelect'), 'workspace conversation utilities should own conversation creation orchestration');
   assert.ok(workspaceStateToolsJs.includes('persistWorkspaceState'), 'workspace state utilities should own workspace draft persistence');
   assert.ok(workspaceStateToolsJs.includes('clearFeatureDraft'), 'workspace state utilities should own workspace draft cleanup');
+  assert.ok(workspaceInitToolsJs.includes('bindWorkspaceInteractions'), 'workspace init utilities should own workspace interaction binding');
+  assert.ok(workspaceInitToolsJs.includes('initMobileSidebar'), 'workspace init utilities should own mobile sidebar binding');
   assert.ok(appJs.includes('setChatArchivedCollapsed'), 'workspace should support collapsing the archived conversation section');
   assert.ok(appJs.includes('syncQuotaCardState'), 'workspace should keep nav quota collapsed state in sync');
   assert.ok(appJs.includes("['dark', 'light', 'paper']"), 'workspace theme toggle should support paper eye-care mode');

@@ -36,6 +36,7 @@ const { createStateStoreMutations } = require('./state-store-mutations');
 const { createStateStoreAuth } = require('./state-store-auth');
 const { createStateStoreMaintenance } = require('./state-store-maintenance');
 const { createStateStoreQueries } = require('./state-store-queries');
+const { createStateStoreConversations } = require('./state-store-conversations');
 
 const LOGIN_FAILURE_LOCK_THRESHOLD = 5;
 const LOGIN_FAILURE_LOCK_MS = 15 * 60 * 1000;
@@ -1049,6 +1050,20 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         listAuditLogsStmt
     });
 
+    const stateStoreConversations = createStateStoreConversations({
+        normalizeConversation,
+        normalizeConversationMessage,
+        buildConversationTimeline,
+        buildDisplayedConversationMessages,
+        listConversationsStmt,
+        listArchivedConversationsStmt,
+        selectConversationByIdStmt,
+        selectArchivedConversationByIdStmt,
+        listConversationMessagesStmt,
+        selectConversationMessageByIdStmt,
+        updateConversationMessageMetadataStmt
+    });
+
     const stateStoreMutations = createStateStoreMutations({
         db,
         maxHistoryItems,
@@ -1237,15 +1252,11 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         },
 
         listConversations(userId, limit = 40) {
-            return listConversationsStmt.all(userId, Number(limit || 40))
-                .map(row => normalizeConversation(row))
-                .filter(Boolean);
+            return stateStoreConversations.listConversations(userId, limit);
         },
 
         listArchivedConversations(userId, limit = 40) {
-            return listArchivedConversationsStmt.all(userId, Number(limit || 40))
-                .map(row => normalizeConversation(row))
-                .filter(Boolean);
+            return stateStoreConversations.listArchivedConversations(userId, limit);
         },
 
         createConversation(userId, payload = {}) {
@@ -1253,11 +1264,11 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         },
 
         getConversation(userId, conversationId) {
-            return normalizeConversation(selectConversationByIdStmt.get(conversationId, userId));
+            return stateStoreConversations.getConversation(userId, conversationId);
         },
 
         getArchivedConversation(userId, conversationId) {
-            return normalizeConversation(selectArchivedConversationByIdStmt.get(conversationId, userId));
+            return stateStoreConversations.getArchivedConversation(userId, conversationId);
         },
 
         updateConversation(userId, conversationId, payload = {}) {
@@ -1277,77 +1288,23 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         },
 
         getConversationMessageTimeline(userId, conversationId, limit = 400) {
-            const conversation = this.getConversation(userId, conversationId);
-            if (!conversation) return null;
-            return buildConversationTimeline(
-                listConversationMessagesStmt.all(conversationId, Number(limit || 400))
-                    .map(row => normalizeConversationMessage(row))
-                    .filter(Boolean)
-            );
+            return stateStoreConversations.getConversationMessageTimeline(userId, conversationId, limit);
         },
 
         getConversationMessages(userId, conversationId, limit = 200) {
-            const timeline = this.getConversationMessageTimeline(userId, conversationId, limit);
-            if (!timeline) return null;
-            return buildDisplayedConversationMessages(timeline);
+            return stateStoreConversations.getConversationMessages(userId, conversationId, limit);
         },
 
         getConversationMessage(userId, conversationId, messageId) {
-            const conversation = this.getConversation(userId, conversationId);
-            if (!conversation || !messageId) return null;
-
-            const row = selectConversationMessageByIdStmt.get(messageId, conversationId);
-            if (!row) return null;
-
-            const message = normalizeConversationMessage(row);
-            if (!message) return null;
-
-            const timeline = this.getConversationMessageTimeline(userId, conversationId, 400) || [];
-            return timeline.find(item => item.id === message.id) || message;
+            return stateStoreConversations.getConversationMessage(userId, conversationId, messageId);
         },
 
         getConversationPromptMessages(userId, conversationId, options = {}) {
-            const displayedMessages = this.getConversationMessages(userId, conversationId, 400);
-            if (!displayedMessages) return null;
-
-            const targetTurnId = options.untilTurnId ? String(options.untilTurnId) : '';
-            const promptMessages = [];
-
-            for (const message of displayedMessages) {
-                promptMessages.push({
-                    role: message.role,
-                    content: message.content
-                });
-
-                if (targetTurnId && message.role === 'user' && String(message.metadata?.turnId || '') === targetTurnId) {
-                    break;
-                }
-            }
-
-            return promptMessages;
+            return stateStoreConversations.getConversationPromptMessages(userId, conversationId, options);
         },
 
         setConversationTurnActiveAssistant(userId, conversationId, assistantMessageId) {
-            const timeline = this.getConversationMessageTimeline(userId, conversationId, 400);
-            if (!timeline || !assistantMessageId) return null;
-
-            const assistantMessage = timeline.find(item => item.id === assistantMessageId && item.role === 'assistant');
-            if (!assistantMessage) return null;
-
-            const turnId = String(assistantMessage.metadata?.turnId || '');
-            if (!turnId) return null;
-
-            const userMessage = timeline.find(item => item.role === 'user' && String(item.metadata?.turnId || '') === turnId);
-            if (!userMessage) return null;
-
-            const nextMetadata = {
-                ...(userMessage.metadata || {}),
-                turnId,
-                activeAssistantMessageId: assistantMessageId
-            };
-
-            updateConversationMessageMetadataStmt.run(JSON.stringify(nextMetadata), userMessage.id, conversationId);
-            return this.getConversationMessages(userId, conversationId, 400);
+            return stateStoreConversations.setConversationTurnActiveAssistant(userId, conversationId, assistantMessageId);
         },
 
         appendConversationMessage(userId, conversationId, message = {}) {
