@@ -218,6 +218,14 @@
         setTimeoutFn: (callback, delay) => window.setTimeout(callback, delay)
       })
     : null;
+  const chatOutlineTools = window.AigsChatOutlineTools?.createTools
+    ? window.AigsChatOutlineTools.createTools({
+        getElement: $,
+        queryAll: selector => document.querySelectorAll(selector),
+        escapeHtml,
+        buildTransientMessageId
+      })
+    : null;
   let templates = appShell?.TEMPLATE_LIBRARY || {};
   const featureMeta = appShell?.FEATURE_META || {};
   const historyState = {};
@@ -430,6 +438,13 @@
       throw new Error('AigsChatSendTools 未加载');
     }
     return chatSendTools;
+  }
+
+  function requireChatOutlineTools() {
+    if (!chatOutlineTools) {
+      throw new Error('AigsChatOutlineTools 未加载');
+    }
+    return chatOutlineTools;
   }
 
   function safeParseJson(value, fallback) {
@@ -1797,6 +1812,44 @@
         syncChatArchivedSectionState
       })
     : null;
+  const conversationActionTools = window.AigsConversationActionTools?.createTools
+    ? window.AigsConversationActionTools.createTools({
+        getCurrentUser: () => currentUser,
+        getPersistence: () => persistence,
+        getIsChatGenerating: () => isChatGenerating,
+        getConversationState: () => conversationState,
+        getWorkspaceState: () => workspaceState,
+        setConversationActiveState: value => {
+          conversationState.activeId = value;
+        },
+        setConversationMessages: value => {
+          conversationState.messages = Array.isArray(value) ? value.slice() : [];
+        },
+        setConversationList,
+        setArchivedConversationList,
+        getChatHistory: () => chatHistory,
+        setChatHistory: value => {
+          chatHistory = Array.isArray(value) ? value.slice() : [];
+        },
+        applyConversationPayload,
+        showToast,
+        getActiveConversation,
+        getConversationTitlePreview,
+        upsertConversationSummary,
+        renderConversationList,
+        removeConversationFromWorkflowState,
+        restoreChatMessages,
+        createConversationAndSelect,
+        scheduleWorkspaceStateSave,
+        isProtectedSessionError,
+        promptFn: (message, defaultValue) => (typeof window !== 'undefined' && typeof window.prompt === 'function'
+          ? window.prompt(message, defaultValue)
+          : null),
+        confirmFn: message => (typeof window !== 'undefined' && typeof window.confirm === 'function'
+          ? window.confirm(message)
+          : true)
+      })
+    : null;
 
   function requireTemplateTools() {
     if (!templateTools) {
@@ -1810,6 +1863,13 @@
       throw new Error('AigsConversationListTools 未加载');
     }
     return conversationListTools;
+  }
+
+  function requireConversationActionTools() {
+    if (!conversationActionTools) {
+      throw new Error('AigsConversationActionTools 未加载');
+    }
+    return conversationActionTools;
   }
 
   function getTemplateRawPreview(item = {}) {
@@ -2214,18 +2274,7 @@
   }
 
   async function selectConversation(conversationId) {
-    if (!currentUser || !conversationId || !persistence?.getConversation) return;
-    if (isChatGenerating) {
-      showToast('请等待当前回复完成后再切换会话。', 'info', 1800);
-      return;
-    }
-    try {
-      const result = await persistence.getConversation(conversationId);
-      if (!result?.conversation) return;
-      applyConversationPayload(result.conversation, result.messages);
-    } catch (error) {
-      showToast(error.message || '会话加载失败', 'error', 1800);
-    }
+    return requireConversationActionTools().selectConversation(conversationId);
   }
 
   async function createConversationAndSelect() {
@@ -2262,35 +2311,7 @@
   }
 
   async function renameConversationById(conversationId) {
-    const targetConversation = conversationState.list.find(item => item.id === conversationId) || null;
-    if (!currentUser || !targetConversation || !persistence?.updateConversation) return;
-    if (isChatGenerating) {
-      showToast('请等待当前回复完成后再重命名。', 'info', 1800);
-      return;
-    }
-
-    const nextTitleRaw = typeof window !== 'undefined' && typeof window.prompt === 'function'
-      ? window.prompt('重命名会话', getConversationTitlePreview(targetConversation))
-      : null;
-    if (nextTitleRaw == null) return;
-
-    const nextTitle = String(nextTitleRaw).replace(/\s+/g, ' ').trim();
-    if (!nextTitle) {
-      showToast('会话标题不能为空。', 'error', 1800);
-      return;
-    }
-    if (nextTitle === targetConversation.title) return;
-
-    try {
-      const result = await persistence.updateConversation(targetConversation.id, { title: nextTitle });
-      const updatedConversation = result?.conversation || null;
-      if (!updatedConversation?.id) return;
-      upsertConversationSummary(updatedConversation);
-      renderConversationList();
-      showToast('会话已重命名', 'success', 1400);
-    } catch (error) {
-      showToast(error.message || '会话重命名失败', 'error', 1800);
-    }
+    return requireConversationActionTools().renameConversationById(conversationId);
   }
 
   async function archiveActiveConversation() {
@@ -2302,152 +2323,19 @@
   }
 
   async function archiveConversationById(conversationId, options = {}) {
-    const targetConversation = conversationState.list.find(item => item.id === conversationId) || null;
-    if (!currentUser || !targetConversation || !persistence?.archiveConversation) return;
-    if (isChatGenerating) {
-      showToast('请等待当前回复完成后再归档。', 'info', 1800);
-      return;
-    }
-
-    const confirmed = typeof window !== 'undefined' && typeof window.confirm === 'function'
-      ? window.confirm(
-        options.confirmationMessage || `确认归档“${getConversationTitlePreview(targetConversation)}”吗？`
-      )
-      : true;
-    if (!confirmed) return;
-
-    try {
-      const result = await persistence.archiveConversation(targetConversation.id);
-      removeConversationFromWorkflowState(targetConversation.id);
-      setConversationList(result?.conversations || conversationState.list.filter(item => item.id !== targetConversation.id));
-      setArchivedConversationList(
-        result?.archivedConversations || [result?.archivedConversation || targetConversation].filter(Boolean).concat(
-          conversationState.archived.filter(item => item.id !== targetConversation.id)
-        )
-      );
-      if (workspaceState.lastConversationId === targetConversation.id) {
-        workspaceState.lastConversationId = null;
-      }
-      renderConversationList();
-      if (conversationState.activeId === targetConversation.id) {
-        conversationState.activeId = null;
-        conversationState.messages = [];
-        chatHistory = [];
-        restoreChatMessages([]);
-
-        const nextConversation = conversationState.list[0] || null;
-        if (nextConversation?.id) {
-          await selectConversation(nextConversation.id);
-        } else {
-          await createConversationAndSelect();
-        }
-      }
-
-            scheduleWorkspaceStateSave();
-      showToast('会话已归档', 'success', 1400);
-    } catch (error) {
-      if (isProtectedSessionError(error)) return;
-      showToast(error.message || '会话归档失败', 'error', 1800);
-    }
+    return requireConversationActionTools().archiveConversationById(conversationId, options);
   }
 
   async function restoreArchivedConversation(conversationId) {
-    if (!currentUser || !conversationId || !persistence?.restoreConversation) return;
-    if (isChatGenerating) {
-      showToast('请等待当前回复完成后再恢复。', 'info', 1800);
-      return;
-    }
-
-    try {
-      const result = await persistence.restoreConversation(conversationId);
-      const restoredConversation = result?.conversation || null;
-      if (!restoredConversation?.id) return;
-
-      setConversationList(
-        result?.conversations || [restoredConversation].concat(conversationState.list.filter(item => item.id !== restoredConversation.id))
-      );
-      setArchivedConversationList(
-        result?.archivedConversations || conversationState.archived.filter(item => item.id !== restoredConversation.id)
-      );
-      renderConversationList();
-      await selectConversation(restoredConversation.id);
-      scheduleWorkspaceStateSave();
-      showToast('会话已恢复', 'success', 1400);
-    } catch (error) {
-      if (isProtectedSessionError(error)) return;
-      showToast(error.message || '会话恢复失败', 'error', 1800);
-    }
+    return requireConversationActionTools().restoreArchivedConversation(conversationId);
   }
 
   async function deleteArchivedConversation(conversationId) {
-    if (!currentUser || !conversationId || !persistence?.deleteArchivedConversation) return;
-    if (isChatGenerating) {
-      showToast('请等待当前回复完成后再删除。', 'info', 1800);
-      return;
-    }
-
-    const conversation = conversationState.archived.find(item => item.id === conversationId) || null;
-    const confirmed = typeof window !== 'undefined' && typeof window.confirm === 'function'
-      ? window.confirm(`确认永久删除已归档会话“${getConversationTitlePreview(conversation)}”吗？`)
-      : true;
-    if (!confirmed) return;
-
-    try {
-      const result = await persistence.deleteArchivedConversation(conversationId);
-      removeConversationFromWorkflowState(conversationId);
-      if (workspaceState.lastConversationId === conversationId) {
-        workspaceState.lastConversationId = null;
-      }
-      setArchivedConversationList(
-        result?.archivedConversations || conversationState.archived.filter(item => item.id !== conversationId)
-      );
-      renderConversationList();
-      scheduleWorkspaceStateSave();
-      showToast('已归档会话已删除', 'success', 1400);
-    } catch (error) {
-      if (isProtectedSessionError(error)) return;
-      showToast(error.message || '会话删除失败', 'error', 1800);
-    }
+    return requireConversationActionTools().deleteArchivedConversation(conversationId);
   }
 
   async function loadConversations() {
-    if (!currentUser || !persistence?.getConversations) {
-      setConversationList([]);
-      setArchivedConversationList([]);
-      conversationState.activeId = null;
-      conversationState.messages = [];
-      renderConversationList();
-      return;
-    }
-
-    try {
-      const [conversations, archivedConversations] = await Promise.all([
-        persistence.getConversations(),
-        persistence.listArchivedConversations ? persistence.listArchivedConversations() : Promise.resolve([])
-      ]);
-      setConversationList(conversations);
-      setArchivedConversationList(archivedConversations);
-    } catch (error) {
-      if (isProtectedSessionError(error)) return;
-      setConversationList([]);
-      setArchivedConversationList([]);
-    }
-
-    if (!conversationState.list.length) {
-      const created = await createConversationAndSelect();
-      if (created) return;
-    }
-
-    const preferredConversation = conversationState.list.find(item => item.id === workspaceState.lastConversationId)
-      || conversationState.list.find(item => item.id === conversationState.activeId)
-      || conversationState.list[0];
-    if (preferredConversation) {
-      await selectConversation(preferredConversation.id);
-    } else {
-      chatHistory = [];
-      restoreChatMessages([]);
-      renderConversationList();
-    }
+    return requireConversationActionTools().loadConversations();
   }
 
   function renderHistory(feature) {
@@ -4169,40 +4057,11 @@
   }
 
   function annotateChatMessageHeadings(msgDiv, messageId = '') {
-    if (!msgDiv) return;
-    const headingNodes = Array.from(msgDiv.querySelectorAll('.message-body h1, .message-body h2, .message-body h3'));
-    const headingBase = String(messageId || msgDiv.dataset.chatMessageId || buildTransientMessageId('chat-heading')).trim();
-    headingNodes.forEach((heading, index) => {
-      heading.id = `chat-heading-${headingBase}-${index + 1}`;
-      heading.dataset.chatHeadingLevel = heading.tagName.toLowerCase();
-    });
+    return requireChatOutlineTools().annotateChatMessageHeadings(msgDiv, messageId);
   }
 
   function renderChatReadingOutline() {
-    const outline = $('chat-reading-outline');
-    const actions = $('chat-reading-outline-actions');
-    const container = $('chat-messages');
-    if (!outline || !actions || !container) return;
-
-    const chatbotMessages = Array.from(container.querySelectorAll('.chat-message.chatbot'));
-    const targetMessage = chatbotMessages.reverse().find(node => node.querySelectorAll('.message-body h1, .message-body h2, .message-body h3').length >= 2);
-    if (!targetMessage) {
-      outline.setAttribute('hidden', '');
-      actions.innerHTML = '';
-      return;
-    }
-
-    const headings = Array.from(targetMessage.querySelectorAll('.message-body h1, .message-body h2, .message-body h3'));
-    actions.innerHTML = headings.map((heading, index) => `
-      <button
-        type="button"
-        class="chat-outline-chip level-${escapeHtml((heading.tagName || 'h2').toLowerCase())}"
-        data-chat-outline-target="${escapeHtml(heading.id)}">
-        <span>${index + 1}</span>${escapeHtml(String(heading.textContent || '').trim())}
-      </button>
-    `).join('');
-    outline.removeAttribute('hidden');
-    syncChatReadingOutlineActiveTarget();
+    return requireChatOutlineTools().renderChatReadingOutline();
   }
 
   function getVisibleChatExcerpts() {
@@ -4266,30 +4125,7 @@
   }
 
   function syncChatReadingOutlineActiveTarget() {
-    const container = $('chat-messages');
-    if (!container) return;
-    const headings = Array.from(container.querySelectorAll('.message-body h1[id], .message-body h2[id], .message-body h3[id]'));
-    if (!headings.length) {
-      document.querySelectorAll('[data-chat-outline-target]').forEach(button => {
-        button.classList.remove('is-active');
-      });
-      return;
-    }
-
-    const containerRect = container.getBoundingClientRect();
-    let activeHeading = headings[0];
-    const threshold = containerRect.top + 88;
-
-    headings.forEach(heading => {
-      const rect = heading.getBoundingClientRect();
-      if (rect.top <= threshold) {
-        activeHeading = heading;
-      }
-    });
-
-    document.querySelectorAll('[data-chat-outline-target]').forEach(button => {
-      button.classList.toggle('is-active', button.dataset.chatOutlineTarget === activeHeading.id);
-    });
+    return requireChatOutlineTools().syncChatReadingOutlineActiveTarget();
   }
 
   function buildChatAssistantActions(message) {

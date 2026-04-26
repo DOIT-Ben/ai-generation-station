@@ -23,9 +23,11 @@ function main() {
   const chatStreamToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'chat-stream-tools.js'), 'utf8');
   const chatSendToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'chat-send-tools.js'), 'utf8');
   const chatRenderRuntimeToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'chat-render-runtime-tools.js'), 'utf8');
+  const chatOutlineToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'chat-outline-tools.js'), 'utf8');
   const templateToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'template-tools.js'), 'utf8');
   const conversationWorkflowToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'conversation-workflow-tools.js'), 'utf8');
   const conversationListToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'conversation-list-tools.js'), 'utf8');
+  const conversationActionToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'conversation-action-tools.js'), 'utf8');
 
   assert.ok(html.includes('/js/app-shell.js'), 'index should load app-shell.js before app.js');
   assert.ok(html.includes('/js/site-shell.js'), 'index should load site-shell.js before app.js for queued auth feedback');
@@ -37,9 +39,11 @@ function main() {
   assert.ok(html.includes('/js/chat-stream-tools.js'), 'index should load the chat stream utility module before app.js');
   assert.ok(html.includes('/js/chat-send-tools.js'), 'index should load the chat send utility module before app.js');
   assert.ok(html.includes('/js/chat-render-runtime-tools.js'), 'index should load the chat render runtime utility module before app.js');
+  assert.ok(html.includes('/js/chat-outline-tools.js'), 'index should load the chat outline utility module before app.js');
   assert.ok(html.includes('/js/template-tools.js'), 'index should load the template utility module before app.js');
   assert.ok(html.includes('/js/conversation-workflow-tools.js'), 'index should load the conversation workflow utility module before app.js');
   assert.ok(html.includes('/js/conversation-list-tools.js'), 'index should load the conversation list utility module before app.js');
+  assert.ok(html.includes('/js/conversation-action-tools.js'), 'index should load the conversation action utility module before app.js');
   assert.ok(chatModelUtilsJs.includes('AigsChatModelUtils'), 'chat model utilities should publish a dedicated browser module');
   assert.ok(chatMarkdownJs.includes('AigsChatMarkdown'), 'chat markdown utilities should publish a dedicated browser module');
   assert.ok(chatExcerptToolsJs.includes('AigsChatExcerptTools'), 'chat excerpt utilities should publish a dedicated browser module');
@@ -48,9 +52,11 @@ function main() {
   assert.ok(chatStreamToolsJs.includes('AigsChatStreamTools'), 'chat stream utilities should publish a dedicated browser module');
   assert.ok(chatSendToolsJs.includes('AigsChatSendTools'), 'chat send utilities should publish a dedicated browser module');
   assert.ok(chatRenderRuntimeToolsJs.includes('AigsChatRenderRuntimeTools'), 'chat render runtime utilities should publish a dedicated browser module');
+  assert.ok(chatOutlineToolsJs.includes('AigsChatOutlineTools'), 'chat outline utilities should publish a dedicated browser module');
   assert.ok(templateToolsJs.includes('AigsTemplateTools'), 'template utilities should publish a dedicated browser module');
   assert.ok(conversationWorkflowToolsJs.includes('AigsConversationWorkflowTools'), 'conversation workflow utilities should publish a dedicated browser module');
   assert.ok(conversationListToolsJs.includes('AigsConversationListTools'), 'conversation list utilities should publish a dedicated browser module');
+  assert.ok(conversationActionToolsJs.includes('AigsConversationActionTools'), 'conversation action utilities should publish a dedicated browser module');
   for (const cssFile of CSS_MODULES) {
     assert.ok(html.includes(`/css/${cssFile}`), `index should load modular stylesheet ${cssFile}`);
     assert.ok(authHtml.includes(`/css/${cssFile}`), `auth page should load modular stylesheet ${cssFile}`);
@@ -149,10 +155,10 @@ function main() {
   assert.ok(adminHtml.includes('id="admin-invite-feedback"'), 'admin page should contain admin invitation feedback area');
   assert.ok(adminHtml.includes('id="admin-audit-form"'), 'admin page should contain admin audit filter form');
   assert.ok(adminHtml.includes('value="user_public_register"'), 'admin audit filters should expose the public-registration action');
-  assert.ok(appJs.includes('会话已归档'), 'conversation archive success toast should be localized to Chinese');
-  assert.ok(appJs.includes('确认归档“${getConversationTitlePreview(activeConversation)}”吗？'), 'conversation archive confirmation should be localized to Chinese');
-  assert.ok(appJs.includes('请等待当前回复完成后再切换会话。'), 'conversation switch guard should be localized to Chinese');
-  assert.ok(appJs.includes('已归档会话已删除'), 'archived conversation delete success toast should be localized to Chinese');
+  assert.ok(conversationActionToolsJs.includes('会话已归档'), 'conversation archive success toast should be localized to Chinese');
+  assert.ok(conversationActionToolsJs.includes('确认归档“'), 'conversation archive confirmation should be localized to Chinese');
+  assert.ok(conversationActionToolsJs.includes('请等待当前回复完成后再切换会话。'), 'conversation switch guard should be localized to Chinese');
+  assert.ok(conversationActionToolsJs.includes('已归档会话已删除'), 'archived conversation delete success toast should be localized to Chinese');
   assert.ok(html.includes('class="message-body"'), 'chat welcome message should use structured message-body markup');
   assert.ok(chatMessageNodeToolsJs.includes('正在思考'), 'workspace should surface a visible thinking state before chat replies stream in');
   assert.ok(appJs.includes('formatChatMessageHtml'), 'workspace should format chat replies with structured rich text rendering');
