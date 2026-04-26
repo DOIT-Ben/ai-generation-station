@@ -594,6 +594,93 @@ async function testRateLimitsAndAuditTrails() {
   });
 }
 
+async function testProxyHeaderTrustBoundaries() {
+  await withServer(async server => {
+    const forgotPasswordCsrf = await bootstrapCsrf(server);
+    assert(forgotPasswordCsrf.response.status === 200, `Expected CSRF bootstrap before proxy X-Forwarded-For tests to return 200, got ${forgotPasswordCsrf.response.status}`);
+
+    const baseHeaders = {
+      Cookie: forgotPasswordCsrf.csrfCookieHeader,
+      'X-CSRF-Token': forgotPasswordCsrf.csrfToken
+    };
+
+    const firstForwardedFor = await request(server, '/api/auth/forgot-password', 'POST', {
+      username: 'studio'
+    }, {
+      ...baseHeaders,
+      'X-Forwarded-For': 'garbage-one, 198.51.100.10'
+    });
+    assert(firstForwardedFor.status === 200, `Expected first forwarded-for forgot-password request to succeed, got ${firstForwardedFor.status}`);
+
+    const secondForwardedFor = await request(server, '/api/auth/forgot-password', 'POST', {
+      username: 'studio'
+    }, {
+      ...baseHeaders,
+      'X-Forwarded-For': 'garbage-two, 198.51.100.10'
+    });
+    assert(secondForwardedFor.status === 429, `Expected second forwarded-for forgot-password request to be rate-limited, got ${secondForwardedFor.status}`);
+    assert(secondForwardedFor.data?.reason === 'forgot_password_rate_limited', 'Expected second forwarded-for forgot-password request to hit forgot_password_rate_limited');
+  }, {
+    env: {
+      PORT: '18813',
+      TRUST_PROXY: 'true',
+      FORGOT_PASSWORD_RATE_LIMIT_MAX: '1'
+    }
+  });
+
+  await withServer(async server => {
+    const forgotPasswordCsrf = await bootstrapCsrf(server);
+    assert(forgotPasswordCsrf.response.status === 200, `Expected CSRF bootstrap before proxy X-Real-IP tests to return 200, got ${forgotPasswordCsrf.response.status}`);
+
+    const baseHeaders = {
+      Cookie: forgotPasswordCsrf.csrfCookieHeader,
+      'X-CSRF-Token': forgotPasswordCsrf.csrfToken
+    };
+
+    const firstRealIp = await request(server, '/api/auth/forgot-password', 'POST', {
+      username: 'studio'
+    }, {
+      ...baseHeaders,
+      'X-Real-IP': 'garbage-real-one'
+    });
+    assert(firstRealIp.status === 200, `Expected first real-ip forgot-password request to succeed, got ${firstRealIp.status}`);
+
+    const secondRealIp = await request(server, '/api/auth/forgot-password', 'POST', {
+      username: 'studio'
+    }, {
+      ...baseHeaders,
+      'X-Real-IP': 'garbage-real-two'
+    });
+    assert(secondRealIp.status === 429, `Expected second real-ip forgot-password request to be rate-limited, got ${secondRealIp.status}`);
+    assert(secondRealIp.data?.reason === 'forgot_password_rate_limited', 'Expected second real-ip forgot-password request to hit forgot_password_rate_limited');
+  }, {
+    env: {
+      PORT: '18814',
+      TRUST_PROXY: 'true',
+      FORGOT_PASSWORD_RATE_LIMIT_MAX: '1'
+    }
+  });
+
+  await withServer(async server => {
+    const spoofedCsrfBootstrap = await request(server, '/api/auth/csrf', 'GET', null, {
+      Host: 'localhost:18815',
+      'X-Forwarded-Proto': 'https'
+    });
+    assert(spoofedCsrfBootstrap.status === 200, `Expected spoofed proto CSRF bootstrap to return 200, got ${spoofedCsrfBootstrap.status}`);
+    assert(
+      spoofedCsrfBootstrap.headers['strict-transport-security'] === undefined,
+      'Expected untrusted forwarded proto to not enable Strict-Transport-Security'
+    );
+    const spoofedCsrfCookie = findCookie(spoofedCsrfBootstrap, 'aigs_csrf');
+    assert(Boolean(spoofedCsrfCookie), 'Expected spoofed proto CSRF bootstrap to set the CSRF cookie');
+    assert(!String(spoofedCsrfCookie).includes('Secure'), 'Expected untrusted forwarded proto to not mark the CSRF cookie as Secure');
+  }, {
+    env: {
+      PORT: '18815'
+    }
+  });
+}
+
 async function testPublicRegistrationRateLimitAndAudit() {
   await withServer(async server => {
     const uniqueSuffix = `${Date.now()}${Math.random().toString(16).slice(2, 8)}`;
@@ -856,6 +943,7 @@ async function main() {
   await testAdminAccessBoundaries();
   await testUploadInputGuards();
   await testRateLimitsAndAuditTrails();
+  await testProxyHeaderTrustBoundaries();
   await testPublicRegistrationRateLimitAndAudit();
   await testTokenLifecycleBoundaries();
   console.log('Security gateway tests passed');

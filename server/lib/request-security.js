@@ -1,3 +1,5 @@
+const net = require('net');
+
 function parseBooleanFlag(value, fallback = false) {
     if (value === undefined || value === null || value === '') {
         return fallback;
@@ -46,9 +48,18 @@ function normalizeSameSite(value, fallback = 'Lax') {
 function normalizeIpAddress(value) {
     const raw = String(value || '').trim();
     if (!raw) return null;
-    const normalized = raw.replace(/^::ffff:/, '');
+
+    const bracketMatch = raw.match(/^\[([^\]]+)\](?::\d+)?$/);
+    let normalized = bracketMatch ? bracketMatch[1] : raw;
+    normalized = normalized.replace(/^::ffff:/i, '');
+
+    const ipv4WithPortMatch = normalized.match(/^(\d{1,3}(?:\.\d{1,3}){3})(?::\d+)?$/);
+    if (ipv4WithPortMatch) {
+        normalized = ipv4WithPortMatch[1];
+    }
+
     if (normalized === '::1') return '127.0.0.1';
-    return normalized;
+    return net.isIP(normalized) ? normalized : null;
 }
 
 function getClientIp(req, options = {}) {
