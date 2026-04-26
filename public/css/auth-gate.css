@@ -1,0 +1,192 @@
+/* ---- Auth Gate ---- */
+.auth-gate {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 272px;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 20px;
+  background:
+    radial-gradient(circle at top left, rgba(0, 212, 255, 0.12), transparent 42%),
+    radial-gradient(circle at bottom right, rgba(255, 45, 149, 0.16), transparent 38%),
+    rgba(7, 7, 14, 0.92);
+  backdrop-filter: blur(18px);
+}
+
+[data-theme="light"] .auth-gate {
+  background:
+    radial-gradient(circle at top left, rgba(36, 93, 255, 0.12), transparent 38%),
+    radial-gradient(circle at bottom right, rgba(240, 106, 82, 0.12), transparent 34%),
+    rgba(250, 245, 236, 0.88);
+}
+
+.auth-gate[hidden] {
+  display: none !important;
+}
+
+.auth-card {
+  width: min(460px, 100%);
+  padding: 32px;
+  border-radius: var(--radius-xl);
+  border: 1px solid rgba(0, 212, 255, 0.22);
+  background: linear-gradient(180deg, rgba(19, 19, 42, 0.96), rgba(13, 13, 26, 0.98));
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+[data-theme="light"] .auth-card {
+  border-color: rgba(24, 32, 51, 0.06);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(250, 244, 235, 0.98));
+  box-shadow: var(--shadow-xl);
+}
+
+.auth-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(0, 212, 255, 0.08);
+  color: var(--accent-cyan);
+  font-size: 0.74rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 14px;
+}
+
+[data-theme="light"] .auth-eyebrow {
+  background: rgba(36, 93, 255, 0.08);
+  color: var(--accent-primary);
+}
+
+.auth-card h2 {
+  font-family: var(--font-display);
+  font-size: 1.8rem;
+  line-height: 1.15;
+  margin-bottom: 10px;
+}
+
+.auth-card p {
+  color: var(--fg-secondary);
+  margin-bottom: 18px;
+}
+
+.auth-highlights {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 20px;
+}
+
+.auth-highlight {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.auth-highlight strong {
+  font-size: 0.88rem;
+  color: var(--fg-primary);
+}
+
+.auth-highlight span {
+  font-size: 0.8rem;
+  color: var(--fg-secondary);
+  text-align: right;
+}
+
+[data-theme="light"] .auth-highlight {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(24, 32, 51, 0.06);
+}
+
+.auth-credentials {
+  margin: 18px 0 24px;
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-subtle);
+}
+
+[data-theme="light"] .auth-credentials {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(24, 32, 51, 0.06);
+}
+
+.auth-credentials strong {
+  color: var(--fg-primary);
+}
+
+.auth-credentials code {
+  color: var(--accent-cyan);
+  font-family: var(--font-mono);
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.auth-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.auth-form-note {
+  color: var(--fg-muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.auth-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--fg-secondary);
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.auth-form input {
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-base);
+  color: var(--fg-primary);
+  font-size: 0.95rem;
+}
+
+[data-theme="light"] .auth-form input {
+  background: rgba(255, 255, 255, 0.82);
+  border-color: rgba(24, 32, 51, 0.08);
+}
+
+.auth-form input:focus {
+  outline: none;
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 3px var(--glow-cyan);
+}
+
+.auth-error {
+  min-height: 20px;
+  color: #f87171;
+  font-size: 0.82rem;
+}
+
+.app.auth-locked .main {
+  filter: blur(2px);
+  pointer-events: none;
+  user-select: none;
+}
+

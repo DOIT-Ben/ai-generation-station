@@ -1,9 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
+const { readProjectCss } = require('./test-css-utils');
 
 function readCss() {
-  return fs.readFileSync(path.join(__dirname, 'public', 'css', 'style.css'), 'utf8');
+  return readProjectCss(__dirname);
 }
 
 function getBlock(css, selector) {
@@ -35,7 +36,7 @@ function main() {
   );
   assertBlockContains(
     css,
-    '[data-theme="paper"] .btn-secondary,\n[data-theme="paper"] .portal-nav-link,\n[data-theme="paper"] .portal-nav-button,\n[data-theme="paper"] .portal-nav-toggle,\n[data-theme="paper"] .admin-user-actions button,\n[data-theme="paper"] .audit-filter-preset,\n[data-theme="paper"] .audit-filter-chip,\n[data-theme="paper"] .history-actions button',
+    '[data-theme="paper"] .btn-secondary,\n[data-theme="paper"] .portal-nav-link,\n[data-theme="paper"] .portal-nav-button,\n[data-theme="paper"] .portal-nav-toggle,\n[data-theme="paper"] .auth-route-links a,\n[data-theme="paper"] .admin-user-actions button,\n[data-theme="paper"] .audit-filter-preset,\n[data-theme="paper"] .audit-filter-chip,\n[data-theme="paper"] .history-actions button',
     'rgba(255, 249, 236, 0.82)',
     'paper secondary and portal buttons should use warm paper backgrounds'
   );
@@ -66,3 +67,4 @@ if (require.main === module) {
 }
 
 module.exports = { main };
+

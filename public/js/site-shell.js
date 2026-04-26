@@ -274,8 +274,8 @@
     }
   }
 
-  async function logoutAndRedirect(persistence, targetPath = '/auth/') {
-    const safeTargetPath = sanitizeNextPath(targetPath, '/auth/');
+  async function logoutAndRedirect(persistence, targetPath = '/login/') {
+    const safeTargetPath = sanitizeNextPath(targetPath, '/login/');
     try {
       await persistence?.logout?.();
       const remainingSession = await persistence?.loadSession?.().catch(() => null);
@@ -372,7 +372,8 @@
             </div>
             ${showLogout ? '<button id="portal-logout-button" class="portal-nav-button" type="button">退出</button>' : ''}
           ` : `
-            <a class="portal-nav-button portal-nav-button--primary" href="${escapeHtml(buildUrl('/auth/', { next: nextForAuth }))}">登录 / 注册</a>
+            <a class="portal-nav-button portal-nav-button--primary" href="${escapeHtml(buildUrl('/login/', { next: nextForAuth }))}">登录</a>
+            <a class="portal-nav-button" href="${escapeHtml(buildUrl('/register/', { next: nextForAuth }))}">注册</a>
           `}
         </div>
       </div>

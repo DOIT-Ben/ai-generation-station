@@ -5,7 +5,8 @@
   const persistence = SiteShell?.getPersistence?.();
   const $ = SiteShell.$;
   const nextPath = SiteShell.getNextPath('/');
-  let activeMode = 'login';
+  const pageDefaultMode = document.body?.dataset?.authDefaultMode || '';
+  let activeMode = ['login', 'register', 'forgot'].includes(pageDefaultMode) ? pageDefaultMode : 'login';
   let tokenIntent = { mode: '', token: '' };
 
   function setFeedback(id, message, state = 'error') {
@@ -33,7 +34,7 @@
         next: nextPath
       });
     }
-    return nextPath === '/auth/' ? '/' : nextPath;
+    return ['/auth/', '/login/', '/register/'].includes(nextPath) ? '/' : nextPath;
   }
 
   function switchMode(mode) {
@@ -45,7 +46,9 @@
       $(`auth-pane-${name}`)?.toggleAttribute('hidden', name !== mode);
     });
     $('auth-pane-token')?.setAttribute('hidden', '');
-    $('auth-mode-tabs')?.removeAttribute('hidden');
+    if ($('auth-mode-tabs')) {
+      $('auth-mode-tabs').removeAttribute('hidden');
+    }
     $('auth-entry-head')?.removeAttribute('hidden');
     clearAllFeedback();
   }
@@ -61,6 +64,15 @@
       return { mode: 'reset', token: reset };
     }
     return { mode: '', token: '' };
+  }
+
+  function redirectTokenIntentToRecoveryPage() {
+    const intent = readTokenIntent();
+    if (!intent.mode || !intent.token || window.location.pathname === '/auth/') return false;
+    const url = new URL('/auth/', window.location.origin);
+    url.searchParams.set(intent.mode, intent.token);
+    window.location.replace(`${url.pathname}${url.search}`);
+    return true;
   }
 
   async function maybeRedirectAuthenticatedUser() {
@@ -233,6 +245,10 @@
     SiteShell.bindThemeToggle(theme => SiteShell.syncThemePreference(persistence, theme));
     SiteShell.renderPortalUserNav('portal-user-nav', null, { nextPath });
 
+    if (redirectTokenIntentToRecoveryPage()) {
+      return;
+    }
+
     document.querySelectorAll('[data-auth-mode]').forEach(button => {
       button.addEventListener('click', () => switchMode(button.dataset.authMode));
     });
@@ -244,8 +260,7 @@
       const url = new URL(window.location.href);
       url.searchParams.delete('invite');
       url.searchParams.delete('reset');
-      window.history.replaceState({}, '', `${url.pathname}${url.search}`);
-      switchMode('login');
+      window.location.href = SiteShell.buildUrl('/login/', { next: nextPath });
     });
 
     if (await hydrateTokenFlow()) {

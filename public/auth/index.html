@@ -8,9 +8,23 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/reset.css" />
+  <link rel="stylesheet" href="/css/common.css" />
+  <link rel="stylesheet" href="/css/index.css" />
+  <link rel="stylesheet" href="/css/chat-message.css" />
+  <link rel="stylesheet" href="/css/chat-workspace.css" />
+  <link rel="stylesheet" href="/css/chat-dropdown.css" />
+  <link rel="stylesheet" href="/css/workspace-responsive.css" />
+  <link rel="stylesheet" href="/css/auth-gate.css" />
+  <link rel="stylesheet" href="/css/templates.css" />
+  <link rel="stylesheet" href="/css/admin.css" />
+  <link rel="stylesheet" href="/css/portal.css" />
+  <link rel="stylesheet" href="/css/auth.css" />
+  <link rel="stylesheet" href="/css/portal-components.css" />
+  <link rel="stylesheet" href="/css/account.css" />
+  <link rel="stylesheet" href="/css/responsive.css" />
 </head>
-<body>
+<body data-auth-default-mode="forgot">
   <div id="portal-user-nav"></div>
 
   <div class="theme-toggle-fixed">
@@ -22,17 +36,16 @@
   </div>
 
   <div class="portal-page-shell">
-    <main class="portal-layout portal-layout--split auth-portal-layout">
+    <main class="portal-layout portal-layout--split auth-portal-layout auth-portal-layout--recovery">
       <section class="portal-hero-card auth-showcase-card">
         <div class="portal-copy-stack auth-showcase-copy">
-          <div class="portal-eyebrow">Auth Center</div>
-          <h1>欢迎回到 AI Generation Station。</h1>
-          <p class="portal-lead">登录、注册、邀请激活、找回与重置密码，都在同一个更干净的认证入口里完成。</p>
+          <div class="portal-eyebrow">Account Recovery</div>
+          <h1>账号恢复与邀请激活。</h1>
+          <p class="portal-lead">这里只处理找回密码、邀请激活和重置密码。登录与注册已经拆分为独立页面。</p>
           <div class="auth-showcase-badges">
-            <span class="auth-showcase-badge">登录</span>
-            <span class="auth-showcase-badge">注册</span>
             <span class="auth-showcase-badge">邀请激活</span>
             <span class="auth-showcase-badge">重置密码</span>
+            <span class="auth-showcase-badge">找回密码</span>
           </div>
           <div class="auth-showcase-panel">
             <div class="auth-showcase-brand">
@@ -43,9 +56,9 @@
               </div>
             </div>
             <ul class="auth-showcase-list">
-              <li>统一入口，减少工作台里的账号状态打断</li>
-              <li>支持公开注册，也兼容管理员邀请激活</li>
-              <li>找回和重置回到认证中心闭环完成</li>
+              <li>登录入口独立放在更直接的页面</li>
+              <li>注册入口独立承接新账号创建</li>
+              <li>找回和重置在这里闭环完成</li>
             </ul>
           </div>
         </div>
@@ -53,54 +66,12 @@
 
       <section class="portal-surface-card auth-entry-card">
         <div class="auth-entry-head" id="auth-entry-head">
-          <span class="auth-entry-kicker">Authentication</span>
-          <h1>欢迎回来</h1>
-          <p>输入账号密码，直接回到你的下一步工作。</p>
-        </div>
-        <div class="portal-form-tabs" id="auth-mode-tabs">
-          <button class="portal-form-tab is-active" data-auth-mode="login" type="button">登录</button>
-          <button class="portal-form-tab" data-auth-mode="register" type="button">注册</button>
-          <button class="portal-form-tab" data-auth-mode="forgot" type="button">找回密码</button>
+          <span class="auth-entry-kicker">Recovery</span>
+          <h1>找回密码</h1>
+          <p>输入账号后，根据当前通知配置获取重置入口。</p>
         </div>
 
-        <section class="portal-form-pane" id="auth-pane-login">
-          <div class="section-header">
-            <h1>欢迎回来</h1>
-            <p>登录后会回到工作台，继续你上一次停下来的内容。</p>
-          </div>
-          <form id="login-form" class="auth-form">
-            <label>账号<input id="login-username" type="text" autocomplete="username" placeholder="请输入账号" /></label>
-            <label>密码<input id="login-password" type="password" autocomplete="current-password" placeholder="请输入密码" /></label>
-            <div id="login-feedback" class="portal-feedback" hidden></div>
-            <div class="auth-form-actions">
-              <button class="btn btn-primary" type="submit">登录并进入工作台</button>
-            </div>
-          </form>
-        </section>
-
-        <section class="portal-form-pane" id="auth-pane-register" hidden>
-          <div class="section-header">
-            <h1>创建账号</h1>
-            <p>保留标准注册入口，完成后直接进入工作台。</p>
-          </div>
-          <form id="register-form" class="auth-form">
-            <div class="portal-grid-2">
-              <label>账号<input id="register-username" type="text" autocomplete="username" placeholder="3-32 位账号" /></label>
-              <label>显示名<input id="register-display-name" type="text" autocomplete="nickname" placeholder="可选，默认同账号" /></label>
-            </div>
-            <label>邮箱<input id="register-email" type="email" autocomplete="email" placeholder="请输入邮箱地址" /></label>
-            <div class="portal-grid-2">
-              <label>密码<input id="register-password" type="password" autocomplete="new-password" placeholder="至少 8 位" /></label>
-              <label>确认密码<input id="register-confirm-password" type="password" autocomplete="new-password" placeholder="请再次输入密码" /></label>
-            </div>
-            <div id="register-feedback" class="portal-feedback" hidden></div>
-            <div class="auth-form-actions">
-              <button class="btn btn-primary" type="submit">注册并进入工作台</button>
-            </div>
-          </form>
-        </section>
-
-        <section class="portal-form-pane" id="auth-pane-forgot" hidden>
+        <section class="portal-form-pane" id="auth-pane-forgot">
           <div class="section-header">
             <h1>找回密码</h1>
             <p>输入账号后，系统会按照当前配置发送重置邮件或给出重置入口。</p>
@@ -119,6 +90,10 @@
               <button class="btn btn-primary" type="submit">发送重置请求</button>
             </div>
           </form>
+          <div class="auth-route-links" aria-label="账号恢复相关入口">
+            <a href="/login/">返回登录</a>
+            <a href="/register/">创建账号</a>
+          </div>
         </section>
 
         <section class="portal-form-pane" id="auth-pane-token" hidden>

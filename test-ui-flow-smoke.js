@@ -106,15 +106,24 @@ function parsePageUrl(page) {
 }
 
 async function waitForPath(page, pathname, searchPredicate = null) {
-  await page.waitForURL(url => {
-    const nextUrl = new URL(String(url));
-    return nextUrl.pathname === pathname && (typeof searchPredicate !== 'function' || searchPredicate(nextUrl));
-  });
+  const startedAt = Date.now();
+  let lastUrl = '';
+  while (Date.now() - startedAt < 30000) {
+    lastUrl = page.url();
+    if (lastUrl) {
+      const nextUrl = new URL(lastUrl);
+      if (nextUrl.pathname === pathname && (typeof searchPredicate !== 'function' || searchPredicate(nextUrl))) {
+        return;
+      }
+    }
+    await page.waitForTimeout(100);
+  }
+  throw new Error(`Timed out waiting for path ${pathname} (last url: ${lastUrl || 'empty'})`);
 }
 
 async function assertAuthPage(page, options = {}) {
   const expectedNext = options.expectedNext;
-  await waitForPath(page, '/auth/', expectedNext == null ? null : url => url.searchParams.get('next') === expectedNext);
+  await waitForPath(page, '/login/', expectedNext == null ? null : url => url.searchParams.get('next') === expectedNext);
   await page.locator('#theme-toggle').waitFor({ state: 'visible' });
   await page.locator('#portal-user-nav').waitFor({ state: 'visible' });
   await page.locator('#login-form').waitFor({ state: 'visible' });
@@ -129,16 +138,16 @@ async function switchAuthMode(page, mode) {
 
 async function assertAuthModeSwitching(page) {
   await assertAuthPage(page);
-  assert.equal(await page.locator('#auth-pane-login').isVisible(), true, 'login pane should be visible by default');
+  assert.equal(await page.locator('#auth-pane-login').isVisible(), true, 'login pane should be visible on the login page');
 
-  await switchAuthMode(page, 'register');
-  assert.equal(await page.locator('#register-form').isVisible(), true, 'register form should be visible after switching to register');
+  await page.goto(`${new URL(page.url()).origin}/register/`, { waitUntil: 'domcontentloaded' });
+  assert.equal(await page.locator('#register-form').isVisible(), true, 'register form should be visible on the register page');
 
-  await switchAuthMode(page, 'forgot');
-  assert.equal(await page.locator('#forgot-form').isVisible(), true, 'forgot-password form should be visible after switching to forgot');
+  await page.goto(`${new URL(page.url()).origin}/auth/`, { waitUntil: 'domcontentloaded' });
+  assert.equal(await page.locator('#forgot-form').isVisible(), true, 'forgot-password form should be visible on the recovery page');
 
-  await switchAuthMode(page, 'login');
-  assert.equal(await page.locator('#login-form').isVisible(), true, 'login form should become visible again after returning to login');
+  await page.goto(`${new URL(page.url()).origin}/login/`, { waitUntil: 'domcontentloaded' });
+  assert.equal(await page.locator('#login-form').isVisible(), true, 'login form should be visible again after returning to login');
 }
 
 async function loginThroughAuthPage(page, { username, password, expectedPath = '/' }) {
@@ -236,7 +245,7 @@ async function assertWorkspaceResumePersistence(page, uniqueSeed) {
   });
   await renameActiveWorkspaceConversation(page, secondConversationMessage);
 
-  await page.locator(`.chat-conversation-item:has-text("${getConversationCardTitlePreview(firstConversationMessage)}")`).click();
+  await page.locator(`.chat-conversation-item:has-text("${getConversationCardTitlePreview(firstConversationMessage)}")`).first().click();
   await page.waitForFunction(expected => {
     const title = document.getElementById('chat-conversation-title');
     return Boolean(title?.textContent?.includes(expected));
@@ -321,17 +330,17 @@ async function changePasswordFromAccount(page, { currentPassword, newPassword })
   });
 }
 
-async function logoutFromPortalPage(page, expectedPath = '/auth/') {
+async function logoutFromPortalPage(page, expectedPath = '/login/') {
   const [response] = await Promise.all([
     page.waitForResponse(item => item.url().includes('/api/auth/logout') && item.request().method() === 'POST'),
     page.click('#portal-logout-button')
   ]);
 
   assert.equal(response.status(), 200, 'portal logout should succeed');
-  if (expectedPath === '/auth/') {
+  if (expectedPath === '/login/') {
     await assertAuthPage(page);
     await page.waitForTimeout(600);
-    assert.equal(parsePageUrl(page).pathname, '/auth/', 'portal logout should remain on the auth page after the session check');
+    assert.equal(parsePageUrl(page).pathname, '/login/', 'portal logout should land on the login page after the session check');
     return;
   }
 
@@ -430,8 +439,9 @@ async function completeTokenFlow(page, { responsePath, username, password }) {
 }
 
 async function requestForgotPasswordPreview(page, username) {
-  await assertAuthPage(page);
-  await switchAuthMode(page, 'forgot');
+  const origin = new URL(page.url()).origin;
+  await page.goto(`${origin}/auth/`, { waitUntil: 'domcontentloaded' });
+  await page.locator('#forgot-form').waitFor({ state: 'visible' });
   await page.fill('#forgot-username', username);
 
   const [response] = await Promise.all([

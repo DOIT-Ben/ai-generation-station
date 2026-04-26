@@ -2,6 +2,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const { createConfig } = require('./server/config');
+const { readProjectCss, CSS_MODULES } = require('./test-css-utils');
 
 const root = __dirname;
 const read = relativePath => fs.readFileSync(path.join(root, relativePath), 'utf8');
@@ -11,13 +12,21 @@ function assertIncludes(haystack, needle, message) {
 }
 
 function main() {
-  const css = read('public/css/style.css');
+  const css = readProjectCss(root);
   const authJs = read('public/js/auth-page.js');
   const appJs = read('public/js/app.js');
   const siteShellJs = read('public/js/site-shell.js');
   const adminHtml = read('public/admin/index.html');
   const indexHtml = read('public/index.html');
+  const loginHtml = read('public/login/index.html');
+  const registerHtml = read('public/register/index.html');
   const envExample = read('.env.example');
+
+  for (const cssFile of CSS_MODULES) {
+    assertIncludes(indexHtml, `/css/${cssFile}`, `workspace should load modular stylesheet ${cssFile}`);
+    assertIncludes(loginHtml, `/css/${cssFile}`, `login page should load modular stylesheet ${cssFile}`);
+    assertIncludes(registerHtml, `/css/${cssFile}`, `register page should load modular stylesheet ${cssFile}`);
+  }
 
   assertIncludes(css, '.drop-zone {\n  display: grid;', 'drop zone should use stable grid alignment');
   assertIncludes(css, 'grid-template-columns: 24px minmax(0, 1fr) auto;', 'drop zone should reserve icon, hint, and format columns');
@@ -32,11 +41,28 @@ function main() {
   assertIncludes(appJs, 'consumeQueuedWelcomeToast', 'workspace should consume queued welcome toast');
   assertIncludes(indexHtml, '/js/site-shell.js', 'workspace should load site shell before consuming queued welcome toast');
 
-  assertIncludes(css, '.logo-icon {\n  width: 42px;', 'logo icon should be enlarged by about 10 percent');
-  assertIncludes(css, 'max-width: 156px;', 'logo text should have enough width');
+  assertIncludes(css, '.sidebar {\n  width: 272px;', 'desktop sidebar should have enough room for the two-line logo lockup');
+  assertIncludes(css, 'margin-left: 272px;', 'main content should align with the wider desktop sidebar');
+  assertIncludes(indexHtml, 'class="logo-ai-mark"', 'sidebar logo should use a large AI text mark');
+  assertIncludes(indexHtml, 'logo-text-line logo-text-line--primary', 'logo text should use a primary row');
+  assertIncludes(indexHtml, 'logo-text-line logo-text-line--station', 'logo text should use a station row');
+  assertIncludes(indexHtml, '>AI</strong>', 'logo text mark should keep AI text');
+  assertIncludes(indexHtml, '>Generation</span>', 'logo primary row should keep Generation text');
+  assertIncludes(indexHtml, '>STATION</em>', 'logo station row should keep STATION text');
+  assertIncludes(css, 'max-width: 160px;', 'logo text should match the compact two-line lockup');
+  assertIncludes(css, '.logo-ai-mark', 'logo text mark should have dedicated styling');
+  assertIncludes(css, '.logo-text-line--primary', 'logo text should style the AI Generation row');
   assertIncludes(css, 'font-stretch: normal;', 'logo text should not be visually compressed');
   assertIncludes(css, '.logo-text span', 'logo subtitle styling should exist');
   assertIncludes(css, 'white-space: nowrap;', 'logo text should avoid awkward wrapping');
+
+  assertIncludes(loginHtml, 'auth-simple-page auth-simple-page--login', 'login page should use the pure auth form layout');
+  assertIncludes(registerHtml, 'auth-simple-page auth-simple-page--register', 'register page should use the pure auth form layout');
+  assertIncludes(css, '.auth-simple-shell', 'pure auth pages should have a dedicated centered shell');
+  assertIncludes(css, '.auth-simple-card', 'pure auth pages should use one focused form card');
+  assert.ok(!loginHtml.includes('auth-v2-brand-panel'), 'login page should not render unrelated brand panels');
+  assert.ok(!registerHtml.includes('auth-v2-brand-panel'), 'register page should not render unrelated brand panels');
+  assert.ok(!css.includes('.auth-v2-brand-panel'), 'auth CSS should not keep the removed brand panel selector');
 
   assertIncludes(adminHtml, 'admin-portal-layout', 'admin page should use the wider admin layout');
   assertIncludes(adminHtml, 'admin-data-grid', 'admin page should separate heavy data sections');
@@ -60,3 +86,4 @@ if (require.main === module) {
 module.exports = {
   main
 };
+

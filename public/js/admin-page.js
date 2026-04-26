@@ -759,7 +759,7 @@
     SiteShell.bindThemeToggle(theme => SiteShell.syncThemePreference(persistence, theme));
     session = await persistence?.loadSession?.().catch(() => null);
     if (!session?.username) {
-      SiteShell.redirect('/auth/', { next: '/admin/' });
+      SiteShell.redirect('/login/', { next: '/admin/' });
       return;
     }
     if (session.role !== 'admin') {
@@ -772,7 +772,7 @@
       currentPage: 'admin',
       nextPath: '/admin/'
     });
-    $('portal-logout-button')?.addEventListener('click', () => SiteShell.logoutAndRedirect(persistence, '/auth/'));
+    $('portal-logout-button')?.addEventListener('click', () => SiteShell.logoutAndRedirect(persistence, '/login/'));
     $('admin-user-search')?.addEventListener('input', event => {
       adminUserSearchQuery = String(event.target?.value || '');
       renderUserList();

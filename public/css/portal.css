@@ -1,0 +1,203 @@
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.history-empty {
+  margin-top: 18px;
+  padding: 16px;
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--border-subtle);
+  color: var(--fg-muted);
+  font-size: 0.84rem;
+}
+
+.portal-page-shell {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  padding: 104px 24px 40px;
+}
+
+.portal-layout {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+  display: grid;
+  gap: 22px;
+}
+
+.admin-portal-layout {
+  width: min(1500px, 100%);
+  gap: 24px;
+}
+
+.portal-layout--split {
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  align-items: start;
+}
+
+.portal-layout--stacked {
+  grid-template-columns: 1fr;
+}
+
+.portal-hero-card,
+.portal-surface-card {
+  border-radius: var(--radius-xl);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(19, 19, 42, 0.9), rgba(13, 13, 26, 0.94));
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  position: relative;
+}
+
+.portal-hero-card::before,
+.portal-surface-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at top right, rgba(0, 212, 255, 0.14), transparent 34%),
+    radial-gradient(circle at bottom left, rgba(255, 45, 149, 0.12), transparent 30%);
+}
+
+.portal-hero-card {
+  padding: 28px;
+}
+
+.portal-surface-card {
+  padding: 26px;
+}
+
+.admin-hero-panel {
+  padding: 28px;
+}
+
+.admin-hero-panel .portal-copy-stack {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.8fr) minmax(520px, 1.2fr);
+  align-items: end;
+  gap: 26px;
+}
+
+.admin-hero-panel .portal-lead {
+  margin-top: 0;
+  max-width: 68ch;
+}
+
+.portal-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(0, 212, 255, 0.08);
+  color: var(--accent-cyan);
+  font-size: 0.74rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 16px;
+}
+
+.portal-hero-card h1,
+.portal-surface-card h1 {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 1.04;
+  max-width: 10ch;
+}
+
+.portal-surface-card h1 {
+  max-width: none;
+  font-size: clamp(1.7rem, 3vw, 2.4rem);
+}
+
+.portal-lead {
+  color: var(--fg-secondary);
+  font-size: 0.98rem;
+  line-height: 1.7;
+  margin-top: 14px;
+  max-width: 54ch;
+}
+
+.portal-copy-stack {
+  position: relative;
+  z-index: 1;
+}
+
+.portal-kpi-grid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.portal-kpi {
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.portal-kpi strong {
+  display: block;
+  font-size: 1rem;
+  color: var(--fg-primary);
+}
+
+.portal-kpi span {
+  display: block;
+  margin-top: 6px;
+  color: var(--fg-muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.portal-form-tabs {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.portal-form-tab {
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--fg-secondary);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.22s ease;
+}
+
+.portal-form-tab.is-active,
+.portal-form-tab:hover {
+  color: var(--fg-primary);
+  border-color: rgba(0, 212, 255, 0.24);
+  background: linear-gradient(90deg, rgba(0, 212, 255, 0.14), rgba(255, 45, 149, 0.08));
+}
+
+.portal-form-pane[hidden] {
+  display: none !important;
+}
+
+.portal-form-pane {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 16px;
+}
+

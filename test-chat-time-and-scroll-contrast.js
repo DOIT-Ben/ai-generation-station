@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
+const { readProjectCss } = require('./test-css-utils');
 
 function getBlock(css, selector) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -9,7 +10,7 @@ function getBlock(css, selector) {
 }
 
 function main() {
-  const css = fs.readFileSync(path.join(__dirname, 'public', 'css', 'style.css'), 'utf8');
+  const css = readProjectCss(__dirname);
   const lightTimeBlock = getBlock(css, '[data-theme="light"] .message-meta-time');
   const lightUserTimeBlock = getBlock(css, '[data-theme="light"] .chat-message.user .message-meta-time,\n[data-theme="light"] .chat-message.user .message-meta-pill.tone-role');
   const paperTimeBlock = getBlock(css, '[data-theme="paper"] .message-meta-time');
@@ -34,3 +35,4 @@ if (require.main === module) {
 module.exports = {
   main
 };
+

@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
+const { readProjectCss } = require('./test-css-utils');
 
 function getBlock(css, selector) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -9,7 +10,7 @@ function getBlock(css, selector) {
 }
 
 function main() {
-  const css = fs.readFileSync(path.join(__dirname, 'public', 'css', 'style.css'), 'utf8');
+  const css = readProjectCss(__dirname);
 
   assert.ok(css.includes('.card {'), 'style contract should define the shared .card base');
   assert.ok(css.includes('[data-theme="light"] .card {'), 'style contract should define a light-theme .card surface');
@@ -52,3 +53,4 @@ if (require.main === module) {
 module.exports = {
   main
 };
+

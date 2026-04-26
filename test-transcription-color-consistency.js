@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
+const { readProjectCss } = require('./test-css-utils');
 
 function getBlock(css, selector) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -9,7 +10,7 @@ function getBlock(css, selector) {
 }
 
 function main() {
-  const css = fs.readFileSync(path.join(__dirname, 'public', 'css', 'style.css'), 'utf8');
+  const css = readProjectCss(__dirname);
   const shellBlock = getBlock(css, '.transcription-shell');
   const copyBlock = getBlock(css, '.transcription-shell-copy');
   const dropBlock = getBlock(css, '.transcription-drop-zone');
@@ -41,3 +42,4 @@ if (require.main === module) {
 }
 
 module.exports = { main };
+

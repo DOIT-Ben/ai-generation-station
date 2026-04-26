@@ -31,6 +31,7 @@
   const $ = id => document.getElementById(id);
   const $$ = (sel, ctx) => (ctx || document).querySelectorAll(sel);
   const appShell = window.AppShell || null;
+  const chatModelUtils = window.AigsChatModelUtils || null;
   const apiClient = appShell && window.fetch && appShell.createApiClient
     ? appShell.createApiClient(window.fetch.bind(window))
     : null;
@@ -52,6 +53,171 @@
       return terms.every(term => haystack.includes(term));
     });
   });
+  const conversationWorkflowTools = window.AigsConversationWorkflowTools?.createTools
+    ? window.AigsConversationWorkflowTools.createTools({
+        getCurrentUser: () => currentUser,
+        getCurrentUserProfile: () => currentUserProfile,
+        getChatWorkflowState: () => chatWorkflowState,
+        setChatWorkflowState: value => {
+          chatWorkflowState = value;
+        },
+        getOpenConversationActionId: () => openConversationActionId,
+        setOpenConversationActionId: value => {
+          openConversationActionId = value;
+        },
+        getConversationManageMode: () => conversationManageMode,
+        setConversationManageModeState: value => {
+          conversationManageMode = value;
+        },
+        getChatArchivedCollapsed: () => chatArchivedCollapsed,
+        setChatArchivedCollapsedState: value => {
+          chatArchivedCollapsed = value;
+        },
+        getElement: $,
+        queryAll: selector => document.querySelectorAll(selector),
+        safeParseJson: (value, fallback) => {
+          if (!value) return fallback;
+          try {
+            return JSON.parse(value);
+          } catch {
+            return fallback;
+          }
+        },
+        getLocalStorage: () => window.localStorage,
+        workflowStorageKeyPrefix: 'aigs.chat.workflow',
+        archivedCollapsedKey: 'aigs.chat.archived.collapsed',
+        renderConversationList: () => renderConversationList(),
+        renderConversationSidebarSummary: () => renderConversationSidebarSummary(),
+        renderArchivedConversationList: () => renderArchivedConversationList()
+      })
+    : null;
+  const chatMessageNodeTools = window.AigsChatMessageNodeTools?.createTools
+    ? window.AigsChatMessageNodeTools.createTools({
+        getElement: $,
+        queryOne: selector => document.querySelector(selector),
+        createElement: tagName => document.createElement(tagName),
+        escapeHtml,
+        formatChatMessageHtml,
+        buildChatMessageMeta,
+        isAssistantMessageCompact,
+        buildAssistantMessageCompactSummary,
+        annotateChatMessageHeadings,
+        getAssistantMessageStatus,
+        isMessageExcerpted,
+        getChatMessageUiState,
+        isLongAssistantMessage,
+        followChatToBottom
+      })
+    : null;
+  const chatFailureTools = window.AigsChatFailureTools?.createTools
+    ? window.AigsChatFailureTools.createTools({
+        buildTransientMessageId
+      })
+    : null;
+  const chatExcerptTools = window.AigsChatExcerptTools?.createTools
+    ? window.AigsChatExcerptTools.createTools({
+        getCurrentUser: () => currentUser,
+        getCurrentUserProfile: () => currentUserProfile,
+        getConversationState: () => conversationState,
+        getChatExcerptState: () => chatExcerptState,
+        setChatExcerptState: value => {
+          chatExcerptState = value;
+        },
+        getCurrentTab: () => currentTab,
+        getElement: $,
+        queryAll: selector => document.querySelectorAll(selector),
+        queryOne: selector => document.querySelector(selector),
+        safeParseJson,
+        getLocalStorage: () => window.localStorage,
+        truncateText,
+        getActiveConversation,
+        getConversationTitlePreview,
+        getConversationMessageById,
+        restoreChatMessages,
+        flashButtonFeedback,
+        showToast,
+        writeClipboard: text => navigator.clipboard.writeText(text),
+        updateChatComposerState,
+        scheduleWorkspaceStateSave,
+        selectConversation,
+        switchTab,
+        setChatAutoFollow,
+        formatChatRelativeTime,
+        escapeHtml,
+        excerptStorageKeyPrefix: 'aigs.chat.excerpts',
+        getChatInputBuildText: content => WORKSPACE_ASSET_TARGETS.chat.buildText(content),
+        setTimeoutFn: (callback, delay) => window.setTimeout(callback, delay)
+      })
+    : null;
+  const chatStreamTools = window.AigsChatStreamTools?.createTools
+    ? window.AigsChatStreamTools.createTools({
+        addChatMessage,
+        buildChatMessageMeta,
+        followChatToBottom,
+        formatChatMessageHtml,
+        createTextDecoder: () => new TextDecoder()
+      })
+    : null;
+  const chatSendTools = window.AigsChatSendTools?.createTools
+    ? window.AigsChatSendTools.createTools({
+        getElement: $,
+        queryOne: selector => document.querySelector(selector),
+        getChatQueue: () => chatQueue,
+        shiftChatQueue: () => chatQueue.shift(),
+        getChatHistory: () => chatHistory,
+        getConversationState: () => conversationState,
+        ensureActiveConversation,
+        getConversationMessageById,
+        clearConversationTransientEntries,
+        restoreChatMessages,
+        addChatMessage,
+        createThinkingMessage,
+        updateChatComposerState,
+        setChatRequestStatus,
+        apiFetch,
+        streamChatMessage,
+        loadQuota,
+        refreshUsageToday,
+        applyConversationPayload,
+        setChatMessageUiState,
+        createFailedChatEntries,
+        setConversationTransientEntries,
+        getModel: () => $('chat-model')?.value || 'gpt-4.1-mini',
+        createAbortController: () => new AbortController(),
+        getActiveChatAbortController: () => activeChatAbortController,
+        setActiveChatAbortController: value => {
+          activeChatAbortController = value;
+        },
+        getActiveChatRequestContext: () => activeChatRequestContext,
+        setActiveChatRequestContext: value => {
+          activeChatRequestContext = value;
+        }
+      })
+    : null;
+  const chatRenderRuntimeTools = window.AigsChatRenderRuntimeTools?.createTools
+    ? window.AigsChatRenderRuntimeTools.createTools({
+        getElement: $,
+        queryOne: selector => document.querySelector(selector),
+        getConversationState: () => conversationState,
+        getConversationTransientEntries,
+        getIsChatGenerating: () => isChatGenerating,
+        getChatScrollState: () => chatScrollState,
+        setChatScrollAutoFollow: value => {
+          chatScrollState.autoFollow = Boolean(value);
+        },
+        getChatMessageUiStateStore: () => chatMessageUiState,
+        setChatHistory: value => {
+          chatHistory = Array.isArray(value) ? value.slice() : [];
+        },
+        renderChatReadingOutline: () => renderChatReadingOutline(),
+        syncChatReadingOutlineActiveTarget: () => syncChatReadingOutlineActiveTarget(),
+        addChatMessage,
+        createChatStarterPanelMarkup,
+        queueChatViewportSync,
+        requestAnimationFrameFn: callback => window.requestAnimationFrame(callback),
+        setTimeoutFn: (callback, delay) => window.setTimeout(callback, delay)
+      })
+    : null;
   let templates = appShell?.TEMPLATE_LIBRARY || {};
   const featureMeta = appShell?.FEATURE_META || {};
   const historyState = {};
@@ -210,6 +376,62 @@
     }
   ];
 
+  function requireChatModelUtils() {
+    if (!chatModelUtils) {
+      throw new Error('AigsChatModelUtils 未加载');
+    }
+    return chatModelUtils;
+  }
+
+  function requireConversationWorkflowTools() {
+    if (!conversationWorkflowTools) {
+      throw new Error('AigsConversationWorkflowTools 未加载');
+    }
+    return conversationWorkflowTools;
+  }
+
+  function requireChatRenderRuntimeTools() {
+    if (!chatRenderRuntimeTools) {
+      throw new Error('AigsChatRenderRuntimeTools 未加载');
+    }
+    return chatRenderRuntimeTools;
+  }
+
+  function requireChatMessageNodeTools() {
+    if (!chatMessageNodeTools) {
+      throw new Error('AigsChatMessageNodeTools 未加载');
+    }
+    return chatMessageNodeTools;
+  }
+
+  function requireChatFailureTools() {
+    if (!chatFailureTools) {
+      throw new Error('AigsChatFailureTools 未加载');
+    }
+    return chatFailureTools;
+  }
+
+  function requireChatExcerptTools() {
+    if (!chatExcerptTools) {
+      throw new Error('AigsChatExcerptTools 未加载');
+    }
+    return chatExcerptTools;
+  }
+
+  function requireChatStreamTools() {
+    if (!chatStreamTools) {
+      throw new Error('AigsChatStreamTools 未加载');
+    }
+    return chatStreamTools;
+  }
+
+  function requireChatSendTools() {
+    if (!chatSendTools) {
+      throw new Error('AigsChatSendTools 未加载');
+    }
+    return chatSendTools;
+  }
+
   function safeParseJson(value, fallback) {
     if (!value) return fallback;
     try {
@@ -251,205 +473,99 @@
   }
 
   function createDefaultChatWorkflowState() {
-    return {
-      pinnedIds: [],
-      parkedIds: []
-    };
+    return requireConversationWorkflowTools().createDefaultChatWorkflowState();
   }
 
   function normalizeChatWorkflowState(rawState) {
-    const raw = rawState && typeof rawState === 'object' ? rawState : {};
-    const pinnedIds = Array.from(new Set((Array.isArray(raw.pinnedIds) ? raw.pinnedIds : []).map(item => String(item || '').trim()).filter(Boolean)));
-    const parkedIds = Array.from(new Set((Array.isArray(raw.parkedIds) ? raw.parkedIds : []).map(item => String(item || '').trim()).filter(Boolean)))
-      .filter(item => !pinnedIds.includes(item));
-    return {
-      pinnedIds,
-      parkedIds
-    };
+    return requireConversationWorkflowTools().normalizeChatWorkflowState(rawState);
   }
 
   function getChatWorkflowStorageKey() {
-    const identity = currentUserProfile?.id || currentUser || 'guest';
-    return `${CHAT_WORKFLOW_STATE_KEY_PREFIX}.${encodeURIComponent(String(identity).trim().toLowerCase() || 'guest')}`;
+    return requireConversationWorkflowTools().getChatWorkflowStorageKey();
   }
 
   function readChatWorkflowStatePreference() {
-    try {
-      return normalizeChatWorkflowState(safeParseJson(window.localStorage.getItem(getChatWorkflowStorageKey()), createDefaultChatWorkflowState()));
-    } catch {
-      return createDefaultChatWorkflowState();
-    }
+    return requireConversationWorkflowTools().readChatWorkflowStatePreference();
   }
 
   function persistChatWorkflowState() {
-    try {
-      window.localStorage.setItem(getChatWorkflowStorageKey(), JSON.stringify(chatWorkflowState));
-    } catch {
-      // Ignore localStorage failures.
-    }
+    return requireConversationWorkflowTools().persistChatWorkflowState();
   }
 
   function hydrateChatWorkflowState() {
-    chatWorkflowState = readChatWorkflowStatePreference();
+    return requireConversationWorkflowTools().hydrateChatWorkflowState();
   }
 
   function isConversationPinned(conversationId) {
-    const targetId = String(conversationId || '').trim();
-    return targetId ? chatWorkflowState.pinnedIds.includes(targetId) : false;
+    return requireConversationWorkflowTools().isConversationPinned(conversationId);
   }
 
   function isConversationParked(conversationId) {
-    const targetId = String(conversationId || '').trim();
-    return targetId ? chatWorkflowState.parkedIds.includes(targetId) : false;
+    return requireConversationWorkflowTools().isConversationParked(conversationId);
   }
 
   function removeConversationFromWorkflowState(conversationId, options = {}) {
-    const targetId = String(conversationId || '').trim();
-    if (!targetId) return;
-    chatWorkflowState = {
-      pinnedIds: chatWorkflowState.pinnedIds.filter(item => item !== targetId),
-      parkedIds: chatWorkflowState.parkedIds.filter(item => item !== targetId)
-    };
-    if (options.persist !== false) {
-      persistChatWorkflowState();
-    }
+    return requireConversationWorkflowTools().removeConversationFromWorkflowState(conversationId, options);
   }
 
   function toggleConversationWorkflowState(conversationId, mode) {
-    const targetId = String(conversationId || '').trim();
-    if (!targetId) return false;
-    const isPinnedMode = mode === 'pinned';
-    const collectionKey = isPinnedMode ? 'pinnedIds' : 'parkedIds';
-    const oppositeKey = isPinnedMode ? 'parkedIds' : 'pinnedIds';
-    const currentCollection = chatWorkflowState[collectionKey];
-    const exists = currentCollection.includes(targetId);
-    chatWorkflowState = {
-      ...chatWorkflowState,
-      [oppositeKey]: chatWorkflowState[oppositeKey].filter(item => item !== targetId),
-      [collectionKey]: exists
-        ? currentCollection.filter(item => item !== targetId)
-        : [targetId].concat(currentCollection.filter(item => item !== targetId))
-    };
-    persistChatWorkflowState();
-    renderConversationList();
-    return !exists;
+    return requireConversationWorkflowTools().toggleConversationWorkflowState(conversationId, mode);
   }
 
   function closeConversationActionMenu(options = {}) {
-    if (!openConversationActionId) return;
-    openConversationActionId = '';
-    if (options.render !== false) {
-      renderConversationList();
-    }
+    return requireConversationWorkflowTools().closeConversationActionMenu(options);
   }
 
   function toggleConversationActionMenu(conversationId) {
-    const targetId = String(conversationId || '').trim();
-    if (!targetId) return false;
-    openConversationActionId = openConversationActionId === targetId ? '' : targetId;
-    renderConversationList();
-    return openConversationActionId === targetId;
+    return requireConversationWorkflowTools().toggleConversationActionMenu(conversationId);
   }
 
   function setConversationManageMode(nextMode, options = {}) {
-    conversationManageMode = Boolean(nextMode);
-    openConversationActionId = '';
-    const button = $('btn-chat-manage-conversations');
-    if (button) {
-      button.classList.toggle('is-active', conversationManageMode);
-      button.setAttribute('aria-pressed', conversationManageMode ? 'true' : 'false');
-      button.textContent = conversationManageMode ? '完成' : '管理';
-    }
-    if (options.render !== false) {
-      renderConversationList();
-    }
+    return requireConversationWorkflowTools().setConversationManageMode(nextMode, options);
   }
 
   function toggleConversationManageMode() {
-    setConversationManageMode(!conversationManageMode);
+    return requireConversationWorkflowTools().toggleConversationManageMode();
   }
 
   function createDefaultChatExcerptState() {
-    return {
-      items: [],
-      expanded: false,
-      filter: 'current',
-      query: ''
-    };
+    return requireChatExcerptTools().createDefaultChatExcerptState();
   }
 
   function normalizeChatExcerptState(rawState) {
-    const raw = rawState && typeof rawState === 'object' ? rawState : {};
-    const items = Array.isArray(raw.items) ? raw.items : [];
-    const filter = ['current', 'all', 'archived'].includes(raw.filter) ? raw.filter : 'current';
-    return {
-      items: items
-        .filter(item => item && typeof item === 'object' && item.id && item.messageId)
-        .map(item => ({
-          id: String(item.id),
-          messageId: String(item.messageId),
-          conversationId: String(item.conversationId || ''),
-          conversationTitle: String(item.conversationTitle || ''),
-          content: String(item.content || ''),
-          preview: String(item.preview || ''),
-          createdAt: Number(item.createdAt || 0),
-          archivedAt: Number(item.archivedAt || 0)
-        }))
-        .sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0)),
-      expanded: Boolean(raw.expanded),
-      filter,
-      query: truncateText(String(raw.query || '').replace(/\s+/g, ' ').trim(), 48)
-    };
+    return requireChatExcerptTools().normalizeChatExcerptState(rawState);
   }
 
   function getChatExcerptStorageKey() {
-    const identity = currentUserProfile?.id || currentUser || 'guest';
-    return `${CHAT_EXCERPT_STATE_KEY_PREFIX}.${encodeURIComponent(String(identity).trim().toLowerCase() || 'guest')}`;
+    return requireChatExcerptTools().getChatExcerptStorageKey();
   }
 
   function readChatExcerptStatePreference() {
-    try {
-      return normalizeChatExcerptState(safeParseJson(window.localStorage.getItem(getChatExcerptStorageKey()), createDefaultChatExcerptState()));
-    } catch {
-      return createDefaultChatExcerptState();
-    }
+    return requireChatExcerptTools().readChatExcerptStatePreference();
   }
 
   function persistChatExcerptState() {
-    try {
-      window.localStorage.setItem(getChatExcerptStorageKey(), JSON.stringify(chatExcerptState));
-    } catch {
-      // Ignore localStorage failures.
-    }
+    return requireChatExcerptTools().persistChatExcerptState();
   }
 
   function hydrateChatExcerptState() {
-    chatExcerptState = readChatExcerptStatePreference();
+    return requireChatExcerptTools().hydrateChatExcerptState();
   }
 
   function isMessageExcerpted(messageId) {
-    const targetId = String(messageId || '').trim();
-    return targetId ? chatExcerptState.items.some(item => item.messageId === targetId) : false;
+    return requireChatExcerptTools().isMessageExcerpted(messageId);
   }
 
   function buildChatExcerptPreview(text) {
-    return truncateText(String(text || '').replace(/\s+/g, ' ').trim(), 84);
+    return requireChatExcerptTools().buildChatExcerptPreview(text);
   }
 
   function getRecentChatAssets(limit = 3) {
-    return chatExcerptState.items.filter(item => !item.archivedAt).slice(0, Math.max(0, limit));
+    return requireChatExcerptTools().getRecentChatAssets(limit);
   }
 
   function stripChatMarkupForPreview(text) {
-    return String(text || '')
-      .replace(/```[\s\S]*?```/g, ' ')
-      .replace(/^#{1,3}\s+/gm, '')
-      .replace(/^[-*]\s+/gm, '')
-      .replace(/^\d+\.\s+/gm, '')
-      .replace(/^>\s?/gm, '')
-      .replace(/[*_~`>#-]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
+    return requireChatExcerptTools().stripChatMarkupForPreview(text);
   }
 
   function isLongAssistantMessage(message) {
@@ -482,134 +598,51 @@
   }
 
   function getChatExcerptByMessageId(messageId) {
-    const targetId = String(messageId || '').trim();
-    return chatExcerptState.items.find(item => item.messageId === targetId) || null;
+    return requireChatExcerptTools().getChatExcerptByMessageId(messageId);
   }
 
   function isChatExcerptArchived(messageId) {
-    return Boolean(getChatExcerptByMessageId(messageId)?.archivedAt);
+    return requireChatExcerptTools().isChatExcerptArchived(messageId);
   }
 
   function updateChatExcerptState(patch = {}, options = {}) {
-    chatExcerptState = normalizeChatExcerptState({
-      ...chatExcerptState,
-      ...patch,
-      items: patch.items ?? chatExcerptState.items
-    });
-    if (options.persist !== false) {
-      persistChatExcerptState();
-    }
-    if (options.render !== false) {
-      renderChatExcerptShelf();
-          }
+    return requireChatExcerptTools().updateChatExcerptState(patch, options);
   }
 
   function setChatExcerptExpanded(nextExpanded) {
-    updateChatExcerptState({
-      expanded: Boolean(nextExpanded),
-      query: nextExpanded ? chatExcerptState.query : ''
-    });
+    return requireChatExcerptTools().setChatExcerptExpanded(nextExpanded);
   }
 
   function setChatExcerptFilterMode(nextFilter) {
-    updateChatExcerptState({
-      filter: ['current', 'all', 'archived'].includes(nextFilter) ? nextFilter : 'current'
-    });
+    return requireChatExcerptTools().setChatExcerptFilterMode(nextFilter);
   }
 
   function setChatExcerptQuery(nextQuery, options = {}) {
-    updateChatExcerptState(
-      { query: String(nextQuery || '').replace(/\s+/g, ' ').trim() },
-      options
-    );
+    return requireChatExcerptTools().setChatExcerptQuery(nextQuery, options);
   }
 
   function removeChatExcerpt(messageId, options = {}) {
-    const targetId = String(messageId || '').trim();
-    if (!targetId) return false;
-    const exists = isMessageExcerpted(targetId);
-    if (!exists) return false;
-    updateChatExcerptState({
-      items: chatExcerptState.items.filter(item => item.messageId !== targetId)
-    }, options);
-    return true;
+    return requireChatExcerptTools().removeChatExcerpt(messageId, options);
   }
 
   function setChatExcerptArchived(messageId, nextArchived = true, options = {}) {
-    const targetId = String(messageId || '').trim();
-    if (!targetId) return false;
-    const item = getChatExcerptByMessageId(targetId);
-    if (!item) return false;
-    updateChatExcerptState({
-      items: chatExcerptState.items.map(entry => entry.messageId === targetId
-        ? {
-          ...entry,
-          archivedAt: nextArchived ? Date.now() : 0
-        }
-        : entry)
-    }, options);
-    return true;
+    return requireChatExcerptTools().setChatExcerptArchived(messageId, nextArchived, options);
   }
 
   function archiveVisibleChatExcerpts() {
-    const visibleIds = getFilteredChatExcerpts({ limit: 24, fallbackToAll: false })
-      .filter(item => !item.archivedAt)
-      .map(item => item.messageId);
-    if (!visibleIds.length) return 0;
-    updateChatExcerptState({
-      items: chatExcerptState.items.map(item => visibleIds.includes(item.messageId)
-        ? { ...item, archivedAt: item.archivedAt || Date.now() }
-        : item)
-    });
-    return visibleIds.length;
+    return requireChatExcerptTools().archiveVisibleChatExcerpts();
   }
 
   function clearArchivedChatExcerpts() {
-    const archivedCount = chatExcerptState.items.filter(item => item.archivedAt).length;
-    if (!archivedCount) return 0;
-    updateChatExcerptState({
-      items: chatExcerptState.items.filter(item => !item.archivedAt)
-    });
-    return archivedCount;
+    return requireChatExcerptTools().clearArchivedChatExcerpts();
   }
 
   function saveChatExcerpt(message) {
-    if (!message?.id || !message?.content) return null;
-    const activeConversation = getActiveConversation();
-    const excerpt = {
-      id: `excerpt-${message.id}`,
-      messageId: String(message.id),
-      conversationId: String(activeConversation?.id || conversationState.activeId || ''),
-      conversationTitle: getConversationTitlePreview(activeConversation),
-      content: String(message.content || '').trim(),
-      preview: buildChatExcerptPreview(message.content),
-      createdAt: Date.now(),
-      archivedAt: 0
-    };
-    updateChatExcerptState({
-      items: [excerpt].concat(chatExcerptState.items.filter(item => item.messageId !== excerpt.messageId)).slice(0, 24)
-    });
-    return excerpt;
+    return requireChatExcerptTools().saveChatExcerpt(message);
   }
 
   async function toggleChatExcerpt(messageId, triggerButton = null) {
-    const message = getConversationMessageById(messageId);
-    if (!message?.content) return;
-    if (isMessageExcerpted(messageId)) {
-      removeChatExcerpt(messageId);
-      flashButtonFeedback(triggerButton, '已移除', 1200, 'info');
-      showToast('已移出消息摘录', 'success', 1200);
-      if (conversationState.activeId) {
-        restoreChatMessages(conversationState.messages, { forceFollow: false });
-      }
-      return;
-    }
-    saveChatExcerpt(message);
-    flashButtonFeedback(triggerButton, '已摘录', 1200, 'success');
-    showToast('已加入消息摘录', 'success', 1200);
-    if (conversationState.activeId) {
-      restoreChatMessages(conversationState.messages, { forceFollow: false });
-    }
+    return requireChatExcerptTools().toggleChatExcerpt(messageId, triggerButton);
   }
 
   function getWorkspaceStateDraft(feature) {
@@ -1112,90 +1145,7 @@
   }
 
   function formatChatModelDropdownLabel(label, modelId = '') {
-    const source = String(label || modelId || '').trim();
-    const value = String(modelId || source).trim();
-    const normalizedValue = value.toLowerCase();
-    if (!source && !normalizedValue) return '';
-
-    const labelMap = {
-      'gpt-5.5': 'GPT-5.5',
-      'gpt-5.4': 'GPT-5.4',
-      'gpt-5.4-mini': 'GPT-5.4 Mini',
-      'gpt-5.3-codex': 'GPT-5.3 Codex',
-      'gpt-5.3-codex-spark': 'GPT-5.3 Codex Spark',
-      'gpt-5.2': 'GPT-5.2',
-      'gpt-5.2-chat-latest': 'GPT-5.2 Chat',
-      'gpt-5.2-pro': 'GPT-5.2 Pro',
-      'gpt-4.5-preview': 'GPT-4.5 Preview',
-      'gpt-4.1': 'GPT-4.1',
-      'gpt-4.1-mini': 'GPT-4.1 Mini',
-      'gpt-4.1-nano': 'GPT-4.1 Nano',
-      'chatgpt-4o-latest': 'ChatGPT-4o Latest',
-      'gpt-4o': 'GPT-4o',
-      'gpt-4o-2024-11-20': 'GPT-4o 2024-11',
-      'gpt-4o-2024-08-06': 'GPT-4o 2024-08',
-      'gpt-4o-mini': 'GPT-4o Mini',
-      'gpt-4-turbo': 'GPT-4 Turbo',
-      'gpt-4-turbo-preview': 'GPT-4 Turbo Preview',
-      'gpt-4': 'GPT-4',
-      'gpt-3.5-turbo': 'GPT-3.5 Turbo',
-      'gpt-3.5-turbo-0125': 'GPT-3.5 0125',
-      'gpt-3.5-turbo-1106': 'GPT-3.5 1106',
-      'gpt-3.5-turbo-16k': 'GPT-3.5 16K',
-      'o1': 'o1',
-      'o1-mini': 'o1 Mini',
-      'o1-preview': 'o1 Preview',
-      'o1-pro': 'o1 Pro',
-      'o3': 'o3',
-      'o3-mini': 'o3 Mini',
-      'o3-pro': 'o3 Pro',
-      'o4-mini': 'o4 Mini'
-    };
-    if (labelMap[normalizedValue]) return labelMap[normalizedValue];
-
-    const formatToken = token => {
-      const tokenMap = {
-        mini: 'Mini',
-        nano: 'Nano',
-        pro: 'Pro',
-        preview: 'Preview',
-        latest: 'Latest',
-        turbo: 'Turbo',
-        codex: 'Codex',
-        spark: 'Spark',
-        chat: 'Chat'
-      };
-      return tokenMap[token] || token.toUpperCase();
-    };
-
-    const formatParts = (prefix, parts) => {
-      const [version, ...rest] = parts;
-      if (!version) return source;
-      const labelParts = [`${prefix}-${version}`];
-      for (let index = 0; index < rest.length; index += 1) {
-        const token = rest[index];
-        if (/^\d{4}$/.test(token) && /^\d{2}$/.test(rest[index + 1] || '') && /^\d{2}$/.test(rest[index + 2] || '')) {
-          labelParts.push(`${token}-${rest[index + 1]}-${rest[index + 2]}`);
-          index += 2;
-          continue;
-        }
-        labelParts.push(formatToken(token));
-      }
-      return labelParts.join(' ');
-    };
-
-    if (normalizedValue.startsWith('chatgpt-')) {
-      return formatParts('ChatGPT', normalizedValue.split('-').slice(1));
-    }
-    if (normalizedValue.startsWith('gpt-')) {
-      return formatParts('GPT', normalizedValue.split('-').slice(1));
-    }
-    if (/^o\d/.test(normalizedValue)) {
-      const [series, ...rest] = normalizedValue.split('-');
-      return [series, ...rest.map(formatToken)].join(' ');
-    }
-
-    return source;
+    return requireChatModelUtils().formatChatModelDropdownLabel(label, modelId);
   }
 
   function readCachedChatModelOptions() {
@@ -1363,51 +1313,19 @@
   }
 
   function getChatModelGroupLabel(modelId) {
-    const value = String(modelId || '').trim().toLowerCase();
-    if (!value) return 'Other';
-    if (value.startsWith('gpt-5')) return 'GPT-5.x';
-    if (value.startsWith('gpt-4.5')) return 'GPT-4.5';
-    if (value.startsWith('gpt-4.1')) return 'GPT-4.1';
-    if (value.startsWith('chatgpt-4o')) return 'ChatGPT-4o';
-    if (value.startsWith('gpt-4o')) return 'GPT-4o';
-    if (value.startsWith('gpt-4')) return 'GPT-4';
-    if (value.startsWith('gpt-3.5')) return 'GPT-3.5';
-    if (/^o\d/.test(value)) return 'o Series';
-    return 'Other';
+    return requireChatModelUtils().getChatModelGroupLabel(modelId);
   }
 
   function getChatModelSeriesLabel(modelId) {
-    return getChatModelGroupLabel(modelId);
+    return requireChatModelUtils().getChatModelSeriesLabel(modelId);
   }
 
   function getChatModelSeriesClass(seriesLabel) {
-    const value = String(seriesLabel || '').trim();
-    if (!value) return '';
-    if (value === 'GPT-5.x') return 'series-gpt5';
-    if (value === 'GPT-4.5') return 'series-gpt45';
-    if (value === 'GPT-4.1') return 'series-gpt41';
-    if (value === 'ChatGPT-4o') return 'series-chatgpt4o';
-    if (value === 'GPT-4o') return 'series-gpt4o';
-    if (value === 'GPT-4') return 'series-gpt4';
-    if (value === 'GPT-3.5') return 'series-gpt35';
-    if (value === 'o Series') return 'series-o';
-    return 'series-other';
+    return requireChatModelUtils().getChatModelSeriesClass(seriesLabel);
   }
 
   function getChatModelTagClass(tag) {
-    const value = String(tag || '').trim();
-    if (!value) return '';
-    if (value === '推荐') return 'tone-recommended';
-    if (value === '高质量') return 'tone-quality';
-    if (value === '快速') return 'tone-fast';
-    if (value === '预览') return 'tone-preview';
-    if (value === '均衡') return 'tone-balanced';
-    if (value === '低成本') return 'tone-budget';
-    if (value === '代码') return 'tone-code';
-    if (value === '推理') return 'tone-reasoning';
-    if (value === '轻量') return 'tone-light';
-    if (value === '通用') return 'tone-general';
-    return '';
+    return requireChatModelUtils().getChatModelTagClass(tag);
   }
 
   async function loadChatModelOptions() {
@@ -1523,7 +1441,7 @@
   }
 
   function buildAuthPagePath(nextPath = '/') {
-    const url = new URL('/auth/', window.location.origin);
+    const url = new URL('/login/', window.location.origin);
     if (nextPath) url.searchParams.set('next', nextPath);
     return `${url.pathname}${url.search}`;
   }
@@ -1624,7 +1542,7 @@
     const panel = $('user-panel');
     if (!panel) return;
     if (!currentUser) {
-      panel.innerHTML = '<a class="topbar-login-button" id="btn-open-auth" href="/auth/?next=%2F"><span>登录</span></a>';
+      panel.innerHTML = '<a class="topbar-login-button" id="btn-open-auth" href="/login/?next=%2F"><span>登录</span></a>';
       return;
     }
     const roleLabel = currentUserProfile?.role === 'admin' ? '管理员' : '成员';
@@ -1764,7 +1682,7 @@
     renderUserPanel();
     const publicAuthIntent = getPublicAuthIntentFromUrl();
     if (publicAuthIntent?.mode && publicAuthIntent?.token) {
-      const redirectUrl = new URL('/auth/', window.location.origin);
+      const redirectUrl = new URL('/login/', window.location.origin);
       redirectUrl.searchParams.set(publicAuthIntent.mode === 'invite' ? 'invite' : 'reset', publicAuthIntent.token);
       window.location.replace(`${redirectUrl.pathname}${redirectUrl.search}`);
       return;
@@ -1831,240 +1749,115 @@
     });
   }
 
+  const templateTools = window.AigsTemplateTools?.createTools
+    ? window.AigsTemplateTools.createTools({
+        getTemplates: () => templates,
+        getWorkspaceState: () => workspaceState,
+        getTemplateSearchState: () => templateSearchState,
+        getCurrentUser: () => currentUser,
+        getFeatureMeta: () => featureMeta,
+        getFeatureInputs,
+        scheduleWorkspaceStateSave,
+        renderTemplateLibraries: () => renderTemplateLibraries(),
+        truncateText,
+        escapeHtml,
+        getElement: $
+      })
+    : null;
+  const conversationListTools = window.AigsConversationListTools?.createTools
+    ? window.AigsConversationListTools.createTools({
+        getConversationState: () => conversationState,
+        getCurrentUser: () => currentUser,
+        getConversationSearchQueryState: () => conversationSearchQuery,
+        setConversationSearchQueryState: value => {
+          conversationSearchQuery = value;
+        },
+        getConversationFilterModeState: () => conversationFilterMode,
+        setConversationFilterModeState: value => {
+          conversationFilterMode = value;
+        },
+        getConversationManageMode: () => conversationManageMode,
+        getIsChatGenerating: () => isChatGenerating,
+        getChatArchivedCollapsed: () => chatArchivedCollapsed,
+        getElement: $,
+        queryOne: selector => document.querySelector(selector),
+        queryAll: selector => document.querySelectorAll(selector),
+        escapeHtml,
+        truncateText,
+        isConversationPinned,
+        isConversationParked,
+        filterConversationSummaries,
+        getDayBucketLabel,
+        formatTimeOfDay,
+        formatMonthDay,
+        renderConversationMeta: () => renderConversationMeta(),
+        renderConversationSidebarSummary: () => renderConversationSidebarSummary(),
+        renderConversationSearchFeedback: () => renderConversationSearchFeedback(),
+        renderArchivedConversationList: () => renderArchivedConversationList(),
+        syncChatArchivedSectionState
+      })
+    : null;
+
+  function requireTemplateTools() {
+    if (!templateTools) {
+      throw new Error('AigsTemplateTools 未加载');
+    }
+    return templateTools;
+  }
+
+  function requireConversationListTools() {
+    if (!conversationListTools) {
+      throw new Error('AigsConversationListTools 未加载');
+    }
+    return conversationListTools;
+  }
+
   function getTemplateRawPreview(item = {}) {
-    if (item.message) return String(item.message);
-    if (item.values?.prompt) return String(item.values.prompt);
-    if (item.values?.text) return String(item.values.text);
-    return item.description ? String(item.description) : '';
+    return requireTemplateTools().getTemplateRawPreview(item);
   }
 
   function getTemplatePreviewSnippet(item = {}) {
-    return truncateText(getTemplateRawPreview(item).replace(/\s+/g, ' ').trim(), 108) || '暂无模板预览';
+    return requireTemplateTools().getTemplatePreviewSnippet(item);
   }
 
   function getTemplateSearchQuery(feature) {
-    return String(templateSearchState[feature] || '').trim().toLowerCase();
+    return requireTemplateTools().getTemplateSearchQuery(feature);
   }
 
   function getRecentTemplatesForFeature(feature) {
-    const recentTemplates = workspaceState?.recentTemplates && typeof workspaceState.recentTemplates === 'object'
-      ? workspaceState.recentTemplates
-      : {};
-    return Array.isArray(recentTemplates[feature]) ? recentTemplates[feature].slice() : [];
+    return requireTemplateTools().getRecentTemplatesForFeature(feature);
   }
 
   function resolveRecentTemplateReference(feature, recentItem) {
-    const groupIndex = Number(recentItem?.groupIndex);
-    const itemIndex = Number(recentItem?.itemIndex);
-    const template = templates?.[feature]?.[groupIndex]?.items?.[itemIndex];
-    if (!template) return null;
-    return {
-      ...recentItem,
-      groupIndex,
-      itemIndex,
-      template
-    };
+    return requireTemplateTools().resolveRecentTemplateReference(feature, recentItem);
   }
 
   function getResolvedRecentTemplates(feature) {
-    return getRecentTemplatesForFeature(feature)
-      .map(item => resolveRecentTemplateReference(feature, item))
-      .filter(Boolean);
+    return requireTemplateTools().getResolvedRecentTemplates(feature);
   }
 
   function recordRecentTemplateUse(feature, item = {}) {
-    if (!feature) return;
-    const nextItem = {
-      label: String(item.label || '未命名模板'),
-      groupIndex: Number(item.groupIndex),
-      itemIndex: Number(item.itemIndex),
-      timestamp: Date.now()
-    };
-    if (Number.isNaN(nextItem.groupIndex) || Number.isNaN(nextItem.itemIndex)) return;
-
-    const previous = getRecentTemplatesForFeature(feature)
-      .filter(entry => !(Number(entry?.groupIndex) === nextItem.groupIndex && Number(entry?.itemIndex) === nextItem.itemIndex));
-    workspaceState.recentTemplates = {
-      ...(workspaceState.recentTemplates || {}),
-      [feature]: [nextItem].concat(previous).slice(0, 4)
-    };
-    scheduleWorkspaceStateSave();
+    return requireTemplateTools().recordRecentTemplateUse(feature, item);
   }
 
   function clearRecentTemplates(feature) {
-    if (!feature) return;
-    const nextRecentTemplates = {
-      ...(workspaceState.recentTemplates || {})
-    };
-    delete nextRecentTemplates[feature];
-    workspaceState.recentTemplates = nextRecentTemplates;
-    renderTemplateLibraries();
-    scheduleWorkspaceStateSave();
+    return requireTemplateTools().clearRecentTemplates(feature);
   }
 
   function filterTemplateGroups(feature, groups = []) {
-    const query = getTemplateSearchQuery(feature);
-    const terms = query.split(/\s+/).filter(Boolean);
-    return groups
-      .map((group, groupIndex) => ({
-        ...group,
-        items: (group.items || [])
-          .map((item, itemIndex) => ({
-            ...item,
-            originalGroupIndex: groupIndex,
-            originalItemIndex: itemIndex
-          }))
-          .filter(item => {
-            if (!terms.length) return true;
-          const haystack = [
-            group.category || '',
-            item.label || '',
-            item.description || '',
-            getTemplateRawPreview(item)
-          ].join(' ').toLowerCase();
-          return terms.every(term => haystack.includes(term));
-          })
-      }))
-      .filter(group => group.items.length > 0);
+    return requireTemplateTools().filterTemplateGroups(feature, groups);
   }
 
   function renderTemplateLibraryStat(feature, totalGroups = [], visibleGroups = []) {
-    const stat = $(`template-stat-${feature}`);
-    if (!stat) return;
-    const totalCount = (totalGroups || []).reduce((sum, group) => sum + (group.items?.length || 0), 0);
-    const visibleCount = (visibleGroups || []).reduce((sum, group) => sum + (group.items?.length || 0), 0);
-    const query = getTemplateSearchQuery(feature);
-    stat.textContent = query
-      ? `匹配 ${visibleCount} / ${totalCount} 个模板`
-      : `共 ${totalCount} 个模板，覆盖常见工作场景`;
+    return requireTemplateTools().renderTemplateLibraryStat(feature, totalGroups, visibleGroups);
   }
 
   function renderTemplateLibraries() {
-    Object.entries(templates).forEach(([feature, groups]) => {
-      const container = $(`template-groups-${feature}`);
-      if (!container) return;
-      const filteredGroups = filterTemplateGroups(feature, groups);
-      const recentTemplates = getResolvedRecentTemplates(feature);
-      renderTemplateLibraryStat(feature, groups, filteredGroups);
-      if (!groups.length) {
-        container.innerHTML = '<div class="history-empty">当前还没有模板。</div>';
-        return;
-      }
-      if (!filteredGroups.length) {
-        container.innerHTML = `
-          ${recentTemplates.length ? `
-            <section class="template-recent-strip">
-              <div class="template-recent-header">
-                <div class="template-recent-copy">
-                  <strong>最近使用</strong>
-                  <span>刚用过的模板会优先留在这里，方便你继续复用。</span>
-                </div>
-                <button type="button" class="template-recent-clear" data-template-recent-clear="${feature}">清空</button>
-              </div>
-              <div class="template-recent-actions">
-                ${recentTemplates.map(item => `
-                  <button
-                    type="button"
-                    class="template-recent-chip"
-                    data-template-feature="${feature}"
-                    data-template-group="${item.groupIndex}"
-                    data-template-item="${item.itemIndex}"
-                    data-template-label="${escapeHtml(item.label || item.template?.label || '未命名模板')}">
-                    ${escapeHtml(item.label || item.template?.label || '未命名模板')}
-                  </button>
-                `).join('')}
-              </div>
-            </section>
-          ` : ''}
-          <div class="history-empty">没有匹配的模板，换个关键词试试。</div>
-        `;
-        return;
-      }
-      container.innerHTML = `
-        ${recentTemplates.length ? `
-          <section class="template-recent-strip">
-            <div class="template-recent-header">
-              <div class="template-recent-copy">
-                <strong>最近使用</strong>
-                <span>刚用过的模板会优先留在这里，方便你继续复用。</span>
-              </div>
-              <button type="button" class="template-recent-clear" data-template-recent-clear="${feature}">清空</button>
-            </div>
-            <div class="template-recent-actions">
-              ${recentTemplates.map(item => `
-                <button
-                  type="button"
-                  class="template-recent-chip"
-                  data-template-feature="${feature}"
-                  data-template-group="${item.groupIndex}"
-                  data-template-item="${item.itemIndex}"
-                  data-template-label="${escapeHtml(item.label || item.template?.label || '未命名模板')}">
-                  ${escapeHtml(item.label || item.template?.label || '未命名模板')}
-                </button>
-              `).join('')}
-            </div>
-          </section>
-        ` : ''}
-        ${filteredGroups.map(group => `
-        <div class="template-category">
-          <div class="template-category-header">
-            <div class="template-category-title">${escapeHtml(group.category || '未分类')}</div>
-            <div class="template-category-meta">${group.items.length} 个模板</div>
-          </div>
-          <div class="template-list">
-            ${group.items.map(item => `
-              <article class="template-item${item.favorite ? ' is-favorite' : ''}">
-                <div class="template-item-meta">
-                  <span>${item.source === 'user' ? '我的模板' : '系统模板'}</span>
-                  ${item.id ? `<button type="button" class="template-favorite-btn" data-template-favorite="${feature}" data-template-id="${item.id}">${item.favorite ? '已收藏' : '收藏'}</button>` : ''}
-                </div>
-                <strong>${escapeHtml(item.label || '未命名模板')}</strong>
-                <span class="template-item-description">${escapeHtml(item.description || '暂无描述')}</span>
-                <p class="template-item-preview">${escapeHtml(getTemplatePreviewSnippet(item))}</p>
-                <div class="template-item-footer">
-                  <span class="template-item-stat">${Math.max(1, getTemplateRawPreview(item).replace(/\s+/g, '').length)} 字内容</span>
-                  <div class="template-actions">
-                    <button
-                      type="button"
-                      data-template-feature="${feature}"
-                      data-template-group="${item.originalGroupIndex}"
-                      data-template-item="${item.originalItemIndex}"
-                      data-template-label="${escapeHtml(item.label || '未命名模板')}">
-                    ${feature === 'chat' ? '一键发送' : '应用模板'}
-                    </button>
-                  </div>
-                </div>
-              </article>
-            `).join('')}
-          </div>
-        </div>
-        `).join('')}
-      `;
-    });
+    return requireTemplateTools().renderTemplateLibraries();
   }
 
   function getTemplateDraft(feature) {
-    const label = $(`template-label-${feature}`)?.value?.trim();
-    const description = $(`template-desc-${feature}`)?.value?.trim() || '';
-    if (!label) {
-      return { error: '请先填写模板名称' };
-    }
-
-    if (feature === 'chat') {
-      const message = $('chat-input')?.value?.trim();
-      if (!message) {
-        return { error: '当前对话输入为空，无法保存成模板' };
-      }
-      return { label, description, category: '我的模板', message };
-    }
-
-    const values = getFeatureInputs(feature);
-    const hasContent = Object.values(values).some(value => String(value || '').trim());
-    if (!hasContent) {
-      return { error: '当前没有可保存的参数内容' };
-    }
-
-    return { label, description, category: '我的模板', values };
+    return requireTemplateTools().getTemplateDraft(feature);
   }
 
   async function saveCurrentTemplate(feature) {
@@ -2126,137 +1919,59 @@
   }
 
   function getConversationTitlePreview(conversation) {
-    return sanitizeConversationText(conversation?.title) || '新对话';
+    return requireConversationListTools().getConversationTitlePreview(conversation);
   }
 
   function getConversationCardTitle(conversation) {
-    return truncateText(getConversationTitlePreview(conversation), 15);
+    return requireConversationListTools().getConversationCardTitle(conversation);
   }
 
   function getConversationPreview(conversation) {
-    const preview = truncateText(
-      sanitizeConversationText(conversation?.preview || conversation?.lastMessagePreview || ''),
-      72
-    );
-    if (preview) return preview;
-    if (Number(conversation?.messageCount || 0) <= 0) {
-      return '还没有消息，适合开始一个新主题。';
-    }
-    return `${conversation?.messageCount || 0} 条消息 · ${conversation?.model || 'gpt-4.1-mini'}`;
+    return requireConversationListTools().getConversationPreview(conversation);
   }
 
   function sanitizeConversationText(value) {
-    return String(value || '')
-      .replace(/\r\n/g, '\n')
-      .replace(/^\s*[-*_]{3,}\s*$/gm, ' ')
-      .replace(/^\s*#{1,6}\s+/gm, '')
-      .replace(/^\s*[>]+ ?/gm, '')
-      .replace(/^\s*[-*+]\s+/gm, '')
-      .replace(/^\s*\d+\.\s+/gm, '')
-      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1')
-      .replace(/[`*_~]/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
+    return requireConversationListTools().sanitizeConversationText(value);
   }
 
   function getConversationCardPreview(conversation) {
-    return truncateText(getConversationPreview(conversation), 15);
+    return requireConversationListTools().getConversationCardPreview(conversation);
   }
 
   function getConversationRowPillsMarkup(conversation) {
-    const pills = [];
-    if (conversation?.id === conversationState.activeId) {
-      pills.push('<span class="chat-conversation-pill is-current">当前</span>');
-    }
-    if (isConversationPinned(conversation?.id)) {
-      pills.push('<span class="chat-conversation-pill is-pinned">重点</span>');
-    }
-    if (isConversationParked(conversation?.id)) {
-      pills.push('<span class="chat-conversation-pill is-parked">稍后</span>');
-    }
-    if (Number(conversation?.messageCount || 0) <= 0) {
-      pills.push('<span class="chat-conversation-pill">空白</span>');
-    }
-    return pills.join('');
+    return requireConversationListTools().getConversationRowPillsMarkup(conversation);
   }
 
   function getConversationTimestamp(conversation) {
-    return Number(conversation?.lastMessageAt || conversation?.updatedAt || conversation?.createdAt || 0);
+    return requireConversationListTools().getConversationTimestamp(conversation);
   }
 
   function getConversationTimeLabel(conversation) {
-    const timestamp = getConversationTimestamp(conversation);
-    if (!timestamp) return '';
-    return getDayBucketLabel(timestamp) === '今天'
-      ? formatTimeOfDay(timestamp)
-      : formatMonthDay(timestamp);
+    return requireConversationListTools().getConversationTimeLabel(conversation);
   }
 
   function groupConversationsByDay(items = []) {
-    const groups = [];
-    const pinnedItems = items.filter(item => isConversationPinned(item?.id));
-    const parkedItems = items.filter(item => !isConversationPinned(item?.id) && isConversationParked(item?.id));
-    const regularItems = items.filter(item => !isConversationPinned(item?.id) && !isConversationParked(item?.id));
-
-    if (pinnedItems.length) {
-      groups.push({
-        label: '重点会话',
-        items: pinnedItems
-      });
-    }
-
-    regularItems.forEach(item => {
-      const label = getDayBucketLabel(getConversationTimestamp(item));
-      const currentGroup = groups[groups.length - 1];
-      if (currentGroup && currentGroup.label === label) {
-        currentGroup.items.push(item);
-        return;
-      }
-      groups.push({
-        label,
-        items: [item]
-      });
-    });
-
-    if (parkedItems.length) {
-      groups.push({
-        label: '稍后处理',
-        items: parkedItems
-      });
-    }
-    return groups;
+    return requireConversationListTools().groupConversationsByDay(items);
   }
 
   function getConversationPriorityRank(conversation) {
-    if (isConversationPinned(conversation?.id)) return 0;
-    if (isConversationParked(conversation?.id)) return 2;
-    return 1;
+    return requireConversationListTools().getConversationPriorityRank(conversation);
   }
 
   function getConversationSortValue(conversation) {
-    return Number(conversation?.lastMessageAt || conversation?.createdAt || 0);
+    return requireConversationListTools().getConversationSortValue(conversation);
   }
 
   function getArchivedConversationSortValue(conversation) {
-    return Number(conversation?.archivedAt || conversation?.updatedAt || conversation?.lastMessageAt || conversation?.createdAt || 0);
+    return requireConversationListTools().getArchivedConversationSortValue(conversation);
   }
 
   function sortConversationSummaries(items = []) {
-    return items.slice().sort((left, right) => {
-      const priority = getConversationPriorityRank(left) - getConversationPriorityRank(right);
-      if (priority !== 0) return priority;
-      const primary = getConversationSortValue(right) - getConversationSortValue(left);
-      if (primary !== 0) return primary;
-      return Number(right?.updatedAt || 0) - Number(left?.updatedAt || 0);
-    });
+    return requireConversationListTools().sortConversationSummaries(items);
   }
 
   function sortArchivedConversationSummaries(items = []) {
-    return items.slice().sort((left, right) => {
-      const primary = getArchivedConversationSortValue(right) - getArchivedConversationSortValue(left);
-      if (primary !== 0) return primary;
-      return Number(right?.updatedAt || 0) - Number(left?.updatedAt || 0);
-    });
+    return requireConversationListTools().sortArchivedConversationSummaries(items);
   }
 
   function setConversationList(items = []) {
@@ -2272,68 +1987,35 @@
   }
 
   function getActiveConversation() {
-    return conversationState.list.find(item => item.id === conversationState.activeId) || null;
+    return requireConversationListTools().getActiveConversation();
   }
 
   function getConversationSearchQuery() {
-    return String(conversationSearchQuery || '');
+    return requireConversationListTools().getConversationSearchQuery();
   }
 
   function getConversationFilterMode() {
-    return String(conversationFilterMode || 'all');
+    return requireConversationListTools().getConversationFilterMode();
   }
 
   function matchesConversationFilter(conversation, mode = getConversationFilterMode()) {
-    if (!conversation) return false;
-    if (mode === 'pinned') {
-      return isConversationPinned(conversation.id);
-    }
-    if (mode === 'parked') {
-      return isConversationParked(conversation.id);
-    }
-    if (mode === 'current') {
-      return conversation.id === conversationState.activeId;
-    }
-    if (mode === 'blank') {
-      return Number(conversation?.messageCount || 0) <= 0;
-    }
-    if (mode === 'today') {
-      return getDayBucketLabel(getConversationTimestamp(conversation)) === '今天';
-    }
-    return true;
+    return requireConversationListTools().matchesConversationFilter(conversation, mode);
   }
 
   function getFilteredActiveConversations() {
-    return filterConversationSummaries(conversationState.list, getConversationSearchQuery())
-      .filter(item => matchesConversationFilter(item));
+    return requireConversationListTools().getFilteredActiveConversations();
   }
 
   function getFilteredArchivedConversations() {
-    return filterConversationSummaries(conversationState.archived, getConversationSearchQuery())
-      .filter(item => matchesConversationFilter(item));
+    return requireConversationListTools().getFilteredArchivedConversations();
   }
 
   function updateConversationSearch(value, options = {}) {
-    const nextValue = String(value || '');
-    const searchInput = $('chat-conversation-search');
-    conversationSearchQuery = nextValue;
-    if (options.syncInput !== false && searchInput) {
-      searchInput.value = nextValue;
-    }
-    if (options.render !== false) {
-      renderConversationList();
-    }
+    return requireConversationListTools().updateConversationSearch(value, options);
   }
 
   function updateConversationFilterMode(mode, options = {}) {
-    const nextMode = ['all', 'pinned', 'parked', 'current', 'blank', 'today'].includes(mode) ? mode : 'all';
-    conversationFilterMode = nextMode;
-    document.querySelectorAll('[data-chat-filter]').forEach(button => {
-      button.classList.toggle('is-active', button.dataset.chatFilter === nextMode);
-    });
-    if (options.render !== false) {
-      renderConversationList();
-    }
+    return requireConversationListTools().updateConversationFilterMode(mode, options);
   }
 
   function upsertConversationSummary(conversation) {
@@ -2402,163 +2084,11 @@
   }
 
   function renderConversationList() {
-    const list = $('chat-conversation-list');
-    const empty = $('chat-conversation-empty');
-    if (!list || !empty) return;
-
-    const totalConversations = conversationState.list.length;
-    const filteredConversations = getFilteredActiveConversations();
-
-    if (!currentUser || !totalConversations) {
-      list.innerHTML = '';
-      empty.textContent = '暂无对话。';
-      empty.removeAttribute('hidden');
-      renderConversationSidebarSummary();
-      renderConversationSearchFeedback();
-      renderConversationMeta();
-      renderArchivedConversationList();
-      return;
-    }
-
-    if (!filteredConversations.length) {
-      list.innerHTML = '';
-      empty.textContent = '没有匹配搜索条件的进行中会话。';
-      empty.removeAttribute('hidden');
-      renderConversationSidebarSummary();
-      renderConversationSearchFeedback();
-      renderConversationMeta();
-      renderArchivedConversationList();
-      return;
-    }
-
-    empty.setAttribute('hidden', '');
-    const groups = groupConversationsByDay(filteredConversations);
-    list.innerHTML = groups.map(group => `
-      <section class="chat-conversation-group">
-        <div class="chat-conversation-group-label">${group.label}</div>
-        <div class="chat-conversation-group-list">
-          ${group.items.map(item => `
-            <article class="chat-conversation-row${item.id === conversationState.activeId ? ' is-active' : ''}">
-              <div class="chat-conversation-row-main">
-                <button
-                  type="button"
-                  class="chat-conversation-item${item.id === conversationState.activeId ? ' active' : ''}"
-                  data-conversation-id="${item.id}">
-                  <div class="chat-conversation-item-top">
-                    <strong>${escapeHtml(getConversationCardTitle(item))}</strong>
-                    <time>${escapeHtml(getConversationTimeLabel(item))}</time>
-                  </div>
-                  <p class="chat-conversation-preview">${escapeHtml(getConversationCardPreview(item))}</p>
-                </button>
-              </div>
-              <div class="chat-conversation-action-panel${conversationManageMode ? ' is-open' : ''}" ${conversationManageMode ? '' : 'hidden'}>
-                <button
-                  type="button"
-                  class="chat-conversation-mini-action${isConversationPinned(item.id) ? ' is-active' : ''}"
-                  data-conversation-pin-id="${item.id}"
-                  ${isChatGenerating ? 'disabled' : ''}>
-                  ${isConversationPinned(item.id) ? '取消重点' : '设为重点'}
-                </button>
-                <button
-                  type="button"
-                  class="chat-conversation-mini-action is-muted${isConversationParked(item.id) ? ' is-active' : ''}"
-                  data-conversation-park-id="${item.id}"
-                  ${isChatGenerating ? 'disabled' : ''}>
-                  ${isConversationParked(item.id) ? '取消稍后' : '稍后处理'}
-                </button>
-                <button
-                  type="button"
-                  class="chat-conversation-mini-action"
-                  data-conversation-rename-id="${item.id}"
-                  ${isChatGenerating ? 'disabled' : ''}>
-                  改名
-                </button>
-                <button
-                  type="button"
-                  class="chat-conversation-mini-action is-danger"
-                  data-conversation-archive-id="${item.id}"
-                  ${isChatGenerating ? 'disabled' : ''}>
-                  归档
-                </button>
-              </div>
-            </article>
-          `).join('')}
-        </div>
-      </section>
-    `).join('');
-    renderConversationSidebarSummary();
-    renderConversationSearchFeedback();
-    renderConversationMeta();
-    renderArchivedConversationList();
+    return requireConversationListTools().renderConversationList();
   }
 
   function renderArchivedConversationList() {
-    const section = $('chat-archived-section');
-    const count = $('chat-archived-count');
-    const empty = $('chat-archived-empty');
-    const list = $('chat-archived-list');
-    if (!section || !count || !empty || !list) return;
-
-    const totalArchivedConversations = conversationState.archived.length;
-    const filteredArchivedConversations = getFilteredArchivedConversations();
-
-    if (!currentUser || !totalArchivedConversations) {
-      section.setAttribute('hidden', '');
-      count.textContent = '0';
-      list.innerHTML = '';
-      empty.textContent = '暂无已归档会话。';
-      empty.removeAttribute('hidden');
-      renderConversationSearchFeedback();
-      return;
-    }
-
-    section.removeAttribute('hidden');
-    count.textContent = String(totalArchivedConversations);
-    syncChatArchivedSectionState();
-
-    if (chatArchivedCollapsed) {
-      list.innerHTML = '';
-      empty.setAttribute('hidden', '');
-      return;
-    }
-
-    if (!filteredArchivedConversations.length) {
-      list.innerHTML = '';
-      empty.textContent = '没有匹配搜索条件的已归档会话。';
-      empty.removeAttribute('hidden');
-      renderConversationSearchFeedback();
-      return;
-    }
-
-    empty.setAttribute('hidden', '');
-    list.innerHTML = filteredArchivedConversations.map(item => `
-      <article class="chat-archived-item">
-        <div class="chat-archived-copy">
-          <div class="chat-conversation-item-top">
-            <strong>${escapeHtml(getConversationCardTitle(item))}</strong>
-            <time>${escapeHtml(getConversationTimeLabel(item))}</time>
-          </div>
-          <p class="chat-conversation-preview">${escapeHtml(getConversationCardPreview(item))}</p>
-        </div>
-        <div class="chat-archived-actions">
-          <button
-            type="button"
-            class="btn btn-secondary btn-chat-restore"
-            data-restore-conversation-id="${item.id}"
-            ${isChatGenerating ? 'disabled' : ''}>
-            恢复
-          </button>
-          <button
-            type="button"
-            class="btn btn-secondary btn-chat-delete"
-            data-delete-conversation-id="${item.id}"
-            ${isChatGenerating ? 'disabled' : ''}>
-            删除
-          </button>
-        </div>
-      </article>
-    `).join('');
-    renderConversationSearchFeedback();
+    return requireConversationListTools().renderArchivedConversationList();
   }
 
   async function _legacySelectConversation(conversationId) {
@@ -2656,166 +2186,31 @@
   }
 
   function renderConversationSidebarSummary() {
-    const summary = $('chat-sidebar-summary');
-    if (!summary) return;
-
-    const totalActive = conversationState.list.length;
-    const totalArchived = conversationState.archived.length;
-    const pinnedCount = conversationState.list.filter(item => isConversationPinned(item?.id)).length;
-    const parkedCount = conversationState.list.filter(item => isConversationParked(item?.id)).length;
-    const blankCount = conversationState.list.filter(item => matchesConversationFilter(item, 'blank')).length;
-    const todayCount = conversationState.list.filter(item => matchesConversationFilter(item, 'today')).length;
-    const activeConversation = getActiveConversation();
-    const hasFilterState = Boolean(getConversationSearchQuery().trim()) || getConversationFilterMode() !== 'all';
-    const filterLabels = {
-      all: '当前筛选：全部会话',
-      pinned: '当前筛选：重点会话',
-      parked: '当前筛选：稍后处理',
-      current: '当前筛选：仅当前会话',
-      blank: '当前筛选：仅空白会话',
-      today: '当前筛选：仅今日活跃'
-    };
-    if (!currentUser && totalActive <= 0 && totalArchived <= 0) {
-      summary.setAttribute('hidden', '');
-      summary.innerHTML = '';
-      return;
-    }
-
-    summary.innerHTML = `
-      <div class="chat-sidebar-summary-grid">
-        <div class="chat-sidebar-stat">
-          <strong>${totalActive}</strong>
-          <span>进行中</span>
-        </div>
-        <div class="chat-sidebar-stat">
-          <strong>${blankCount}</strong>
-          <span>空白会话</span>
-        </div>
-        <div class="chat-sidebar-stat">
-          <strong>${pinnedCount}</strong>
-          <span>重点会话</span>
-        </div>
-      </div>
-      <div class="chat-sidebar-summary-foot">
-        <span>${filterLabels[getConversationFilterMode()] || filterLabels.all}</span>
-        <span>今日活跃 ${todayCount} · 稍后 ${parkedCount} · 已归档 ${totalArchived}</span>
-      </div>
-      ${(activeConversation || hasFilterState || totalArchived > 0) ? `
-        <div class="chat-sidebar-utility">
-          ${activeConversation ? '<button type="button" class="chat-sidebar-tool" data-chat-focus-current="true">定位当前</button>' : ''}
-          ${hasFilterState ? '<button type="button" class="chat-sidebar-tool" data-chat-search-reset="true">清空筛选</button>' : ''}
-          ${totalArchived > 0 ? `<button type="button" class="chat-sidebar-tool" data-chat-archived-toggle="true">${chatArchivedCollapsed ? '展开归档' : '收起归档'}</button>` : ''}
-        </div>
-      ` : ''}
-    `;
-    summary.removeAttribute('hidden');
+    return requireConversationListTools().renderConversationSidebarSummary();
   }
 
   function renderConversationSearchFeedback() {
-    const feedback = $('chat-search-feedback');
-    if (!feedback) return;
-
-    const query = getConversationSearchQuery().trim();
-    const filterMode = getConversationFilterMode();
-    const activeConversation = getActiveConversation();
-    const filteredActive = getFilteredActiveConversations();
-    const filteredArchived = getFilteredArchivedConversations();
-    const totalActive = conversationState.list.length;
-    const totalArchived = conversationState.archived.length;
-    const activeVisible = Boolean(activeConversation && filteredActive.some(item => item.id === activeConversation.id));
-    const filterLabels = {
-      all: '全部会话',
-      pinned: '重点会话',
-      parked: '稍后处理',
-      current: '仅当前会话',
-      blank: '仅空白会话',
-      today: '仅今日活跃'
-    };
-
-    if (!currentUser && totalActive <= 0 && totalArchived <= 0) {
-      feedback.setAttribute('hidden', '');
-      feedback.innerHTML = '';
-      return;
-    }
-
-    if (!query && filterMode === 'all') {
-      feedback.setAttribute('hidden', '');
-      feedback.innerHTML = '';
-      return;
-    }
-
-    if (!query) {
-      feedback.innerHTML = `
-        <div class="chat-search-feedback-main">
-          <strong>${filterLabels[filterMode] || filterLabels.all}</strong>
-          <span>当前已切到快捷筛选状态，可随时回到全部会话继续浏览。</span>
-        </div>
-        <div class="chat-search-feedback-actions">
-          <button type="button" class="chat-search-action" data-chat-search-reset="true">回到全部</button>
-          ${activeConversation ? '<button type="button" class="chat-search-action" data-chat-focus-current="true">定位当前对话</button>' : ''}
-        </div>
-      `;
-      feedback.removeAttribute('hidden');
-      return;
-    }
-
-    feedback.innerHTML = `
-      <div class="chat-search-feedback-main">
-        <strong>${filterLabels[filterMode] || filterLabels.all}</strong>
-        <span>进行中匹配 ${filteredActive.length}/${totalActive}，已归档匹配 ${filteredArchived.length}/${totalArchived}${activeConversation && !activeVisible ? '，当前对话未命中' : ''}</span>
-      </div>
-      <div class="chat-search-feedback-actions">
-        <button type="button" class="chat-search-action" data-chat-search-reset="true">清空筛选</button>
-        ${activeConversation ? '<button type="button" class="chat-search-action" data-chat-focus-current="true">回到当前对话</button>' : ''}
-      </div>
-    `;
-    feedback.removeAttribute('hidden');
+    return requireConversationListTools().renderConversationSearchFeedback();
   }
 
   function focusCurrentConversationInList() {
-    const activeConversation = getActiveConversation();
-    if (!activeConversation?.id) return;
-    const activeRow = document.querySelector(`.chat-conversation-item[data-conversation-id="${CSS.escape(activeConversation.id)}"]`);
-    activeRow?.scrollIntoView({ block: 'nearest' });
+    return requireConversationListTools().focusCurrentConversationInList();
   }
 
   function readChatArchivedCollapsedPreference() {
-    try {
-      return window.localStorage.getItem(CHAT_ARCHIVED_COLLAPSED_KEY) === '1';
-    } catch {
-      return false;
-    }
+    return requireConversationWorkflowTools().readChatArchivedCollapsedPreference();
   }
 
   function persistChatArchivedCollapsedPreference(value) {
-    try {
-      window.localStorage.setItem(CHAT_ARCHIVED_COLLAPSED_KEY, value ? '1' : '0');
-    } catch {
-      // noop
-    }
+    return requireConversationWorkflowTools().persistChatArchivedCollapsedPreference(value);
   }
 
   function syncChatArchivedSectionState() {
-    const section = $('chat-archived-section');
-    if (section) {
-      section.dataset.collapsed = chatArchivedCollapsed ? 'true' : 'false';
-    }
-    document.querySelectorAll('[data-chat-archived-toggle]').forEach(button => {
-      if (button.classList.contains('chat-sidebar-tool')) {
-        button.textContent = chatArchivedCollapsed ? '展开归档' : '收起归档';
-      } else {
-        button.textContent = chatArchivedCollapsed ? '展开' : '收起';
-      }
-      button.setAttribute('aria-expanded', chatArchivedCollapsed ? 'false' : 'true');
-    });
+    return requireConversationWorkflowTools().syncChatArchivedSectionState();
   }
 
   function setChatArchivedCollapsed(nextValue) {
-    chatArchivedCollapsed = Boolean(nextValue);
-    persistChatArchivedCollapsedPreference(chatArchivedCollapsed);
-    syncChatArchivedSectionState();
-    renderConversationSidebarSummary();
-    renderArchivedConversationList();
+    return requireConversationWorkflowTools().setChatArchivedCollapsed(nextValue);
   }
 
   async function selectConversation(conversationId) {
@@ -3118,44 +2513,15 @@
   }
 
   function isChatNearBottom(container) {
-    if (!container) return true;
-    return (container.scrollHeight - container.scrollTop - container.clientHeight) <= 72;
+    return requireChatRenderRuntimeTools().isChatNearBottom(container);
   }
 
   function updateChatScrollButton() {
-    const button = $('chat-scroll-to-latest');
-    const label = button?.querySelector('.chat-scroll-to-latest-label');
-    const container = $('chat-messages');
-    if (!button || !container) return;
-    if (conversationState.messages.length === 0 && getConversationTransientEntries().length === 0) {
-      button.dataset.state = 'idle';
-      button.dataset.visible = 'false';
-      button.setAttribute('hidden', '');
-      return;
-    }
-    button.removeAttribute('hidden');
-    if (chatScrollState.autoFollow || container.scrollHeight <= container.clientHeight + 12) {
-      button.dataset.state = 'idle';
-      button.dataset.visible = 'false';
-      return;
-    }
-    const isAttentionState = isChatGenerating;
-    const nextLabel = isAttentionState ? '有新回复，回到最新' : '回到最新回复';
-    button.dataset.state = isAttentionState ? 'attention' : 'idle';
-    button.dataset.visible = 'true';
-    if (label) {
-      label.textContent = nextLabel;
-    } else {
-      button.textContent = nextLabel;
-    }
+    return requireChatRenderRuntimeTools().updateChatScrollButton();
   }
 
   function handleChatMessagesScroll() {
-    const container = $('chat-messages');
-    if (!container) return;
-    chatScrollState.autoFollow = isChatNearBottom(container);
-    syncChatReadingOutlineActiveTarget();
-    updateChatScrollButton();
+    return requireChatRenderRuntimeTools().handleChatMessagesScroll();
   }
 
   function isChatMobileViewport() {
@@ -3201,23 +2567,11 @@
   }
 
   function setChatAutoFollow(shouldFollow) {
-    chatScrollState.autoFollow = Boolean(shouldFollow);
-    updateChatScrollButton();
+    return requireChatRenderRuntimeTools().setChatAutoFollow(shouldFollow);
   }
 
   function followChatToBottom(force = false) {
-    const container = $('chat-messages');
-    if (!container) return;
-    if (!force && !chatScrollState.autoFollow) {
-      updateChatScrollButton();
-      return;
-    }
-    container.scrollTop = container.scrollHeight;
-    if (force) {
-      setChatAutoFollow(true);
-    } else {
-      updateChatScrollButton();
-    }
+    return requireChatRenderRuntimeTools().followChatToBottom(force);
   }
 
   function getConversationMessageById(messageId) {
@@ -3233,90 +2587,27 @@
   }
 
   function getChatMessageUiState(messageId) {
-    if (!messageId) return null;
-    return chatMessageUiState.get(messageId) || null;
+    return requireChatRenderRuntimeTools().getChatMessageUiState(messageId);
   }
 
   function setChatMessageUiState(messageId, patch = {}) {
-    if (!messageId) return;
-    const nextState = {
-      ...(chatMessageUiState.get(messageId) || {}),
-      ...patch
-    };
-    chatMessageUiState.set(messageId, nextState);
-    if (patch.expiresInMs) {
-      window.setTimeout(() => {
-        const currentState = chatMessageUiState.get(messageId);
-        if (currentState !== nextState) return;
-        chatMessageUiState.delete(messageId);
-        if (conversationState.activeId) {
-          restoreChatMessages(conversationState.messages, { forceFollow: false });
-        }
-      }, Number(patch.expiresInMs));
-    }
-    if (patch.renderNow && conversationState.activeId) {
-      restoreChatMessages(conversationState.messages, { forceFollow: false });
-    }
+    return requireChatRenderRuntimeTools().setChatMessageUiState(messageId, patch);
   }
 
   function syncChatMessageActionPanelDom(messageId, expanded) {
-    if (!messageId) return;
-    const messageNode = document.querySelector(`.chat-message[data-chat-message-id="${CSS.escape(messageId)}"]`);
-    if (!messageNode) return;
-    messageNode.querySelectorAll(`[data-chat-message-actions-toggle="${CSS.escape(messageId)}"]`).forEach(button => {
-      button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-      button.textContent = expanded
-        ? (button.dataset.expandedLabel || '收起版本')
-        : (button.dataset.collapsedLabel || '查看版本');
-    });
-    const panel = messageNode.querySelector('[data-chat-message-panel]');
-    if (panel) {
-      if (expanded) {
-        panel.removeAttribute('hidden');
-      } else {
-        panel.setAttribute('hidden', '');
-      }
-    }
-    const shell = messageNode.querySelector('.message-actions');
-    if (shell) shell.dataset.expanded = expanded ? 'true' : 'false';
+    return requireChatRenderRuntimeTools().syncChatMessageActionPanelDom(messageId, expanded);
   }
 
   function collapseOtherChatMessagePanels(exceptMessageId = '') {
-    Array.from(chatMessageUiState.entries()).forEach(([messageId, state]) => {
-      if (!state?.actionsExpanded || messageId === exceptMessageId) return;
-      chatMessageUiState.set(messageId, {
-        ...state,
-        actionsExpanded: false
-      });
-      syncChatMessageActionPanelDom(messageId, false);
-    });
+    return requireChatRenderRuntimeTools().collapseOtherChatMessagePanels(exceptMessageId);
   }
 
   function toggleChatMessageActionPanel(messageId) {
-    if (!messageId) return;
-    const currentState = getChatMessageUiState(messageId) || {};
-    const nextExpanded = !currentState.actionsExpanded;
-    if (nextExpanded) {
-      collapseOtherChatMessagePanels(messageId);
-    }
-    chatMessageUiState.set(messageId, {
-      ...currentState,
-      actionsExpanded: nextExpanded
-    });
-    syncChatMessageActionPanelDom(messageId, nextExpanded);
+    return requireChatRenderRuntimeTools().toggleChatMessageActionPanel(messageId);
   }
 
   function toggleAssistantMessageCompact(messageId) {
-    if (!messageId) return;
-    const currentState = getChatMessageUiState(messageId) || {};
-    setChatMessageUiState(messageId, {
-      compactExpanded: currentState.compactExpanded === true ? false : true,
-      renderNow: true
-    });
-    window.requestAnimationFrame(() => {
-      document.querySelector('.chat-input-area')?.scrollIntoView({ block: 'end', behavior: 'instant' });
-      queueChatViewportSync();
-    });
+    return requireChatRenderRuntimeTools().toggleAssistantMessageCompact(messageId);
   }
 
   function setChatRequestStatus(text = '', tone = 'info') {
@@ -3352,55 +2643,7 @@
   }
 
   function restoreChatMessages(messages, options = {}) {
-    const container = $('chat-messages');
-    const chatContainer = document.querySelector('.chat-container');
-    const tabChat = $('tab-chat');
-    if (!container) return;
-    const transientConversationId = options.transientConversationId || conversationState.activeId;
-    container.innerHTML = '';
-    chatContainer?.classList.remove('has-messages');
-    tabChat?.classList.remove('has-messages');
-    if (!Array.isArray(messages) || messages.length === 0) {
-      addChatMessage('chatbot', '', { rawHtml: createChatStarterPanelMarkup() });
-      chatHistory = [];
-      renderChatReadingOutline();
-      container.scrollTop = 0;
-      if (options.forceFollow === false) {
-        setChatAutoFollow(false);
-      } else {
-        setChatAutoFollow(true);
-      }
-      updateChatScrollButton();
-      return;
-    }
-    chatHistory = messages.slice();
-    messages.forEach(message => {
-      addChatMessage(message.role === 'assistant' ? 'chatbot' : 'user', message.content || '', {
-        message
-      });
-    });
-    if (options.restoreTransient !== false) {
-      getConversationTransientEntries(transientConversationId).forEach(message => {
-        addChatMessage(message.role === 'assistant' ? 'chatbot' : 'user', message.content || '', {
-          message,
-          insertAfterMessageId: message.afterMessageId || '',
-          forceFollow: false
-        });
-      });
-    }
-    if (options.forceFollow === false) {
-      const anchorMessageId = String(options.anchorMessageId || '').trim();
-      if (anchorMessageId) {
-        const anchor = container.querySelector(`.chat-message[data-chat-message-id="${CSS.escape(anchorMessageId)}"]`);
-        anchor?.scrollIntoView({ block: 'nearest' });
-      }
-      setChatAutoFollow(false);
-      updateChatScrollButton();
-      renderChatReadingOutline();
-      return;
-    }
-    renderChatReadingOutline();
-    followChatToBottom(true);
+    return requireChatRenderRuntimeTools().restoreChatMessages(messages, options);
   }
 
   function restoreLatestChat() {
@@ -4052,7 +3295,21 @@
     return div.innerHTML;
   }
 
-  window.loadQuota = async function loadQuota() {
+  const chatMarkdownTools = window.AigsChatMarkdown?.createTools
+    ? window.AigsChatMarkdown.createTools({
+        escapeHtml,
+        getOrigin: () => window.location.origin
+      })
+    : null;
+
+  function requireChatMarkdownTools() {
+    if (!chatMarkdownTools) {
+      throw new Error('AigsChatMarkdown 未加载');
+    }
+    return chatMarkdownTools;
+  }
+
+  async function loadQuota() {
     if (quotaLoading) return;
     quotaLoading = true;
 
@@ -4111,7 +3368,8 @@
     } finally {
       quotaLoading = false;
     }
-  };
+  }
+  window.loadQuota = loadQuota;
 
   // ============================================
   //  Generic Content Generator
@@ -4817,237 +4075,47 @@
   let chatHistory = [];
 
   function normalizeChatMarkdownText(value) {
-    return String(value || '')
-      .replace(/\r\n/g, '\n')
-      .replace(/^\s*---+\s*$/gm, '')
-      .replace(/^\s*[•·]\s*(#{1,3}\s+)/gm, '$1')
-      .replace(/^\s*\*\*(#{1,3}\s+.+?)\*\*\s*$/gm, '$1')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
+    return requireChatMarkdownTools().normalizeChatMarkdownText(value);
   }
 
   function renderChatCodeBlock(language, code) {
-    const langLabel = String(language || '').trim();
-    return `
-      <div class="chat-code-block">
-        <div class="chat-code-header">
-          <span>${langLabel || '代码'}</span>
-          <button class="chat-code-copy" type="button">复制代码</button>
-        </div>
-        <pre><code>${code}</code></pre>
-      </div>
-    `;
+    return requireChatMarkdownTools().renderChatCodeBlock(language, code);
   }
 
   function renderChatFormulaSegment(rawFormula, mode = 'inline') {
-    const formula = String(rawFormula || '').trim();
-    const className = mode === 'block' ? 'chat-formula-block' : 'chat-formula-inline';
-    return `<span class="${className}">${escapeHtml(formula)}</span>`;
+    return requireChatMarkdownTools().renderChatFormulaSegment(rawFormula, mode);
   }
 
   function protectChatFormulaSegments(text) {
-    const formulas = [];
-    const placeholderPrefix = '__CHAT_FORMULA_';
-    let nextText = String(text || '');
-
-    const stashFormula = (formula, mode) => {
-      const placeholder = `${placeholderPrefix}${formulas.length}__`;
-      formulas.push(renderChatFormulaSegment(formula, mode));
-      return placeholder;
-    };
-
-    nextText = nextText
-      .replace(/\\\[([\s\S]+?)\\\]/g, (_, formula) => stashFormula(formula, 'block'))
-      .replace(/\$\$([\s\S]+?)\$\$/g, (_, formula) => stashFormula(formula, 'block'))
-      .replace(/\\\(([\s\S]+?)\\\)/g, (_, formula) => stashFormula(formula, 'inline'))
-      .replace(/(^|[^\$])\$([^\n$]+?)\$/g, (_, prefix, formula) => `${prefix}${stashFormula(formula, 'inline')}`);
-
-    return { text: nextText, formulas, placeholderPrefix };
+    return requireChatMarkdownTools().protectChatFormulaSegments(text);
   }
 
   function restoreChatFormulaSegments(text, formulas, placeholderPrefix = '__CHAT_FORMULA_') {
-    let restored = String(text || '');
-    (formulas || []).forEach((formulaHtml, index) => {
-      restored = restored.replaceAll(`${placeholderPrefix}${index}__`, formulaHtml);
-    });
-    return restored;
+    return requireChatMarkdownTools().restoreChatFormulaSegments(text, formulas, placeholderPrefix);
   }
 
   function applyInlineMarkdown(text) {
-    const sanitizeLinkUrl = (rawUrl) => {
-      try {
-        const parsed = new URL(rawUrl, window.location.origin);
-        return ['http:', 'https:', 'mailto:'].includes(parsed.protocol) ? parsed.href : '#';
-      } catch {
-        return '#';
-      }
-    };
-
-    const protectedFormula = protectChatFormulaSegments(text);
-    const rendered = protectedFormula.text
-      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, href) => `<a href="${sanitizeLinkUrl(href)}" target="_blank" rel="noopener noreferrer">${label}</a>`)
-      // Bold: **text** or __text__
-      .replace(/\*\*(.+?)\*\*|__(.+?)__/g, '<strong>$1$2</strong>')
-      // Italic: *text* or _text_
-      .replace(/\*(.+?)\*|_(.+?)_/g, '<em>$1$2</em>')
-      // Inline code: `text`
-      .replace(/`([^`]+)`/g, '<code>$1</code>')
-      // Strikethrough: ~~text~~
-      .replace(/~~(.+?)~~/g, '<del>$1</del>')
-      // Remove leftover unmatched markdown emphasis or heading markers.
-      .replace(/\*\*/g, '')
-      .replace(/(^|>|\s)#{1,3}(?=\s*#|\s*$)/g, '$1');
-    return restoreChatFormulaSegments(rendered, protectedFormula.formulas, protectedFormula.placeholderPrefix);
+    return requireChatMarkdownTools().applyInlineMarkdown(text);
   }
 
   function getMarkdownTableCells(line) {
-    const normalized = String(line || '').trim().replace(/^\|/, '').replace(/\|$/, '');
-    return normalized.split('|').map(cell => cell.trim());
+    return requireChatMarkdownTools().getMarkdownTableCells(line);
   }
 
   function isMarkdownTableSeparator(line) {
-    const cells = getMarkdownTableCells(line);
-    return cells.length > 1 && cells.every(cell => /^:?-{3,}:?$/.test(cell));
+    return requireChatMarkdownTools().isMarkdownTableSeparator(line);
   }
 
   function isMarkdownTableStart(lines, index) {
-    const current = String(lines[index] || '').trim();
-    const next = String(lines[index + 1] || '').trim();
-    return current.includes('|') && next.includes('|') && isMarkdownTableSeparator(next);
+    return requireChatMarkdownTools().isMarkdownTableStart(lines, index);
   }
 
   function renderChatMarkdownTable(tableLines) {
-    const headerCells = getMarkdownTableCells(tableLines[0]);
-    const bodyRows = tableLines.slice(2).map(getMarkdownTableCells);
-    const columnCount = Math.max(headerCells.length, ...bodyRows.map(row => row.length));
-    const normalizeRow = row => Array.from({ length: columnCount }, (_, index) => row[index] || '');
-
-    const headerHtml = normalizeRow(headerCells)
-      .map(cell => `<th>${applyInlineMarkdown(cell)}</th>`)
-      .join('');
-    const bodyHtml = bodyRows
-      .map(row => `<tr>${normalizeRow(row).map(cell => `<td>${applyInlineMarkdown(cell)}</td>`).join('')}</tr>`)
-      .join('');
-
-    return `
-      <div class="chat-table-wrap">
-        <table>
-          <thead><tr>${headerHtml}</tr></thead>
-          <tbody>${bodyHtml}</tbody>
-        </table>
-      </div>
-    `;
+    return requireChatMarkdownTools().renderChatMarkdownTable(tableLines);
   }
 
   function formatChatMessageHtml(text) {
-    const normalizedText = normalizeChatMarkdownText(text);
-    const escapedText = escapeHtml(normalizedText);
-    const codeBlocks = [];
-    const placeholderPrefix = '__CHAT_CODE_BLOCK_';
-    const withPlaceholders = escapedText.replace(/```([\w-]+)?\n?([\s\S]*?)```/g, (_, language, code) => {
-      const placeholder = `${placeholderPrefix}${codeBlocks.length}__`;
-      codeBlocks.push(renderChatCodeBlock(language, String(code || '').replace(/\n$/, '')));
-      return placeholder;
-    });
-
-    const lines = withPlaceholders.split('\n');
-    const blocks = [];
-    let index = 0;
-
-    const isSpecialBlockStart = line => {
-      const trimmed = String(line || '').trim();
-      return Boolean(
-        trimmed.startsWith(placeholderPrefix) ||
-        isMarkdownTableStart(lines, index) ||
-        /^#{1,3}\s+/.test(trimmed) ||
-        /^&gt;\s?/.test(trimmed) ||
-        /^[-*]\s+/.test(trimmed) ||
-        /^\d+\.\s+/.test(trimmed)
-      );
-    };
-
-    while (index < lines.length) {
-      const currentLine = lines[index];
-      const trimmed = String(currentLine || '').trim();
-
-      if (!trimmed) {
-        index += 1;
-        continue;
-      }
-
-      if (trimmed.startsWith(placeholderPrefix)) {
-        blocks.push(trimmed);
-        index += 1;
-        continue;
-      }
-
-      if (isMarkdownTableStart(lines, index)) {
-        const tableLines = [lines[index], lines[index + 1]];
-        index += 2;
-        while (index < lines.length) {
-          const tableLine = String(lines[index] || '').trim();
-          if (!tableLine || !tableLine.includes('|') || isSpecialBlockStart(lines[index])) break;
-          tableLines.push(lines[index]);
-          index += 1;
-        }
-        blocks.push(renderChatMarkdownTable(tableLines));
-        continue;
-      }
-
-      const headingMatch = trimmed.match(/^(#{1,3})\s+(.+)$/);
-      if (headingMatch) {
-        const level = Math.min(3, headingMatch[1].length);
-        blocks.push(`<h${level}>${applyInlineMarkdown(headingMatch[2])}</h${level}>`);
-        index += 1;
-        continue;
-      }
-
-      if (/^&gt;\s?/.test(trimmed)) {
-        const quoteLines = [];
-        while (index < lines.length && /^&gt;\s?/.test(String(lines[index] || '').trim())) {
-          quoteLines.push(String(lines[index] || '').trim().replace(/^&gt;\s?/, ''));
-          index += 1;
-        }
-        blocks.push(`<blockquote>${quoteLines.map(line => applyInlineMarkdown(line)).join('<br>')}</blockquote>`);
-        continue;
-      }
-
-      if (/^[-*]\s+/.test(trimmed)) {
-        const items = [];
-        while (index < lines.length && /^[-*]\s+/.test(String(lines[index] || '').trim())) {
-          items.push(String(lines[index] || '').trim().replace(/^[-*]\s+/, ''));
-          index += 1;
-        }
-        blocks.push(`<ul>${items.map(item => `<li>${applyInlineMarkdown(item)}</li>`).join('')}</ul>`);
-        continue;
-      }
-
-      if (/^\d+\.\s+/.test(trimmed)) {
-        const items = [];
-        while (index < lines.length && /^\d+\.\s+/.test(String(lines[index] || '').trim())) {
-          items.push(String(lines[index] || '').trim().replace(/^\d+\.\s+/, ''));
-          index += 1;
-        }
-        blocks.push(`<ol>${items.map(item => `<li>${applyInlineMarkdown(item)}</li>`).join('')}</ol>`);
-        continue;
-      }
-
-      const paragraphLines = [];
-      while (index < lines.length) {
-        const line = String(lines[index] || '');
-        if (!line.trim()) break;
-        if (paragraphLines.length > 0 && isSpecialBlockStart(line)) break;
-        paragraphLines.push(line.trim());
-        index += 1;
-      }
-      blocks.push(`<p>${paragraphLines.map(line => applyInlineMarkdown(line)).join('<br>')}</p>`);
-    }
-
-    let html = blocks.join('');
-    codeBlocks.forEach((codeBlockHtml, codeIndex) => {
-      html = html.replace(`${placeholderPrefix}${codeIndex}__`, codeBlockHtml);
-    });
-    return html || '<p></p>';
+    return requireChatMarkdownTools().formatChatMessageHtml(text);
   }
 
   function getAssistantMessageStatus(message) {
@@ -5138,92 +4206,31 @@
   }
 
   function getVisibleChatExcerpts() {
-    return getFilteredChatExcerpts({
-      limit: chatExcerptState.expanded ? 24 : 3,
-      fallbackToAll: !chatExcerptState.expanded
-    });
+    return requireChatExcerptTools().getVisibleChatExcerpts();
   }
 
   function matchesChatExcerptQuery(item, query) {
-    const normalizedQuery = String(query || '').trim().toLowerCase();
-    if (!normalizedQuery) return true;
-    const terms = normalizedQuery.split(/\s+/).filter(Boolean);
-    if (!terms.length) return true;
-    const haystack = [
-      item.conversationTitle,
-      item.preview,
-      item.content
-    ].join(' ').toLowerCase();
-    return terms.every(term => haystack.includes(term));
+    return requireChatExcerptTools().matchesChatExcerptQuery(item, query);
   }
 
   function getFilteredChatExcerpts(options = {}) {
-    const { limit = 24, fallbackToAll = false } = options;
-    const activeConversationId = String(conversationState.activeId || '').trim();
-    const requestedFilter = ['current', 'all', 'archived'].includes(chatExcerptState.filter) ? chatExcerptState.filter : 'current';
-    const query = String(chatExcerptState.query || '').trim();
-    let filtered = chatExcerptState.items;
-
-    if (requestedFilter === 'archived') {
-      filtered = filtered.filter(item => item.archivedAt);
-    } else if (requestedFilter === 'current') {
-      filtered = activeConversationId
-        ? filtered.filter(item => item.conversationId === activeConversationId && !item.archivedAt)
-        : [];
-      if (!filtered.length && fallbackToAll) {
-        filtered = chatExcerptState.items.filter(item => !item.archivedAt);
-      }
-    } else if (requestedFilter === 'all') {
-      filtered = filtered.slice();
-    }
-
-    filtered = filtered.filter(item => matchesChatExcerptQuery(item, query));
-    return filtered.slice(0, limit);
+    return requireChatExcerptTools().getFilteredChatExcerpts(options);
   }
 
   function buildChatExcerptBundle(items = []) {
-    return items.map((item, index) => [
-      `${index + 1}. ${item.conversationTitle || '未命名对话'}`,
-      item.content || item.preview || ''
-    ].filter(Boolean).join('\n')).join('\n\n');
+    return requireChatExcerptTools().buildChatExcerptBundle(items);
   }
 
   async function copyChatExcerptBundle(triggerButton = null) {
-    const items = getFilteredChatExcerpts({
-      limit: chatExcerptState.expanded ? 24 : 3,
-      fallbackToAll: !chatExcerptState.expanded
-    });
-    if (!items.length) return;
-    await navigator.clipboard.writeText(buildChatExcerptBundle(items));
-    flashButtonFeedback(triggerButton, '已复制');
-    showToast('已复制当前摘录列表', 'success', 1200);
+    return requireChatExcerptTools().copyChatExcerptBundle(triggerButton);
   }
 
   async function copyChatExcerptItem(messageId, triggerButton = null) {
-    const excerpt = getChatExcerptByMessageId(messageId);
-    if (!excerpt?.content) return;
-    await navigator.clipboard.writeText(excerpt.content);
-    flashButtonFeedback(triggerButton, '已复制');
-    showToast('已复制摘录内容', 'success', 1200);
+    return requireChatExcerptTools().copyChatExcerptItem(messageId, triggerButton);
   }
 
   function insertChatExcerptIntoComposer(messageId, triggerButton = null) {
-    const excerpt = getChatExcerptByMessageId(messageId);
-    const input = $('chat-input');
-    if (!excerpt?.content || !input) return;
-    const addition = WORKSPACE_ASSET_TARGETS.chat.buildText(excerpt.content);
-    input.value = String(input.value || '').trim()
-      ? `${String(input.value || '').trim()}\n\n${addition}`
-      : addition;
-        updateChatComposerState();
-    scheduleWorkspaceStateSave();
-    input.focus();
-    const caretPosition = input.value.length;
-    if (typeof input.setSelectionRange === 'function') {
-      input.setSelectionRange(caretPosition, caretPosition);
-    }
-    flashButtonFeedback(triggerButton, '已插入', 1200, 'success');
-    showToast('已插入输入框，可直接继续追问', 'success', 1400);
+    return requireChatExcerptTools().insertChatExcerptIntoComposer(messageId, triggerButton);
   }
 
   function getCurrentWorkspaceAssetConfig() {
@@ -5251,134 +4258,11 @@
   }
 
   function renderChatExcerptShelf() {
-    const shelf = $('chat-excerpt-shelf');
-    const summary = $('chat-excerpt-summary');
-    const stats = $('chat-excerpt-stats');
-    const presets = $('chat-excerpt-presets');
-    const toggleButton = $('btn-chat-excerpt-toggle-panel');
-    const copyVisibleButton = $('btn-chat-excerpt-copy-visible');
-    const archiveVisibleButton = $('btn-chat-excerpt-archive-visible');
-    const manager = $('chat-excerpt-manager');
-    const searchInput = $('chat-excerpt-search');
-    const clearArchivedButton = $('btn-chat-excerpt-clear-archived');
-    const resultsMeta = $('chat-excerpt-results-meta');
-    const actions = $('chat-excerpt-actions');
-    if (!shelf || !summary || !stats || !actions || !presets || !toggleButton || !copyVisibleButton || !archiveVisibleButton || !manager || !searchInput || !clearArchivedButton || !resultsMeta) return;
-
-    if (!currentUser || !chatExcerptState.items.length) {
-      shelf.setAttribute('hidden', '');
-      summary.textContent = '把值得保留的回复留在这里，方便稍后回看。';
-      actions.innerHTML = '';
-      stats.innerHTML = '';
-      presets.innerHTML = '';
-      resultsMeta.textContent = '';
-      searchInput.value = '';
-      return;
-    }
-
-    const visibleItems = getVisibleChatExcerpts();
-    const activeConversationId = String(conversationState.activeId || '').trim();
-    const currentCount = chatExcerptState.items.filter(item => item.conversationId === activeConversationId && !item.archivedAt).length;
-    const archivedCount = chatExcerptState.items.filter(item => item.archivedAt).length;
-    const activeCount = chatExcerptState.items.length - archivedCount;
-    const filteredCount = getFilteredChatExcerpts({ limit: 24, fallbackToAll: false }).length;
-    const usingFallbackItems = !chatExcerptState.expanded
-      && chatExcerptState.filter === 'current'
-      && !currentCount
-      && visibleItems.length > 0;
-    stats.innerHTML = `
-      <span class="workspace-mini-stat">活跃 ${activeCount}</span>
-      <span class="workspace-mini-stat">归档 ${archivedCount}</span>
-      <span class="workspace-mini-stat">当前可见 ${visibleItems.length}</span>
-    `;
-    summary.textContent = chatExcerptState.expanded
-      ? (
-        filteredCount > 0
-          ? `已筛出 ${filteredCount} 条资产。你可以搜索、复制、继续复用，或跳回原消息。`
-          : (chatExcerptState.filter === 'archived'
-            ? '当前没有匹配的归档资产，试试清空搜索或切回全部。'
-            : '没有找到匹配的资产，试试切到全部或清空搜索。')
-      )
-      : (currentCount > 0
-        ? `当前对话已摘录 ${currentCount} 条，展开后可统一管理与复用。`
-        : `你当前有 ${activeCount} 条活跃资产，另有 ${archivedCount} 条已归档。`);
-    presets.innerHTML = `
-      <button type="button" class="chat-excerpt-preset${chatExcerptState.filter === 'current' ? ' is-active' : ''}" data-chat-excerpt-filter="current">当前对话${currentCount ? ` · ${currentCount}` : ''}</button>
-      <button type="button" class="chat-excerpt-preset${chatExcerptState.filter === 'all' ? ' is-active' : ''}" data-chat-excerpt-filter="all">全部 · ${chatExcerptState.items.length}</button>
-      <button type="button" class="chat-excerpt-preset${chatExcerptState.filter === 'archived' ? ' is-active' : ''}" data-chat-excerpt-filter="archived">已归档 · ${archivedCount}</button>
-    `;
-    toggleButton.textContent = chatExcerptState.expanded ? '收起管理' : '展开管理';
-    toggleButton.setAttribute('aria-expanded', chatExcerptState.expanded ? 'true' : 'false');
-    manager.toggleAttribute('hidden', !chatExcerptState.expanded);
-    searchInput.value = chatExcerptState.query || '';
-    archiveVisibleButton.disabled = !visibleItems.some(item => !item.archivedAt);
-    clearArchivedButton.disabled = archivedCount === 0;
-    resultsMeta.textContent = chatExcerptState.expanded
-      ? (
-        usingFallbackItems
-          ? '当前对话暂无摘录，折叠态已回退展示最近摘录。'
-          : `当前显示 ${visibleItems.length} / ${filteredCount} 条 · 活跃 ${activeCount} · 已归档 ${archivedCount}`
-      )
-      : (usingFallbackItems ? '当前对话还没有摘录，先为你显示最近保留的内容。' : '');
-    copyVisibleButton.disabled = !visibleItems.length;
-    actions.innerHTML = visibleItems.length ? visibleItems.map(item => `
-      <article class="chat-excerpt-item${item.archivedAt ? ' is-archived' : ''}">
-        <div class="chat-excerpt-item-head">
-          <div class="chat-excerpt-item-copy">
-            <strong>${escapeHtml(item.conversationTitle || '未命名对话')}</strong>
-            <span>${escapeHtml(item.archivedAt ? `已归档 · ${formatChatRelativeTime(item.archivedAt) || '刚刚'}` : (formatChatRelativeTime(item.createdAt) || '刚刚摘录'))}</span>
-          </div>
-        </div>
-        <p class="chat-excerpt-preview">${escapeHtml(item.preview)}</p>
-        <div class="chat-excerpt-item-actions">
-          <button type="button" class="chat-excerpt-item-btn" data-chat-excerpt-jump="${escapeHtml(item.messageId)}" data-chat-excerpt-conversation-id="${escapeHtml(item.conversationId)}">跳回原文</button>
-          <button type="button" class="chat-excerpt-item-btn" data-chat-excerpt-copy="${escapeHtml(item.messageId)}">复制</button>
-          <button type="button" class="chat-excerpt-item-btn tone-secondary" data-chat-excerpt-insert="${escapeHtml(item.messageId)}">继续聊</button>
-          <button type="button" class="chat-excerpt-item-btn" data-chat-excerpt-archive="${escapeHtml(item.messageId)}">${item.archivedAt ? '恢复' : '归档'}</button>
-          <button type="button" class="chat-excerpt-item-btn tone-danger" data-chat-excerpt-remove="${escapeHtml(item.messageId)}">移除</button>
-        </div>
-      </article>
-    `).join('') : `
-      <div class="chat-excerpt-empty">
-        <strong>${chatExcerptState.filter === 'archived' ? '当前还没有可展示的归档资产' : '当前条件下还没有可展示的资产'}</strong>
-        <span>${chatExcerptState.filter === 'archived' ? '你可以清空搜索、切回全部，或先把一些活跃资产归档。' : '你可以切到“全部”，或先从回复里加入新的摘录。'}</span>
-        <div class="chat-excerpt-empty-actions">
-          <button type="button" class="chat-excerpt-item-btn" data-chat-excerpt-filter="all">查看全部摘录</button>
-          <button type="button" class="chat-excerpt-item-btn" data-chat-excerpt-search-clear="true">清空搜索</button>
-        </div>
-      </div>
-    `;
-    shelf.removeAttribute('hidden');
+    return requireChatExcerptTools().renderChatExcerptShelf();
   }
 
   async function jumpToChatExcerpt(messageId, conversationId = '') {
-    const targetMessageId = String(messageId || '').trim();
-    const targetConversationId = String(conversationId || '').trim();
-    if (!targetMessageId) return;
-    if (currentTab !== 'chat') {
-      switchTab('chat');
-    }
-    if (targetConversationId && targetConversationId !== String(conversationState.activeId || '').trim()) {
-      const activeMatch = conversationState.list.some(item => item.id === targetConversationId);
-      if (!activeMatch) {
-        showToast('摘录来自非当前进行中会话，请先恢复或打开原会话。', 'info', 1800);
-        return;
-      }
-      await selectConversation(targetConversationId);
-    }
-    window.setTimeout(() => {
-      const targetNode = document.querySelector(`.chat-message[data-chat-message-id="${CSS.escape(targetMessageId)}"]`);
-      if (!targetNode) {
-        showToast('原消息暂时不可用', 'info', 1600);
-        return;
-      }
-      setChatAutoFollow(false);
-      targetNode.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      targetNode.classList.add('is-highlighted');
-      window.setTimeout(() => {
-        targetNode.classList.remove('is-highlighted');
-      }, 1800);
-    }, 40);
+    return requireChatExcerptTools().jumpToChatExcerpt(messageId, conversationId);
   }
 
   function syncChatReadingOutlineActiveTarget() {
@@ -5409,530 +4293,55 @@
   }
 
   function buildChatAssistantActions(message) {
-    if (!message?.id) return '';
-    const versions = Array.isArray(message.versions) ? message.versions : [];
-    const versionCount = Math.max(Number(message.versionCount || 0), versions.length || 0);
-    const activeVersionIndex = Math.max(1, Number(message.activeVersionIndex || versions.findIndex(item => item.active) + 1 || 1));
-    const status = getAssistantMessageStatus(message);
-    const canCopy = Boolean(String(message.content || '').trim());
-    const canRetry = Boolean(message.transient && message.retryPayload);
-    const isExcerpted = isMessageExcerpted(message.id);
-    const isExpanded = Boolean(getChatMessageUiState(message.id)?.actionsExpanded);
-    const canCompact = isLongAssistantMessage(message);
-    const isCompact = isAssistantMessageCompact(message);
-    const versionSummary = versionCount > 1
-      ? `当前第 ${activeVersionIndex} 版，共 ${versionCount} 版，可随时切回上一版。`
-      : '';
-
-    return `
-      <div class="message-actions" data-expanded="${isExpanded ? 'true' : 'false'}">
-        <div class="message-actions-head">
-          ${status ? `<div class="message-status-row"><span class="message-status-badge tone-${escapeHtml(status.tone)}">${escapeHtml(status.label)}</span></div>` : '<span class="message-status-spacer" aria-hidden="true"></span>'}
-          <div class="message-actions-row">
-            ${canCompact ? `<button class="message-action-btn tone-secondary" type="button" data-chat-compact-toggle="${escapeHtml(message.id)}">${isCompact ? '展开全文' : '收起长文'}</button>` : ''}
-            ${canCopy ? `<button class="message-action-btn" type="button" data-chat-copy-id="${escapeHtml(message.id)}">复制全文</button>` : ''}
-            ${canCopy ? `<button class="message-action-btn${isExcerpted ? ' tone-secondary' : ''}" type="button" data-chat-excerpt-id="${escapeHtml(message.id)}">${isExcerpted ? '取消摘录' : '加入摘录'}</button>` : ''}
-            ${!message.transient ? `<button class="message-action-btn" type="button" data-chat-rewrite-id="${escapeHtml(message.id)}">换个版本</button>` : ''}
-            ${canRetry ? `<button class="message-action-btn tone-retry" type="button" data-chat-retry-id="${escapeHtml(message.id)}">重试</button>` : ''}
-            ${versionCount > 1 ? `
-              <button
-                class="message-action-btn tone-secondary"
-                type="button"
-                data-chat-message-actions-toggle="${escapeHtml(message.id)}"
-                data-collapsed-label="查看版本 ${activeVersionIndex}/${versionCount}"
-                data-expanded-label="收起版本"
-                aria-expanded="${isExpanded ? 'true' : 'false'}">
-                ${isExpanded ? '收起版本' : `查看版本 ${activeVersionIndex}/${versionCount}`}
-              </button>
-            ` : ''}
-          </div>
-        </div>
-        ${versionCount > 1 ? `
-          <div class="message-version-panel" data-chat-message-panel ${isExpanded ? '' : 'hidden'}>
-            <div class="message-version-summary">${escapeHtml(versionSummary)}</div>
-            <div class="message-version-switcher">
-              <button class="message-action-btn" type="button" data-chat-version-nav="prev" data-chat-message-id="${escapeHtml(message.id)}" ${activeVersionIndex <= 1 ? 'disabled' : ''}>上一版</button>
-              <span class="message-version-label">版本 ${activeVersionIndex}/${versionCount}</span>
-              <button class="message-action-btn" type="button" data-chat-version-nav="next" data-chat-message-id="${escapeHtml(message.id)}" ${activeVersionIndex >= versionCount ? 'disabled' : ''}>下一版</button>
-            </div>
-          </div>
-        ` : ''}
-      </div>
-    `;
+    return requireChatMessageNodeTools().buildChatAssistantActions(message);
   }
 
   function insertChatMessageNode(container, node, insertAfterMessageId = '') {
-    if (!container || !node) return;
-    const anchorMessageId = String(insertAfterMessageId || '').trim();
-    const anchor = anchorMessageId
-      ? container.querySelector(`.chat-message[data-chat-message-id="${CSS.escape(anchorMessageId)}"]`)
-      : null;
-    if (anchor?.parentNode === container) {
-      anchor.insertAdjacentElement('afterend', node);
-      return;
-    }
-    container.appendChild(node);
+    return requireChatMessageNodeTools().insertChatMessageNode(container, node, insertAfterMessageId);
   }
 
   function createThinkingMessage(options = {}) {
-    const container = $('chat-messages');
-    if (!container) return null;
-
-    const msgDiv = document.createElement('div');
-    msgDiv.className = 'chat-message chatbot is-thinking';
-    msgDiv.innerHTML = `
-      <div class="message-avatar"><img src="/images/AG-logo.png" alt="AG Logo" class="message-avatar-logo" /></div>
-      <div class="message-content">
-        <div class="thinking-indicator" aria-live="polite">
-          <span class="thinking-label">正在思考</span>
-          <span class="thinking-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-        </div>
-      </div>
-    `;
-
-    insertChatMessageNode(container, msgDiv, options.afterMessageId || '');
-    followChatToBottom(!options.afterMessageId);
-    return {
-      msgDiv,
-      contentWrap: msgDiv.querySelector('.message-content')
-    };
+    return requireChatMessageNodeTools().createThinkingMessage(options);
   }
 
   function addChatMessage(role, content, options = {}) {
-    const settings = typeof options === 'boolean' ? { isStreaming: options } : (options || {});
-    const container = $('chat-messages');
-    const chatContainer = document.querySelector('.chat-container');
-    const avatar = role === 'user'
-      ? '😀'
-      : '<img src="/images/AG-logo.png" alt="AG Logo" class="message-avatar-logo" />';
-    const msgDiv = document.createElement('div');
-    const messageData = settings.message && typeof settings.message === 'object' ? settings.message : null;
-    const messageId = String(messageData?.id || settings.messageId || '').trim();
-    const contentClassName = settings.rawHtml ? 'message-content is-panel' : 'message-content';
-    const bodyClassName = settings.rawHtml ? 'message-body is-panel-body' : 'message-body';
-
-    if (role === 'user' && chatContainer && !chatContainer.classList.contains('has-messages')) {
-      chatContainer.classList.add('has-messages');
-      document.getElementById('tab-chat')?.classList.add('has-messages');
-    }
-
-    msgDiv.className = `chat-message ${role}`;
-    if (messageId) {
-      msgDiv.dataset.chatMessageId = messageId;
-    }
-
-    if (settings.message?.transient) {
-      msgDiv.classList.add('is-transient');
-    }
-
-    if (role === 'chatbot' && settings.isStreaming) {
-      const metaHtml = buildChatMessageMeta(messageData, role, settings);
-      msgDiv.innerHTML = `<div class="message-avatar">${avatar}</div><div class="message-content">${metaHtml}<div class="message-body streaming-content"></div></div>`;
-      insertChatMessageNode(container, msgDiv, settings.insertAfterMessageId || '');
-      followChatToBottom(settings.forceFollow !== false);
-      return { msgDiv, contentEl: msgDiv.querySelector('.streaming-content') };
-    }
-
-    const formattedContent = settings.rawHtml || formatChatMessageHtml(content);
-    const actionsHtml = role === 'chatbot' ? buildChatAssistantActions(messageData) : '';
-    const metaHtml = settings.rawHtml ? '' : buildChatMessageMeta(messageData, role, settings);
-    const compactSummary = role === 'chatbot' && messageData && isAssistantMessageCompact(messageData)
-      ? buildAssistantMessageCompactSummary(messageData)
-      : null;
-    const compactSummaryHtml = compactSummary ? `
-      <div class="message-compact-summary">
-        <div class="message-compact-copy">
-          <strong>速览</strong>
-          <span>${escapeHtml(compactSummary.preview || '这条回复较长，建议先看重点再展开全文。')}</span>
-        </div>
-        ${compactSummary.headings.length ? `
-          <div class="message-compact-headings">
-            ${compactSummary.headings.map((heading, index) => `<span class="message-compact-heading">${index + 1}. ${escapeHtml(heading)}</span>`).join('')}
-          </div>
-        ` : ''}
-      </div>
-    ` : '';
-    const compactBodyClass = compactSummary ? `${bodyClassName} is-compact` : bodyClassName;
-    msgDiv.innerHTML = `<div class="message-avatar">${avatar}</div><div class="${contentClassName}">${metaHtml}${compactSummaryHtml}<div class="${compactBodyClass}">${formattedContent}</div>${actionsHtml}</div>`;
-    annotateChatMessageHeadings(msgDiv, messageId);
-    insertChatMessageNode(container, msgDiv, settings.insertAfterMessageId || '');
-    followChatToBottom(settings.forceFollow !== false);
-    return null;
+    return requireChatMessageNodeTools().addChatMessage(role, content, options);
   }
 
   function parseSseBlock(block) {
-    const lines = String(block || '').split(/\r?\n/);
-    let eventName = 'message';
-    const dataLines = [];
-    lines.forEach(line => {
-      if (!line) return;
-      if (line.startsWith('event:')) {
-        eventName = line.slice('event:'.length).trim() || 'message';
-        return;
-      }
-      if (line.startsWith('data:')) {
-        dataLines.push(line.slice('data:'.length).trimStart());
-      }
-    });
-    return {
-      eventName,
-      dataText: dataLines.join('\n')
-    };
+    return requireChatStreamTools().parseSseBlock(block);
   }
 
   async function streamChatMessage(response, pendingMessage = null) {
-    if (!response?.ok) {
-      let failurePayload = null;
-      if (typeof response?.json === 'function') {
-        failurePayload = await response.json().catch(() => null);
-      }
-      throw new Error(failurePayload?.error || `对话失败（${response?.status || 500}）`);
-    }
-
-    if (!response.body || typeof response.body.getReader !== 'function') {
-      const data = await response.json();
-      return {
-        reply: String(data.reply || ''),
-        conversation: data.conversation || null,
-        messages: Array.isArray(data.messages) ? data.messages : null,
-        usage: data.usage || null
-      };
-    }
-
-    let contentEl = null;
-    let msgDiv = null;
-    if (pendingMessage?.contentWrap) {
-      msgDiv = pendingMessage.msgDiv;
-      pendingMessage.contentWrap.innerHTML = `${buildChatMessageMeta(null, 'chatbot', { isStreaming: true })}<div class="message-body streaming-content"></div>`;
-      contentEl = pendingMessage.contentWrap.querySelector('.streaming-content');
-      msgDiv.classList.remove('is-thinking');
-    } else {
-      ({ contentEl, msgDiv } = addChatMessage('chatbot', '', { isStreaming: true }));
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let reply = '';
-    let conversation = null;
-    let messages = null;
-    let usage = null;
-
-    const applyStreamingText = () => {
-      if (!contentEl) return;
-      contentEl.textContent = reply;
-      followChatToBottom(false);
-    };
-
-    const consumeBlock = (block) => {
-      const { eventName, dataText } = parseSseBlock(block);
-      if (!dataText || dataText === '[DONE]') return;
-
-      let payload = null;
-      try {
-        payload = JSON.parse(dataText);
-      } catch {
-        payload = null;
-      }
-
-      if (eventName === 'error') {
-        throw new Error(payload?.error || '对话流中断，请重试。');
-      }
-
-      if (eventName === 'conversation_state') {
-        conversation = payload?.conversation || null;
-        messages = Array.isArray(payload?.messages) ? payload.messages : null;
-        usage = payload?.usage || null;
-        if (payload?.reply != null) {
-          reply = String(payload.reply || '');
-          applyStreamingText();
-        }
-        return;
-      }
-
-      if (eventName === 'content_block_start') {
-        const initialText = payload?.content_block?.type === 'text'
-          ? String(payload.content_block?.text || '')
-          : '';
-        if (initialText) {
-          reply += initialText;
-          applyStreamingText();
-        }
-        return;
-      }
-
-      if (eventName === 'content_block_delta' && payload?.delta?.type === 'text_delta') {
-        reply += String(payload.delta?.text || '');
-        applyStreamingText();
-        return;
-      }
-
-      if (eventName === 'done' && payload?.reply != null) {
-        reply = String(payload.reply || '');
-        applyStreamingText();
-        return;
-      }
-
-      if (payload?.usage) {
-        usage = payload.usage;
-      }
-    };
-
-    try {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        buffer = buffer.replace(/\r\n/g, '\n');
-        let boundaryIndex = buffer.indexOf('\n\n');
-        while (boundaryIndex !== -1) {
-          const block = buffer.slice(0, boundaryIndex);
-          buffer = buffer.slice(boundaryIndex + 2);
-          consumeBlock(block);
-          boundaryIndex = buffer.indexOf('\n\n');
-        }
-      }
-  
-      buffer += decoder.decode();
-      if (buffer.trim()) {
-        consumeBlock(buffer);
-      }
-    } catch (error) {
-      const wrappedError = error instanceof Error ? error : new Error('对话流中断，请重试。');
-      wrappedError.partialReply = reply;
-      if (error?.name === 'AbortError') {
-        wrappedError.name = 'AbortError';
-        wrappedError.isAbort = true;
-      }
-      throw wrappedError;
-    }
-
-    if (contentEl) {
-      contentEl.innerHTML = formatChatMessageHtml(reply || '');
-      contentEl.classList.remove('streaming-content');
-    }
-    followChatToBottom(false);
-
-    return {
-      reply,
-      conversation,
-      messages,
-      usage
-    };
+    return requireChatStreamTools().streamChatMessage(response, pendingMessage);
   }
 
   function setChatLoading(loading) {
-    const btn = $('btn-chat-send');
-    const stopBtn = $('btn-chat-stop');
-    const input = $('chat-input');
-    btn?.classList.toggle('is-loading', Boolean(loading));
-    btn?.setAttribute('aria-busy', loading ? 'true' : 'false');
-    if (stopBtn) {
-      if (loading) {
-        stopBtn.removeAttribute('hidden');
-        stopBtn.disabled = false;
-      } else {
-        stopBtn.setAttribute('hidden', '');
-        stopBtn.disabled = true;
-      }
-    }
-    if (input) input.disabled = false;
-    updateChatComposerState();
+    return requireChatSendTools().setChatLoading(loading);
   }
 
   function updateQueueIndicator() {
-    const el = $('chat-queue-indicator');
-    if (!el) return;
-    const qLen = chatQueue.length;
-    if (qLen === 0) {
-      el.setAttribute('hidden', '');
-      el.textContent = '';
-    } else {
-      el.removeAttribute('hidden');
-      el.textContent = `队列中 ${qLen} 条消息，当前回复完成后会自动继续发送。`;
-    }
-    updateChatComposerState();
+    return requireChatSendTools().updateQueueIndicator();
   }
 
   function describeChatFailure(error) {
-    if (error?.isAbort || error?.name === 'AbortError') {
-      return {
-        tone: 'warning',
-        toast: '已停止当前回复',
-        statusText: String(error?.partialReply || '').trim()
-          ? '已停止生成，保留到当前进度，可直接重试。'
-          : '已停止生成，可直接重试。'
-      };
-    }
-    return {
-      tone: 'error',
-      toast: error?.message || '对话失败，请重试。',
-      statusText: String(error?.partialReply || '').trim()
-        ? '回复中断，已保留当前内容，可直接重试。'
-        : (error?.message || '对话失败，请重试。')
-    };
+    return requireChatFailureTools().describeChatFailure(error);
   }
 
   function createFailedChatEntries(context = {}, error) {
-    const failure = describeChatFailure(error);
-    const entries = [];
-    const userMessageText = String(context.message || '').trim();
-    const assistantContent = String(error?.partialReply || '').trim();
-
-    if (!context.rewriteMessageId && userMessageText) {
-      entries.push({
-        id: buildTransientMessageId('chat-user'),
-        role: 'user',
-        content: userMessageText,
-        transient: true
-      });
-    }
-
-    entries.push({
-      id: buildTransientMessageId('chat-assistant'),
-      role: 'assistant',
-      content: assistantContent,
-      transient: true,
-      afterMessageId: context.rewriteMessageId || '',
-      statusText: failure.statusText,
-      statusTone: failure.tone,
-      retryPayload: {
-        message: context.message,
-        rewriteMessageId: context.rewriteMessageId || ''
-      }
-    });
-
-    return {
-      entries,
-      toast: failure.toast,
-      tone: failure.tone
-    };
+    return requireChatFailureTools().createFailedChatEntries(context, error);
   }
 
   async function performChatSend(message, options = {}) {
-    const previousHistory = chatHistory.slice();
-    const conversationId = await ensureActiveConversation();
-    if (!conversationId) {
-      throw new Error('会话创建失败');
-    }
-
-    const model = $('chat-model')?.value || 'gpt-4.1-mini';
-    const rewriteMessageId = String(options.rewriteMessageId || '').trim();
-    const rewriteTarget = rewriteMessageId ? getConversationMessageById(rewriteMessageId) : null;
-    const rewriteTurnId = String(rewriteTarget?.metadata?.turnId || '').trim();
-    clearConversationTransientEntries(conversationId);
-    if (conversationState.activeId === conversationId) {
-      restoreChatMessages(conversationState.messages, {
-        forceFollow: !rewriteMessageId
-      });
-    }
-    if (!rewriteMessageId) {
-      addChatMessage('user', message, { forceFollow: true });
-    }
-
-    const thinkingMessage = createThinkingMessage(rewriteMessageId ? { afterMessageId: rewriteMessageId } : {});
-    setChatLoading(true);
-    setChatRequestStatus(rewriteMessageId ? '正在重写回复，可随时停止。' : '正在流式回复，可继续输入下一条或点击停止。', 'info');
-    const abortController = new AbortController();
-    activeChatAbortController = abortController;
-    activeChatRequestContext = {
-      conversationId,
-      message,
-      rewriteMessageId
-    };
-
-    try {
-      const response = await apiFetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          conversationId,
-          message,
-          rewriteMessageId,
-          model,
-          stream: true
-        }),
-        signal: abortController.signal
-      });
-
-      const data = await streamChatMessage(response, thinkingMessage);
-      if (!data.reply && !data.conversation && !Array.isArray(data.messages)) {
-        throw new Error('对话结果为空，请重试。');
-      }
-
-      loadQuota();
-      refreshUsageToday();
-      if (data.conversation && Array.isArray(data.messages)) {
-        const rewriteAnchorId = rewriteTurnId
-          ? (data.messages.find(item => item.role === 'assistant' && String(item.metadata?.turnId || '') === rewriteTurnId)?.id || rewriteMessageId)
-          : '';
-        applyConversationPayload(data.conversation, data.messages, {
-          chatRestoreOptions: rewriteMessageId
-            ? { forceFollow: false, anchorMessageId: rewriteAnchorId }
-            : { forceFollow: true }
-        });
-        if (rewriteAnchorId && rewriteMessageId) {
-          setChatMessageUiState(rewriteAnchorId, {
-            label: '已生成新的回复版本',
-            tone: 'success',
-            expiresInMs: 2200
-          });
-        }
-      }
-      return data;
-    } catch (error) {
-      const failureState = createFailedChatEntries({
-        conversationId,
-        message,
-        rewriteMessageId
-      }, error);
-      setConversationTransientEntries(conversationId, failureState.entries);
-      if (conversationState.activeId === conversationId) {
-        const anchorMessageId = failureState.entries[failureState.entries.length - 1]?.id || '';
-        restoreChatMessages(previousHistory, {
-          forceFollow: false,
-          anchorMessageId,
-          transientConversationId: conversationId,
-          restoreTransient: false
-        });
-        failureState.entries.forEach(message => {
-          addChatMessage(message.role === 'assistant' ? 'chatbot' : 'user', message.content || '', {
-            message,
-            insertAfterMessageId: message.afterMessageId || '',
-            forceFollow: false
-          });
-        });
-        if (anchorMessageId) {
-          const container = $('chat-messages');
-          const anchor = container?.querySelector(`.chat-message[data-chat-message-id="${CSS.escape(anchorMessageId)}"]`);
-          anchor?.scrollIntoView({ block: 'nearest' });
-        }
-      }
-      throw error;
-    } finally {
-      if (activeChatAbortController === abortController) {
-        activeChatAbortController = null;
-      }
-      if (activeChatRequestContext?.conversationId === conversationId) {
-        activeChatRequestContext = null;
-      }
-      setChatLoading(false);
-      setChatRequestStatus('');
-    }
+    return requireChatSendTools().performChatSend(message, options);
   }
 
   async function drainChatQueue() {
-    while (chatQueue.length > 0) {
-      const next = chatQueue.shift();
-      updateQueueIndicator();
-      await performChatSend(next);
-    }
+    return requireChatSendTools().drainChatQueue();
   }
 
   function stopChatGeneration() {
-    if (!isChatGenerating || !activeChatAbortController) return;
-    activeChatAbortController.abort();
-    setChatRequestStatus('正在停止当前回复…', 'warning');
+    return requireChatSendTools().stopChatGeneration(isChatGenerating);
   }
 
   async function retryTransientAssistantMessage(messageId) {
@@ -6011,8 +4420,7 @@
   }
 
   async function sendChatMessageFromQueue(message) {
-    if (!message) return;
-    await performChatSend(message);
+    return requireChatSendTools().sendChatMessageFromQueue(message);
   }
 
   async function activateAssistantVersion(messageId) {

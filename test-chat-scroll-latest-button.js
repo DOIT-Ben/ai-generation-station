@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
+const { readProjectCss } = require('./test-css-utils');
 
 function getBlock(css, selector) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -9,7 +10,7 @@ function getBlock(css, selector) {
 }
 
 function main() {
-  const css = fs.readFileSync(path.join(__dirname, 'public', 'css', 'style.css'), 'utf8');
+  const css = readProjectCss(__dirname);
   const baseBlock = getBlock(css, '.chat-scroll-to-latest');
   const attentionBlock = getBlock(css, '.chat-scroll-to-latest[data-state="attention"]');
   const lightBlock = getBlock(css, '[data-theme="light"] .chat-scroll-to-latest');
@@ -60,3 +61,4 @@ if (require.main === module) {
 module.exports = {
   main
 };
+

@@ -151,7 +151,7 @@
     SiteShell.bindThemeToggle(theme => SiteShell.syncThemePreference(persistence, theme));
     session = await persistence?.loadSession?.().catch(() => null);
     if (!session?.username) {
-      SiteShell.redirect('/auth/', { next: '/account/' });
+      SiteShell.redirect('/login/', { next: '/account/' });
       return;
     }
 
@@ -160,7 +160,7 @@
       currentPage: 'account',
       nextPath: '/account/'
     });
-    $('portal-logout-button')?.addEventListener('click', () => SiteShell.logoutAndRedirect(persistence, '/auth/'));
+    $('portal-logout-button')?.addEventListener('click', () => SiteShell.logoutAndRedirect(persistence, '/login/'));
     $('account-password-form')?.addEventListener('submit', handlePasswordSubmit);
     ['account-current-password', 'account-new-password', 'account-confirm-password'].forEach(id => {
       $(id)?.addEventListener('input', renderPasswordChecklist);

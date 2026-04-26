@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
+const { readProjectCss } = require('./test-css-utils');
 
 function getBlock(css, selector) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -10,13 +11,15 @@ function getBlock(css, selector) {
 
 function main() {
   const appJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'app.js'), 'utf8');
-  const css = fs.readFileSync(path.join(__dirname, 'public', 'css', 'style.css'), 'utf8');
+  const markdownJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'chat-markdown.js'), 'utf8');
+  const css = readProjectCss(__dirname);
 
   assert.ok(appJs.includes('protectChatFormulaSegments'), 'chat renderer should protect formula segments before inline markdown');
   assert.ok(appJs.includes('restoreChatFormulaSegments'), 'chat renderer should restore formula segments after inline markdown');
-  assert.ok(appJs.includes('chat-formula-inline'), 'chat renderer should emit inline formula markup');
-  assert.ok(appJs.includes('chat-formula-block'), 'chat renderer should emit block formula markup');
-  assert.ok(appJs.includes('\\\\(') && appJs.includes('\\\\['), 'chat renderer should support \\(...\\) and \\[...\\] delimiters');
+  assert.ok(markdownJs.includes('chat-formula-inline'), 'chat markdown module should emit inline formula markup');
+  assert.ok(markdownJs.includes('chat-formula-block'), 'chat markdown module should emit block formula markup');
+  assert.ok(markdownJs.includes('\\\\(') && markdownJs.includes('\\\\['), 'chat markdown module should support \\(...\\) and \\[...\\] delimiters');
+  assert.ok(markdownJs.includes('createTools'), 'chat markdown logic should live in a dedicated tool factory');
 
   assert.ok(css.includes('.chat-formula-inline,\n.chat-formula-block'), 'formula styles should share base typography');
   assert.ok(css.includes('font-family: var(--font-mono);'), 'formula should use mono-style typography');
@@ -32,3 +35,4 @@ if (require.main === module) {
 }
 
 module.exports = { main };
+

@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
+const { readProjectCss } = require('./test-css-utils');
 
 function getBlock(css, selector) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -9,7 +10,7 @@ function getBlock(css, selector) {
 }
 
 function main() {
-  const css = fs.readFileSync(path.join(__dirname, 'public', 'css', 'style.css'), 'utf8');
+  const css = readProjectCss(__dirname);
 
   const selectBlock = getBlock(css, '.chat-model-select');
   const triggerBlock = getBlock(css, '.custom-dropdown .dropdown-trigger');
@@ -55,3 +56,4 @@ if (require.main === module) {
 module.exports = {
   main
 };
+
