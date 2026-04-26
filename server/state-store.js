@@ -35,6 +35,7 @@ const {
 const { createStateStoreMutations } = require('./state-store-mutations');
 const { createStateStoreAuth } = require('./state-store-auth');
 const { createStateStoreMaintenance } = require('./state-store-maintenance');
+const { createStateStoreQueries } = require('./state-store-queries');
 
 const LOGIN_FAILURE_LOCK_THRESHOLD = 5;
 const LOGIN_FAILURE_LOCK_MS = 15 * 60 * 1000;
@@ -1036,6 +1037,18 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         insertRateLimitEventStmt
     });
 
+    const stateStoreQueries = createStateStoreQueries({
+        db,
+        normalizeAuditLog,
+        normalizeTemplateRow,
+        groupTemplates,
+        buildAuditLogQuery,
+        listTemplateFavoritesStmt,
+        selectSystemTemplatesStmt,
+        selectUserTemplatesStmt,
+        listAuditLogsStmt
+    });
+
     const stateStoreMutations = createStateStoreMutations({
         db,
         maxHistoryItems,
@@ -1059,25 +1072,7 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         getPreferences: userId => normalizePreferences(getPreferencesStmt.get(userId)),
         getUsageDaily: (userId, usageDate = getUsageDate()) => getUsageDailyStmt.get(userId, usageDate) || getEmptyUsage(usageDate),
         getTask: taskId => normalizeTask(getTaskStmt.get(taskId)),
-        listTemplates: (feature, userId) => {
-            const favorites = new Set(
-                listTemplateFavoritesStmt.all(userId, feature)
-                    .map(row => `${row.templateKind}:${row.templateId}`)
-            );
-            const systemTemplates = selectSystemTemplatesStmt.all(feature)
-                .map(row => normalizeTemplateRow(row, 'system', favorites))
-                .filter(Boolean);
-            const userTemplates = userId
-                ? selectUserTemplatesStmt.all(userId, feature)
-                    .map(row => normalizeTemplateRow(row, 'user', favorites))
-                    .filter(Boolean)
-                : [];
-
-            return {
-                feature,
-                groups: groupTemplates(systemTemplates.concat(userTemplates))
-            };
-        },
+        listTemplates: (feature, userId) => stateStoreQueries.listTemplates(feature, userId),
         insertConversationStmt,
         updateConversationStmt,
         archiveConversationStmt,
@@ -1400,23 +1395,7 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         },
 
         listTemplates(feature, userId) {
-            const favorites = new Set(
-                listTemplateFavoritesStmt.all(userId, feature)
-                    .map(row => `${row.templateKind}:${row.templateId}`)
-            );
-            const systemTemplates = selectSystemTemplatesStmt.all(feature)
-                .map(row => normalizeTemplateRow(row, 'system', favorites))
-                .filter(Boolean);
-            const userTemplates = userId
-                ? selectUserTemplatesStmt.all(userId, feature)
-                    .map(row => normalizeTemplateRow(row, 'user', favorites))
-                    .filter(Boolean)
-                : [];
-
-            return {
-                feature,
-                groups: groupTemplates(systemTemplates.concat(userTemplates))
-            };
+            return stateStoreQueries.listTemplates(feature, userId);
         },
 
         createUserTemplate(userId, feature, template) {
@@ -1436,45 +1415,11 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         },
 
         listAuditLogs(limit = 100) {
-            return listAuditLogsStmt.all(Number(limit || 100))
-                .map(row => normalizeAuditLog(row))
-                .filter(Boolean);
+            return stateStoreQueries.listAuditLogs(limit);
         },
 
         queryAuditLogs(filters = {}) {
-            const pageSize = Math.min(100, Math.max(1, Number(filters.pageSize || 10)));
-            const page = Math.max(1, Number(filters.page || 1));
-            const offset = (page - 1) * pageSize;
-            const query = buildAuditLogQuery(filters);
-            const countStmt = db.prepare(`
-                SELECT COUNT(*) AS count
-                FROM audit_logs
-                ${query.whereSql}
-            `);
-            const itemsStmt = db.prepare(`
-                SELECT id, action, actor_user_id AS actorUserId, target_user_id AS targetUserId,
-                       actor_username AS actorUsername, target_username AS targetUsername,
-                       actor_role AS actorRole, target_role AS targetRole, actor_ip AS actorIp,
-                       actor_user_agent AS actorUserAgent, details_json AS detailsJson,
-                       created_at AS createdAt
-                FROM audit_logs
-                ${query.whereSql}
-                ORDER BY created_at DESC, id DESC
-                LIMIT ? OFFSET ?
-            `);
-            const total = Number(countStmt.get(...query.params)?.count || 0);
-            const items = itemsStmt.all(...query.params, pageSize, offset)
-                .map(row => normalizeAuditLog(row))
-                .filter(Boolean);
-
-            return {
-                items,
-                page,
-                pageSize,
-                total,
-                totalPages: Math.max(1, Math.ceil(total / pageSize)),
-                hasMore: offset + items.length < total
-            };
+            return stateStoreQueries.queryAuditLogs(filters);
         },
 
         getMaintenanceSummary(options = {}) {

@@ -260,6 +260,46 @@
         getElement: $
       })
     : null;
+  const workspaceStateTools = window.AigsWorkspaceStateTools?.createTools
+    ? window.AigsWorkspaceStateTools.createTools({
+        getCurrentUser: () => currentUser,
+        getWorkspaceStateReady: () => workspaceStateReady,
+        getPersistence: () => persistence,
+        getWorkspaceState: () => workspaceState,
+        getTemplatePreferenceEnvelope: () => templatePreferenceEnvelope,
+        setTemplatePreferenceEnvelope: value => {
+          templatePreferenceEnvelope = value;
+        },
+        getUserPreferences: () => userPreferences,
+        setUserPreferences: value => {
+          userPreferences = value;
+        },
+        getCurrentTab: () => currentTab,
+        getConversationActiveId: () => conversationState.activeId,
+        getElement: $,
+        queryAll: selector => document.querySelectorAll(selector),
+        getFeatureFields: () => FEATURE_FIELDS,
+        getTrackedWorkspaceInputIds: () => TRACKED_WORKSPACE_INPUT_IDS,
+        getFieldInitialValues: () => fieldInitialValues,
+        getPreferenceBackedFieldDefaults: () => PREFERENCE_BACKED_FIELD_DEFAULTS,
+        getResultArea,
+        getCurrentResult: () => currentResult,
+        getResetMaps: () => RESET_MAPS,
+        getFeatureInputs,
+        setFieldValue,
+        updateWorkspaceStateFromPreferences,
+        updateChatComposerState,
+        syncTranscriptionFilePreview,
+        isProtectedSessionError,
+        showToast,
+        clearTimeoutFn: value => clearTimeout(value),
+        setTimeoutFn: (callback, delay) => window.setTimeout(callback, delay),
+        getWorkspaceStateSaveTimer: () => workspaceStateSaveTimer,
+        setWorkspaceStateSaveTimer: value => {
+          workspaceStateSaveTimer = value;
+        }
+      })
+    : null;
   let templates = appShell?.TEMPLATE_LIBRARY || {};
   const featureMeta = appShell?.FEATURE_META || {};
   const historyState = {};
@@ -695,43 +735,23 @@
   }
 
   function getWorkspaceStateDraft(feature) {
-    const drafts = workspaceState?.drafts && typeof workspaceState.drafts === 'object'
-      ? workspaceState.drafts
-      : {};
-    const draft = drafts[feature];
-    return draft && typeof draft === 'object' ? draft : null;
+    return requireWorkspaceStateTools().getWorkspaceStateDraft(feature);
   }
 
   function captureInitialFieldValues() {
-    TRACKED_WORKSPACE_INPUT_IDS.forEach(inputId => {
-      const input = $(inputId);
-      if (!input) return;
-      if (Object.prototype.hasOwnProperty.call(fieldInitialValues, inputId)) return;
-      fieldInitialValues[inputId] = input.value;
-    });
+    return requireWorkspaceStateTools().captureInitialFieldValues();
   }
 
   function getFieldDefaultValue(inputId) {
-    const preferenceKey = PREFERENCE_BACKED_FIELD_DEFAULTS[inputId];
-    if (preferenceKey) {
-      return userPreferences[preferenceKey] != null ? String(userPreferences[preferenceKey]) : '';
-    }
-    return Object.prototype.hasOwnProperty.call(fieldInitialValues, inputId)
-      ? String(fieldInitialValues[inputId] ?? '')
-      : '';
+    return requireWorkspaceStateTools().getFieldDefaultValue(inputId);
   }
 
   function getVoiceSourceMode() {
-    return document.querySelector('.voice-source-tabs .source-tab.active')?.dataset.source === 'url' ? 'url' : 'file';
+    return requireWorkspaceStateTools().getVoiceSourceMode();
   }
 
   function applyVoiceSourceMode(sourceMode) {
-    const nextSourceMode = sourceMode === 'url' ? 'url' : 'file';
-    document.querySelectorAll('.voice-source-tabs .source-tab').forEach(tab => {
-      tab.classList.toggle('active', tab.dataset.source === nextSourceMode);
-    });
-    $('voice-source-file')?.toggleAttribute('hidden', nextSourceMode !== 'file');
-    $('voice-source-url')?.toggleAttribute('hidden', nextSourceMode !== 'url');
+    return requireWorkspaceStateTools().applyVoiceSourceMode(sourceMode);
   }
 
   function hasMeaningfulDraftValue(feature, key, value) {
@@ -757,25 +777,7 @@
   }
 
   function buildWorkspaceDraftSnapshot() {
-    const drafts = {};
-    const chatDraft = {
-      message: $('chat-input')?.value || ''
-    };
-    if (hasMeaningfulFeatureDraft('chat', chatDraft)) {
-      drafts.chat = chatDraft;
-    }
-
-    Object.keys(FEATURE_FIELDS).forEach(feature => {
-      const values = getFeatureInputs(feature);
-      if (feature === 'covervoice') {
-        values.sourceMode = getVoiceSourceMode();
-      }
-      if (hasMeaningfulFeatureDraft(feature, values)) {
-        drafts[feature] = values;
-      }
-    });
-
-    return drafts;
+    return requireWorkspaceStateTools().buildWorkspaceDraftSnapshot();
   }
 
   function formatRelativeSavedAt(timestamp) {
@@ -800,42 +802,11 @@
   }
 
   async function persistWorkspaceState() {
-    if (!currentUser || !workspaceStateReady || !persistence?.savePreferences) return;
-    workspaceState.lastTab = currentTab;
-    workspaceState.lastConversationId = conversationState.activeId || workspaceState.lastConversationId || null;
-    workspaceState.drafts = buildWorkspaceDraftSnapshot();
-    workspaceState.lastSavedAt = Date.now();
-    templatePreferenceEnvelope = {
-      ...(templatePreferenceEnvelope || {}),
-      workspace: workspaceState
-    };
-    const patch = {
-      templatePreferencesJson: JSON.stringify(templatePreferenceEnvelope)
-    };
-    userPreferences = {
-      ...userPreferences,
-      ...patch
-    };
-
-    try {
-      const preferences = await persistence.savePreferences(patch);
-      userPreferences = {
-        ...userPreferences,
-        ...(preferences || {})
-      };
-      updateWorkspaceStateFromPreferences(userPreferences);
-          } catch (error) {
-      if (isProtectedSessionError(error)) return;
-      showToast('工作台续接状态保存失败', 'error', 1800);
-    }
+    return requireWorkspaceStateTools().persistWorkspaceState();
   }
 
   function scheduleWorkspaceStateSave() {
-    if (!currentUser || !workspaceStateReady) return;
-    clearTimeout(workspaceStateSaveTimer);
-    workspaceStateSaveTimer = setTimeout(() => {
-      persistWorkspaceState();
-    }, 650);
+    return requireWorkspaceStateTools().scheduleWorkspaceStateSave();
   }
 
   function autoResizeChatInput() {
@@ -1957,6 +1928,13 @@
       throw new Error('AigsWorkspaceConversationTools 未加载');
     }
     return workspaceConversationTools;
+  }
+
+  function requireWorkspaceStateTools() {
+    if (!workspaceStateTools) {
+      throw new Error('AigsWorkspaceStateTools 未加载');
+    }
+    return workspaceStateTools;
   }
 
   function requireConversationListTools() {
@@ -3326,63 +3304,11 @@
   };
 
   function resetFieldToDefault(inputId) {
-    if (inputId === 'voice-audio-file') {
-      const fileInput = $('voice-audio-file');
-      if (fileInput) fileInput.value = '';
-      if ($('voice-file-name')) $('voice-file-name').textContent = '';
-      return;
-    }
-
-    if (inputId === 'transcription-file') {
-      const fileInput = $('transcription-file');
-      if (fileInput) fileInput.value = '';
-      syncTranscriptionFilePreview(null);
-      return;
-    }
-
-    const input = $(inputId);
-    if (!input) return;
-    setFieldValue(inputId, getFieldDefaultValue(inputId));
+    return requireWorkspaceStateTools().resetFieldToDefault(inputId);
   }
 
   function clearFeatureDraft(feature, { clearResult = true } = {}) {
-    if (feature === 'chat') {
-      const input = $('chat-input');
-      if (input) input.value = '';
-            updateChatComposerState();
-      scheduleWorkspaceStateSave();
-      return;
-    }
-
-    (RESET_MAPS[feature] || []).forEach(item => {
-      const el = $(item.id);
-      if (!el) return;
-      if (item.id === 'voice-audio-file') {
-        resetFieldToDefault(item.id);
-        return;
-      }
-      if (item.val !== undefined) {
-        if (item.id.endsWith('-char')) {
-          el.textContent = item.val;
-          return;
-        }
-        resetFieldToDefault(item.id);
-        return;
-      }
-      resetFieldToDefault(item.id);
-    });
-
-    if (feature === 'covervoice') {
-      applyVoiceSourceMode('file');
-    }
-
-    if (clearResult) {
-      getResultArea(feature)?.setAttribute('hidden', '');
-      $(`${feature}-generating`)?.setAttribute('hidden', '');
-      currentResult[feature] = null;
-    }
-
-        scheduleWorkspaceStateSave();
+    return requireWorkspaceStateTools().clearFeatureDraft(feature, { clearResult });
   }
 
   // file input 需要手动清空
