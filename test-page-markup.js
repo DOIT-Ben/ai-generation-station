@@ -20,6 +20,7 @@ function main() {
   const chatExcerptToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'chat-excerpt-tools.js'), 'utf8');
   const chatMessageNodeToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'chat-message-node-tools.js'), 'utf8');
   const chatFailureToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'chat-failure-tools.js'), 'utf8');
+  const chatMessageActionToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'chat-message-action-tools.js'), 'utf8');
   const chatStreamToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'chat-stream-tools.js'), 'utf8');
   const chatSendToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'chat-send-tools.js'), 'utf8');
   const chatRenderRuntimeToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'chat-render-runtime-tools.js'), 'utf8');
@@ -41,6 +42,7 @@ function main() {
   assert.ok(html.includes('/js/chat-excerpt-tools.js'), 'index should load the chat excerpt utility module before app.js');
   assert.ok(html.includes('/js/chat-message-node-tools.js'), 'index should load the chat message node utility module before app.js');
   assert.ok(html.includes('/js/chat-failure-tools.js'), 'index should load the chat failure utility module before app.js');
+  assert.ok(html.includes('/js/chat-message-action-tools.js'), 'index should load the chat message action utility module before app.js');
   assert.ok(html.includes('/js/chat-stream-tools.js'), 'index should load the chat stream utility module before app.js');
   assert.ok(html.includes('/js/chat-send-tools.js'), 'index should load the chat send utility module before app.js');
   assert.ok(html.includes('/js/chat-render-runtime-tools.js'), 'index should load the chat render runtime utility module before app.js');
@@ -59,6 +61,7 @@ function main() {
   assert.ok(chatExcerptToolsJs.includes('AigsChatExcerptTools'), 'chat excerpt utilities should publish a dedicated browser module');
   assert.ok(chatMessageNodeToolsJs.includes('AigsChatMessageNodeTools'), 'chat message node utilities should publish a dedicated browser module');
   assert.ok(chatFailureToolsJs.includes('AigsChatFailureTools'), 'chat failure utilities should publish a dedicated browser module');
+  assert.ok(chatMessageActionToolsJs.includes('AigsChatMessageActionTools'), 'chat message action utilities should publish a dedicated browser module');
   assert.ok(chatStreamToolsJs.includes('AigsChatStreamTools'), 'chat stream utilities should publish a dedicated browser module');
   assert.ok(chatSendToolsJs.includes('AigsChatSendTools'), 'chat send utilities should publish a dedicated browser module');
   assert.ok(chatRenderRuntimeToolsJs.includes('AigsChatRenderRuntimeTools'), 'chat render runtime utilities should publish a dedicated browser module');
@@ -186,6 +189,8 @@ function main() {
   assert.ok(chatStreamToolsJs.includes('conversation_state'), 'workspace should handle streamed conversation state events');
   assert.ok(appJs.includes('rewriteAssistantMessage'), 'workspace should expose assistant rewrite actions');
   assert.ok(appJs.includes('copyAssistantMessage'), 'workspace should expose assistant copy actions');
+  assert.ok(chatMessageActionToolsJs.includes('rewriteAssistantMessage'), 'chat action utilities should own assistant rewrite actions');
+  assert.ok(chatMessageActionToolsJs.includes('switchAssistantVersion'), 'chat action utilities should own assistant version switching');
   assert.ok(appJs.includes('toggleChatExcerpt'), 'workspace should expose chat excerpt toggle actions');
   assert.ok(appJs.includes('renderChatExcerptShelf'), 'workspace should render a chat excerpt shelf');
   assert.ok(appJs.includes('jumpToChatExcerpt'), 'workspace should support jumping back to an excerpted message');
@@ -212,6 +217,7 @@ function main() {
   assert.ok(appJs.includes('requireWorkspaceConversationTools'), 'workspace should wire the dedicated conversation module through app assembly');
   assert.ok(appJs.includes('requireWorkspaceStateTools'), 'workspace should wire the dedicated state module through app assembly');
   assert.ok(appJs.includes('requireWorkspaceInitTools'), 'workspace should wire the dedicated init module through app assembly');
+  assert.ok(appJs.includes('requireChatMessageActionTools'), 'workspace should wire the dedicated chat action module through app assembly');
   assert.ok(workspaceGenerationToolsJs.includes('/api/generate/music'), 'workspace generation utilities should own music generation orchestration');
   assert.ok(workspaceGenerationToolsJs.includes('/api/generate/cover'), 'workspace generation utilities should own cover generation orchestration');
   assert.ok(workspaceGenerationToolsJs.includes('/api/generate/voice'), 'workspace generation utilities should own voice generation orchestration');

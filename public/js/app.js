@@ -114,6 +114,27 @@
         buildTransientMessageId
       })
     : null;
+  const chatMessageActionTools = window.AigsChatMessageActionTools?.createTools
+    ? window.AigsChatMessageActionTools.createTools({
+        getConversationState: () => conversationState,
+        apiFetch,
+        applyConversationPayload,
+        getConversationMessageById,
+        getIsChatGenerating: () => isChatGenerating,
+        setIsChatGenerating: value => {
+          isChatGenerating = value;
+        },
+        setChatMessageUiState,
+        renderConversationMeta,
+        renderArchivedConversationList,
+        performChatSend,
+        describeChatFailure,
+        updateQueueIndicator,
+        writeClipboard: text => navigator.clipboard.writeText(text),
+        showToast,
+        setTimeoutFn: (callback, delay) => window.setTimeout(callback, delay)
+      })
+    : null;
   const chatExcerptTools = window.AigsChatExcerptTools?.createTools
     ? window.AigsChatExcerptTools.createTools({
         getCurrentUser: () => currentUser,
@@ -547,6 +568,13 @@
       throw new Error('AigsChatFailureTools 未加载');
     }
     return chatFailureTools;
+  }
+
+  function requireChatMessageActionTools() {
+    if (!chatMessageActionTools) {
+      throw new Error('AigsChatMessageActionTools 未加载');
+    }
+    return chatMessageActionTools;
   }
 
   function requireChatExcerptTools() {
@@ -3693,165 +3721,31 @@
   }
 
   async function activateAssistantVersion(messageId) {
-    const conversationId = conversationState.activeId;
-    if (!conversationId || !messageId) return;
-
-    const res = await apiFetch(`/api/conversations/${conversationId}/messages/${messageId}/activate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({})
-    });
-    const data = await res.json();
-    if (data.error) {
-      throw new Error(data.error);
-    }
-    applyConversationPayload(data.conversation, data.messages, {
-      chatRestoreOptions: {
-        forceFollow: false,
-        anchorMessageId: messageId
-      }
-    });
+    return requireChatMessageActionTools().activateAssistantVersion(messageId);
   }
 
   function setActionButtonState(button, nextLabel, options = {}) {
-    if (!button) {
-      return () => {};
-    }
-    const defaultLabel = button.dataset.defaultLabel || button.textContent || '';
-    const defaultDisabled = button.dataset.defaultDisabled || (button.disabled ? 'true' : 'false');
-    button.dataset.defaultLabel = defaultLabel;
-    button.dataset.defaultDisabled = defaultDisabled;
-    button.textContent = nextLabel;
-    if (options.tone) {
-      button.dataset.feedbackTone = options.tone;
-    } else {
-      delete button.dataset.feedbackTone;
-    }
-    if (options.pending) {
-      button.dataset.pending = 'true';
-    } else {
-      delete button.dataset.pending;
-    }
-    button.disabled = options.disabled !== undefined ? Boolean(options.disabled) : true;
-    return () => {
-      if (!button) return;
-      button.textContent = button.dataset.defaultLabel || defaultLabel;
-      button.disabled = (button.dataset.defaultDisabled || defaultDisabled) === 'true';
-      delete button.dataset.feedbackTone;
-      delete button.dataset.pending;
-    };
+    return requireChatMessageActionTools().setActionButtonState(button, nextLabel, options);
   }
 
   async function rewriteAssistantMessage(messageId, triggerButton = null) {
-    if (!messageId) return;
-    if (isChatGenerating) {
-      showToast('请等待当前回复完成后再重写。', 'info', 1800);
-      return;
-    }
-
-    const resetButtonState = setActionButtonState(triggerButton, '重写中…', {
-      tone: 'info',
-      pending: true,
-      disabled: true
-    });
-    isChatGenerating = true;
-    setChatMessageUiState(messageId, {
-      label: '正在生成新的回复版本…',
-      tone: 'info',
-      renderNow: true
-    });
-    renderConversationMeta();
-    renderArchivedConversationList();
-
-    try {
-      await performChatSend(undefined, { rewriteMessageId: messageId });
-      resetButtonState();
-      flashButtonFeedback(triggerButton, '已生成新版', 1600, 'success');
-      showToast('已生成新的回复版本', 'success', 1400);
-    } catch (error) {
-      resetButtonState();
-      setChatMessageUiState(messageId, {
-        label: '重写失败，请稍后重试',
-        tone: 'error',
-        expiresInMs: 2200,
-        renderNow: true
-      });
-      const failure = describeChatFailure(error);
-      showToast(failure.toast, failure.tone === 'warning' ? 'info' : 'error', 2200);
-    } finally {
-      isChatGenerating = false;
-      updateQueueIndicator();
-      renderConversationMeta();
-      renderArchivedConversationList();
-    }
+    return requireChatMessageActionTools().rewriteAssistantMessage(messageId, triggerButton);
   }
 
   function flashButtonFeedback(button, nextLabel, timeoutMs = 1400, tone = 'success') {
-    if (!button) return;
-    const reset = setActionButtonState(button, nextLabel, {
-      tone,
-      disabled: true
-    });
-    window.setTimeout(() => {
-      reset();
-    }, timeoutMs);
+    return requireChatMessageActionTools().flashButtonFeedback(button, nextLabel, timeoutMs, tone);
   }
 
   async function copyAssistantMessage(messageId, triggerButton = null) {
-    const message = getConversationMessageById(messageId);
-    if (!message?.content) return;
-    await navigator.clipboard.writeText(message.content);
-    flashButtonFeedback(triggerButton, '已复制');
-    showToast('已复制回复内容', 'success', 1200);
+    return requireChatMessageActionTools().copyAssistantMessage(messageId, triggerButton);
   }
 
   async function copyCodeBlock(button) {
-    const code = button?.closest('.chat-code-block')?.querySelector('code')?.textContent || '';
-    if (!code) return;
-    await navigator.clipboard.writeText(code);
-    flashButtonFeedback(button, '已复制');
+    return requireChatMessageActionTools().copyCodeBlock(button);
   }
 
   async function switchAssistantVersion(messageId, direction, triggerButton = null) {
-    const message = getConversationMessageById(messageId);
-    const versions = Array.isArray(message?.versions) ? message.versions : [];
-    if (!versions.length) return;
-
-    const activeIndex = Math.max(0, versions.findIndex(item => item.active));
-    const nextIndex = direction === 'prev' ? activeIndex - 1 : activeIndex + 1;
-    const nextVersion = versions[nextIndex];
-    if (!nextVersion?.id) return;
-
-    const resetButtonState = setActionButtonState(triggerButton, '切换中…', {
-      tone: 'info',
-      pending: true,
-      disabled: true
-    });
-    setChatMessageUiState(messageId, {
-      label: '正在切换版本…',
-      tone: 'info',
-      renderNow: true
-    });
-
-    try {
-      await activateAssistantVersion(nextVersion.id);
-      resetButtonState();
-      flashButtonFeedback(triggerButton, direction === 'prev' ? '已切上一版' : '已切下一版', 1400, 'success');
-      setChatMessageUiState(nextVersion.id, {
-        label: `已切换到第 ${nextIndex + 1} 版`,
-        tone: 'success',
-        expiresInMs: 2200
-      });
-    } catch (error) {
-      resetButtonState();
-      setChatMessageUiState(messageId, {
-        label: '版本切换失败，请重试',
-        tone: 'error',
-        expiresInMs: 2200,
-        renderNow: true
-      });
-      throw error;
-    }
+    return requireChatMessageActionTools().switchAssistantVersion(messageId, direction, triggerButton);
   }
 
   // ============================================

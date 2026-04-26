@@ -37,6 +37,7 @@ const { createStateStoreAuth } = require('./state-store-auth');
 const { createStateStoreMaintenance } = require('./state-store-maintenance');
 const { createStateStoreQueries } = require('./state-store-queries');
 const { createStateStoreConversations } = require('./state-store-conversations');
+const { createStateStoreUsers } = require('./state-store-users');
 
 const LOGIN_FAILURE_LOCK_THRESHOLD = 5;
 const LOGIN_FAILURE_LOCK_MS = 15 * 60 * 1000;
@@ -1064,6 +1065,18 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         updateConversationMessageMetadataStmt
     });
 
+    const stateStoreUsers = createStateStoreUsers({
+        normalizeUserRecord,
+        runInTransaction,
+        appendAuditLogRecord,
+        findUserByUsernameStmt,
+        findUserByIdStmt,
+        findUserByEmailStmt,
+        listUsersStmt,
+        countActiveAdminsStmt,
+        updateUserAdminStmt
+    });
+
     const stateStoreMutations = createStateStoreMutations({
         db,
         maxHistoryItems,
@@ -1116,23 +1129,23 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
 
     return {
         getUserByUsername(username) {
-            return normalizeUserRecord(findUserByUsernameStmt.get(username));
+            return stateStoreUsers.getUserByUsername(username);
         },
 
         getUserById(userId) {
-            return normalizeUserRecord(findUserByIdStmt.get(userId));
+            return stateStoreUsers.getUserById(userId);
         },
 
         getUserByEmail(email) {
-            return normalizeUserRecord(findUserByEmailStmt.get(email));
+            return stateStoreUsers.getUserByEmail(email);
         },
 
         listUsers() {
-            return listUsersStmt.all().map(row => normalizeUserRecord(row));
+            return stateStoreUsers.listUsers();
         },
 
         countActiveAdmins() {
-            return Number(countActiveAdminsStmt.get()?.count || 0);
+            return stateStoreUsers.countActiveAdmins();
         },
 
         createUser(user = {}, options = {}) {
@@ -1144,43 +1157,7 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         },
 
         updateUser(userId, patch = {}, options = {}) {
-            const current = this.getUserById(userId);
-            if (!current) return null;
-
-            const next = {
-                email: Object.prototype.hasOwnProperty.call(patch, 'email') ? (patch.email || null) : current.email,
-                status: patch.status || current.status,
-                role: patch.role || current.role,
-                planCode: patch.planCode || current.planCode
-            };
-
-            if (!['active', 'disabled'].includes(next.status)) {
-                throw new Error('invalid status');
-            }
-            if (!['admin', 'user'].includes(next.role)) {
-                throw new Error('invalid role');
-            }
-
-            return runInTransaction(() => {
-                updateUserAdminStmt.run(
-                    next.email,
-                    next.status,
-                    next.role,
-                    next.planCode,
-                    Date.now(),
-                    userId
-                );
-                const updatedUser = this.getUserById(userId);
-                (options.auditLogs || []).filter(Boolean).forEach(event => {
-                    appendAuditLogRecord({
-                        ...event,
-                        targetUserId: event.targetUserId || updatedUser?.id || current.id,
-                        targetUsername: event.targetUsername || updatedUser?.username || current.username,
-                        targetRole: event.targetRole || updatedUser?.role || next.role
-                    });
-                });
-                return updatedUser;
-            });
+            return stateStoreUsers.updateUser(userId, patch, options);
         },
 
         authenticateUser(username, password) {
@@ -1364,11 +1341,7 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         },
 
         appendAuditLog(event = {}) {
-            const action = String(event.action || '').trim();
-            if (!action) {
-                throw new Error('audit action is required');
-            }
-            return appendAuditLogRecord({ ...event, action });
+            return stateStoreUsers.appendAuditLog(event);
         },
 
         listAuditLogs(limit = 100) {
