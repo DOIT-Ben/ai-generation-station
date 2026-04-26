@@ -735,6 +735,92 @@ async function testPublicRegistrationRateLimitAndAudit() {
   });
 }
 
+async function testAuditActorIpBoundaries() {
+  await withServer(async server => {
+    const uniqueSuffix = `${Date.now()}${Math.random().toString(16).slice(2, 8)}`;
+    const forwardedUsername = `aif_${uniqueSuffix}`;
+    const forwardedHeaders = {
+      'X-Forwarded-For': 'garbage-forwarded, 198.51.100.20'
+    };
+
+    const forwardedRegistration = await registerWithCsrf(server, {
+      username: forwardedUsername,
+      email: `${forwardedUsername}@example.com`,
+      password: 'AuditIpPass123!',
+      displayName: 'Audit Forwarded'
+    }, forwardedHeaders);
+    assert(forwardedRegistration.response.status === 200, `Expected forwarded-for registration to succeed, got ${forwardedRegistration.response.status}`);
+
+    const adminLogin = await loginWithCsrf(server, {
+      username: 'studio',
+      password: 'AIGS2026!'
+    });
+    assert(adminLogin.response.status === 200, `Expected admin login before forwarded-for audit lookup to succeed, got ${adminLogin.response.status}`);
+
+    const forwardedAuditLogs = await request(
+      server,
+      `/api/admin/audit-logs?action=user_public_register&targetUsername=${encodeURIComponent(forwardedUsername)}`,
+      'GET',
+      null,
+      { Cookie: adminLogin.sessionCookieHeader }
+    );
+    assert(forwardedAuditLogs.status === 200, `Expected forwarded-for audit-log query to succeed, got ${forwardedAuditLogs.status}`);
+    const forwardedEntry = Array.isArray(forwardedAuditLogs.data?.items)
+      ? forwardedAuditLogs.data.items.find(item => item.action === 'user_public_register' && item.targetUsername === forwardedUsername)
+      : null;
+    assert(Boolean(forwardedEntry), 'Expected forwarded-for audit entry to exist');
+    assert(forwardedEntry.actorIp === '198.51.100.20', `Expected forwarded-for audit actorIp to resolve to 198.51.100.20, got ${forwardedEntry.actorIp}`);
+  }, {
+    env: {
+      PORT: '18816',
+      TRUST_PROXY: 'true',
+      PUBLIC_REGISTRATION_ENABLED: 'true'
+    }
+  });
+
+  await withServer(async server => {
+    const uniqueSuffix = `${Date.now()}${Math.random().toString(16).slice(2, 8)}`;
+    const realIpUsername = `air_${uniqueSuffix}`;
+    const invalidRealIpHeaders = {
+      'X-Real-IP': 'garbage-real-ip'
+    };
+
+    const realIpRegistration = await registerWithCsrf(server, {
+      username: realIpUsername,
+      email: `${realIpUsername}@example.com`,
+      password: 'AuditIpPass456!',
+      displayName: 'Audit RealIp'
+    }, invalidRealIpHeaders);
+    assert(realIpRegistration.response.status === 200, `Expected invalid real-ip registration to succeed, got ${realIpRegistration.response.status}`);
+
+    const adminLogin = await loginWithCsrf(server, {
+      username: 'studio',
+      password: 'AIGS2026!'
+    });
+    assert(adminLogin.response.status === 200, `Expected admin login before invalid real-ip audit lookup to succeed, got ${adminLogin.response.status}`);
+
+    const realIpAuditLogs = await request(
+      server,
+      `/api/admin/audit-logs?action=user_public_register&targetUsername=${encodeURIComponent(realIpUsername)}`,
+      'GET',
+      null,
+      { Cookie: adminLogin.sessionCookieHeader }
+    );
+    assert(realIpAuditLogs.status === 200, `Expected invalid real-ip audit-log query to succeed, got ${realIpAuditLogs.status}`);
+    const realIpEntry = Array.isArray(realIpAuditLogs.data?.items)
+      ? realIpAuditLogs.data.items.find(item => item.action === 'user_public_register' && item.targetUsername === realIpUsername)
+      : null;
+    assert(Boolean(realIpEntry), 'Expected invalid real-ip audit entry to exist');
+    assert(realIpEntry.actorIp === 'unknown', `Expected invalid real-ip audit actorIp to fall back to unknown in the mock transport, got ${realIpEntry.actorIp}`);
+  }, {
+    env: {
+      PORT: '18817',
+      TRUST_PROXY: 'true',
+      PUBLIC_REGISTRATION_ENABLED: 'true'
+    }
+  });
+}
+
 async function testTokenLifecycleBoundaries() {
   await withServer(async server => {
     const uniqueSuffix = `${Date.now()}${Math.random().toString(16).slice(2, 8)}`;
@@ -945,6 +1031,7 @@ async function main() {
   await testRateLimitsAndAuditTrails();
   await testProxyHeaderTrustBoundaries();
   await testPublicRegistrationRateLimitAndAudit();
+  await testAuditActorIpBoundaries();
   await testTokenLifecycleBoundaries();
   console.log('Security gateway tests passed');
 }
