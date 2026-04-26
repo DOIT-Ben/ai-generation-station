@@ -18,6 +18,7 @@ function main() {
   const chatModelUtilsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'chat-model-utils.js'), 'utf8');
   const chatMarkdownJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'chat-markdown.js'), 'utf8');
   const chatExcerptToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'chat-excerpt-tools.js'), 'utf8');
+  const chatMessageMetaToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'chat-message-meta-tools.js'), 'utf8');
   const chatMessageNodeToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'chat-message-node-tools.js'), 'utf8');
   const chatFailureToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'chat-failure-tools.js'), 'utf8');
   const chatMessageActionToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'chat-message-action-tools.js'), 'utf8');
@@ -40,6 +41,7 @@ function main() {
   assert.ok(html.includes('/js/chat-model-utils.js'), 'index should load the chat model utility module before app.js');
   assert.ok(html.includes('/js/chat-markdown.js'), 'index should load the chat markdown utility module before app.js');
   assert.ok(html.includes('/js/chat-excerpt-tools.js'), 'index should load the chat excerpt utility module before app.js');
+  assert.ok(html.includes('/js/chat-message-meta-tools.js'), 'index should load the chat message meta utility module before app.js');
   assert.ok(html.includes('/js/chat-message-node-tools.js'), 'index should load the chat message node utility module before app.js');
   assert.ok(html.includes('/js/chat-failure-tools.js'), 'index should load the chat failure utility module before app.js');
   assert.ok(html.includes('/js/chat-message-action-tools.js'), 'index should load the chat message action utility module before app.js');
@@ -59,6 +61,7 @@ function main() {
   assert.ok(chatModelUtilsJs.includes('AigsChatModelUtils'), 'chat model utilities should publish a dedicated browser module');
   assert.ok(chatMarkdownJs.includes('AigsChatMarkdown'), 'chat markdown utilities should publish a dedicated browser module');
   assert.ok(chatExcerptToolsJs.includes('AigsChatExcerptTools'), 'chat excerpt utilities should publish a dedicated browser module');
+  assert.ok(chatMessageMetaToolsJs.includes('AigsChatMessageMetaTools'), 'chat message meta utilities should publish a dedicated browser module');
   assert.ok(chatMessageNodeToolsJs.includes('AigsChatMessageNodeTools'), 'chat message node utilities should publish a dedicated browser module');
   assert.ok(chatFailureToolsJs.includes('AigsChatFailureTools'), 'chat failure utilities should publish a dedicated browser module');
   assert.ok(chatMessageActionToolsJs.includes('AigsChatMessageActionTools'), 'chat message action utilities should publish a dedicated browser module');
@@ -217,6 +220,7 @@ function main() {
   assert.ok(appJs.includes('requireWorkspaceConversationTools'), 'workspace should wire the dedicated conversation module through app assembly');
   assert.ok(appJs.includes('requireWorkspaceStateTools'), 'workspace should wire the dedicated state module through app assembly');
   assert.ok(appJs.includes('requireWorkspaceInitTools'), 'workspace should wire the dedicated init module through app assembly');
+  assert.ok(appJs.includes('requireChatMessageMetaTools'), 'workspace should wire the dedicated chat message meta module through app assembly');
   assert.ok(appJs.includes('requireChatMessageActionTools'), 'workspace should wire the dedicated chat action module through app assembly');
   assert.ok(workspaceGenerationToolsJs.includes('/api/generate/music'), 'workspace generation utilities should own music generation orchestration');
   assert.ok(workspaceGenerationToolsJs.includes('/api/generate/cover'), 'workspace generation utilities should own cover generation orchestration');

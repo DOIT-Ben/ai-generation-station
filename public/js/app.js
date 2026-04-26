@@ -91,6 +91,13 @@
         renderArchivedConversationList: () => renderArchivedConversationList()
       })
     : null;
+  const chatMessageMetaTools = window.AigsChatMessageMetaTools?.createTools
+    ? window.AigsChatMessageMetaTools.createTools({
+        getChatMessageUiState,
+        formatChatRelativeTime,
+        escapeHtml
+      })
+    : null;
   const chatMessageNodeTools = window.AigsChatMessageNodeTools?.createTools
     ? window.AigsChatMessageNodeTools.createTools({
         getElement: $,
@@ -554,6 +561,13 @@
       throw new Error('AigsChatRenderRuntimeTools 未加载');
     }
     return chatRenderRuntimeTools;
+  }
+
+  function requireChatMessageMetaTools() {
+    if (!chatMessageMetaTools) {
+      throw new Error('AigsChatMessageMetaTools 未加载');
+    }
+    return chatMessageMetaTools;
   }
 
   function requireChatMessageNodeTools() {
@@ -3468,53 +3482,11 @@
   }
 
   function getAssistantMessageStatus(message) {
-    if (!message?.id) return null;
-
-    const uiState = getChatMessageUiState(message.id);
-    if (uiState?.label) {
-      return {
-        label: uiState.label,
-        tone: uiState.tone || 'info'
-      };
-    }
-
-    if (message.transient && message.statusText) {
-      return {
-        label: message.statusText,
-        tone: message.statusTone || 'warning'
-      };
-    }
-
-    const versions = Array.isArray(message.versions) ? message.versions : [];
-    const versionCount = Math.max(Number(message.versionCount || 0), versions.length || 0);
-    if (versionCount > 1) {
-      const activeVersionIndex = Math.max(1, Number(message.activeVersionIndex || versions.findIndex(item => item.active) + 1 || 1));
-      return {
-        label: `当前显示第 ${activeVersionIndex} 版，共 ${versionCount} 版`,
-        tone: 'neutral'
-      };
-    }
-
-    return null;
+    return requireChatMessageMetaTools().getAssistantMessageStatus(message);
   }
 
   function buildChatMessageMeta(message, role, settings = {}) {
-    const metaItems = [];
-    const isUser = role === 'user';
-    const roleLabel = isUser ? '你' : 'AI 助手';
-    metaItems.push(`<span class="message-meta-pill tone-role">${escapeHtml(roleLabel)}</span>`);
-
-    if (message?.transient) {
-      metaItems.push('<span class="message-meta-pill tone-transient">临时结果</span>');
-    }
-
-    const timeLabel = formatChatRelativeTime(message?.createdAt || message?.updatedAt || message?.timestamp || 0);
-    if (timeLabel) {
-      metaItems.push(`<span class="message-meta-time">${escapeHtml(timeLabel)}</span>`);
-    }
-
-    if (!metaItems.length) return '';
-    return `<div class="message-meta-row">${metaItems.join('')}</div>`;
+    return requireChatMessageMetaTools().buildChatMessageMeta(message, role, settings);
   }
 
   function annotateChatMessageHeadings(msgDiv, messageId = '') {

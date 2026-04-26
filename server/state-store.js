@@ -37,6 +37,7 @@ const { createStateStoreAuth } = require('./state-store-auth');
 const { createStateStoreMaintenance } = require('./state-store-maintenance');
 const { createStateStoreQueries } = require('./state-store-queries');
 const { createStateStoreConversations } = require('./state-store-conversations');
+const { createStateStoreSnapshots } = require('./state-store-snapshots');
 const { createStateStoreUsers } = require('./state-store-users');
 
 const LOGIN_FAILURE_LOCK_THRESHOLD = 5;
@@ -946,41 +947,17 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
     }
     markInterruptedTasksStmt.run(Date.now());
 
-    function cleanupExpiredSessions() {
-        deleteExpiredSessionsStmt.run(Date.now());
-    }
-
-    function cleanupAuthTokens(now = Date.now()) {
-        deleteExpiredAuthTokensStmt.run(now);
-    }
-
-    function cleanupExpiredRateLimitEvents(now = Date.now()) {
-        cleanupExpiredRateLimitEventsStmt.run(now);
-    }
-
-    function getConversationTimelineSnapshot(userId, conversationId, limit = 400) {
-        const conversation = normalizeConversation(selectConversationByIdStmt.get(conversationId, userId));
-        if (!conversation) return null;
-        return buildConversationTimeline(
-            listConversationMessagesStmt.all(conversationId, Number(limit || 400))
-                .map(row => normalizeConversationMessage(row))
-                .filter(Boolean)
-        );
-    }
-
-    function getConversationMessageSnapshot(userId, conversationId, messageId) {
-        const conversation = normalizeConversation(selectConversationByIdStmt.get(conversationId, userId));
-        if (!conversation || !messageId) return null;
-
-        const row = selectConversationMessageByIdStmt.get(messageId, conversationId);
-        if (!row) return null;
-
-        const message = normalizeConversationMessage(row);
-        if (!message) return null;
-
-        const timeline = getConversationTimelineSnapshot(userId, conversationId, 400) || [];
-        return timeline.find(item => item.id === message.id) || message;
-    }
+    const stateStoreSnapshots = createStateStoreSnapshots({
+        deleteExpiredSessionsStmt,
+        deleteExpiredAuthTokensStmt,
+        cleanupExpiredRateLimitEventsStmt,
+        normalizeConversation,
+        normalizeConversationMessage,
+        buildConversationTimeline,
+        selectConversationByIdStmt,
+        listConversationMessagesStmt,
+        selectConversationMessageByIdStmt
+    });
 
     const stateStoreAuth = createStateStoreAuth({
         sessionTtlMs,
@@ -996,8 +973,8 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         normalizeCredentialRecord,
         normalizeAuthTokenRecord,
         buildAuthTokenSummary,
-        cleanupExpiredSessions,
-        cleanupAuthTokens,
+        cleanupExpiredSessions: stateStoreSnapshots.cleanupExpiredSessions,
+        cleanupAuthTokens: stateStoreSnapshots.cleanupAuthTokens,
         runInTransaction,
         appendAuditLogRecord,
         getUserByUsername: username => normalizeUserRecord(findUserByUsernameStmt.get(username)),
@@ -1024,7 +1001,7 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
 
     const stateStoreMaintenance = createStateStoreMaintenance({
         runInTransaction,
-        cleanupExpiredRateLimitEvents,
+        cleanupExpiredRateLimitEvents: stateStoreSnapshots.cleanupExpiredRateLimitEvents,
         countUsersStmt,
         countSessionsStmt,
         countActiveSessionsStmt,
@@ -1090,10 +1067,10 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         normalizeTemplateRow,
         getConversation: (userId, conversationId) => normalizeConversation(selectConversationByIdStmt.get(conversationId, userId)),
         getArchivedConversation: (userId, conversationId) => normalizeConversation(selectArchivedConversationByIdStmt.get(conversationId, userId)),
-        getConversationMessage: getConversationMessageSnapshot,
-        getConversationTimeline: getConversationTimelineSnapshot,
+        getConversationMessage: stateStoreSnapshots.getConversationMessageSnapshot,
+        getConversationTimeline: stateStoreSnapshots.getConversationTimelineSnapshot,
         getConversationMessages: (userId, conversationId, limit = 200) => {
-            const timeline = getConversationTimelineSnapshot(userId, conversationId, limit);
+            const timeline = stateStoreSnapshots.getConversationTimelineSnapshot(userId, conversationId, limit);
             if (!timeline) return null;
             return buildDisplayedConversationMessages(timeline);
         },
