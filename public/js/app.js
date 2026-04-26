@@ -364,6 +364,16 @@
         loadQuota: () => loadQuota()
       })
     : null;
+  const workspaceUiTools = window.AigsWorkspaceUiTools?.createTools
+    ? window.AigsWorkspaceUiTools.createTools({
+        getElement: $,
+        getDocument: () => document,
+        syncInputDropdown,
+        updateDropdownScrollState,
+        syncCustomDropdownValue,
+        showToast
+      })
+    : null;
   const workspaceInitTools = window.AigsWorkspaceInitTools?.createTools
     ? window.AigsWorkspaceInitTools.createTools({
         getElement: $,
@@ -2083,6 +2093,13 @@
     return workspaceShellTools;
   }
 
+  function requireWorkspaceUiTools() {
+    if (!workspaceUiTools) {
+      throw new Error('AigsWorkspaceUiTools 未加载');
+    }
+    return workspaceUiTools;
+  }
+
   function requireWorkspaceInitTools() {
     if (!workspaceInitTools) {
       throw new Error('AigsWorkspaceInitTools 未加载');
@@ -3615,72 +3632,7 @@
   //  Custom Dropdown
   // ============================================
   function initCustomDropdown(dropdownId, inputId) {
-    const dropdown = $(dropdownId);
-    if (!dropdown) return;
-
-    const trigger = dropdown.querySelector('.dropdown-trigger');
-    const menu = dropdown.querySelector('.dropdown-menu');
-    const hiddenInput = $(inputId);
-
-    if (!trigger || !menu) return;
-
-    const setDropdownOpen = (isOpen) => {
-      dropdown.classList.toggle('open', isOpen);
-      trigger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-      if (isOpen) {
-        menu.removeAttribute('hidden');
-        updateDropdownScrollState(menu);
-      } else {
-        menu.setAttribute('hidden', '');
-      }
-    };
-
-    // Toggle dropdown
-    trigger.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const isOpen = dropdown.classList.contains('open');
-
-      // Close all other dropdowns
-      document.querySelectorAll('.custom-dropdown.open').forEach(d => {
-        if (d.id !== dropdownId) {
-          d.classList.remove('open');
-          d.querySelector('.dropdown-trigger')?.setAttribute('aria-expanded', 'false');
-          d.querySelector('.dropdown-menu')?.setAttribute('hidden', '');
-        }
-      });
-
-      setDropdownOpen(!isOpen);
-    });
-
-    // Option selection
-    menu.addEventListener('click', (e) => {
-      const option = e.target.closest('.dropdown-option');
-      if (!option || !menu.contains(option)) return;
-      e.stopPropagation();
-      syncCustomDropdownValue(dropdown, hiddenInput, option);
-      setDropdownOpen(false);
-    });
-
-    menu.addEventListener('scroll', () => {
-      updateDropdownScrollState(menu);
-    }, { passive: true });
-
-    // Close on outside click
-    document.addEventListener('click', () => {
-      if (dropdown.classList.contains('open')) {
-        setDropdownOpen(false);
-      }
-    });
-
-    // Close on escape key
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && dropdown.classList.contains('open')) {
-        setDropdownOpen(false);
-      }
-    });
-
-    syncInputDropdown(inputId);
-    updateDropdownScrollState(menu);
+    return requireWorkspaceUiTools().initCustomDropdown(dropdownId, inputId);
   }
 
   // ============================================
@@ -3763,14 +3715,11 @@
   //  Download
   // ============================================
   function downloadFile(url, filename) {
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename || '';
-    a.click();
+    return requireWorkspaceUiTools().downloadFile(url, filename);
   }
 
   function copyToClipboard(text) {
-    navigator.clipboard?.writeText(text).then(() => showToast('已复制到剪贴板', 'success'));
+    return requireWorkspaceUiTools().copyToClipboard(text);
   }
 
   // ============================================
@@ -3819,33 +3768,11 @@
 
   // Form validation helpers
   function showInputError(inputId, message) {
-    const input = $(inputId);
-    if (!input) return;
-    input.classList.add('input-error');
-    input.setAttribute('aria-invalid', 'true');
-
-    // Remove existing error message
-    const existingError = input.parentElement.querySelector('.input-error-message');
-    if (existingError) existingError.remove();
-
-    // Add error message
-    const errorEl = document.createElement('div');
-    errorEl.className = 'input-error-message';
-    errorEl.textContent = message;
-    errorEl.setAttribute('role', 'alert');
-    input.parentElement.appendChild(errorEl);
-
-    // Focus the input
-    input.focus();
+    return requireWorkspaceUiTools().showInputError(inputId, message);
   }
 
   function clearInputError(inputId) {
-    const input = $(inputId);
-    if (!input) return;
-    input.classList.remove('input-error');
-    input.removeAttribute('aria-invalid');
-    const errorEl = input.parentElement.querySelector('.input-error-message');
-    if (errorEl) errorEl.remove();
+    return requireWorkspaceUiTools().clearInputError(inputId);
   }
 
   function switchTab(tab) {

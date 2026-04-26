@@ -33,6 +33,7 @@ function main() {
   const workspaceConversationToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'workspace-conversation-tools.js'), 'utf8');
   const workspaceStateToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'workspace-state-tools.js'), 'utf8');
   const workspaceShellToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'workspace-shell-tools.js'), 'utf8');
+  const workspaceUiToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'workspace-ui-tools.js'), 'utf8');
   const workspaceInitToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'workspace-init-tools.js'), 'utf8');
   const conversationWorkflowToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'conversation-workflow-tools.js'), 'utf8');
   const conversationListToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'conversation-list-tools.js'), 'utf8');
@@ -58,6 +59,7 @@ function main() {
   assert.ok(html.includes('/js/workspace-conversation-tools.js'), 'index should load the workspace conversation utility module before app.js');
   assert.ok(html.includes('/js/workspace-state-tools.js'), 'index should load the workspace state utility module before app.js');
   assert.ok(html.includes('/js/workspace-shell-tools.js'), 'index should load the workspace shell utility module before app.js');
+  assert.ok(html.includes('/js/workspace-ui-tools.js'), 'index should load the workspace ui utility module before app.js');
   assert.ok(html.includes('/js/workspace-init-tools.js'), 'index should load the workspace init utility module before app.js');
   assert.ok(html.includes('/js/conversation-workflow-tools.js'), 'index should load the conversation workflow utility module before app.js');
   assert.ok(html.includes('/js/conversation-list-tools.js'), 'index should load the conversation list utility module before app.js');
@@ -80,6 +82,7 @@ function main() {
   assert.ok(workspaceConversationToolsJs.includes('AigsWorkspaceConversationTools'), 'workspace conversation utilities should publish a dedicated browser module');
   assert.ok(workspaceStateToolsJs.includes('AigsWorkspaceStateTools'), 'workspace state utilities should publish a dedicated browser module');
   assert.ok(workspaceShellToolsJs.includes('AigsWorkspaceShellTools'), 'workspace shell utilities should publish a dedicated browser module');
+  assert.ok(workspaceUiToolsJs.includes('AigsWorkspaceUiTools'), 'workspace ui utilities should publish a dedicated browser module');
   assert.ok(workspaceInitToolsJs.includes('AigsWorkspaceInitTools'), 'workspace init utilities should publish a dedicated browser module');
   assert.ok(conversationWorkflowToolsJs.includes('AigsConversationWorkflowTools'), 'conversation workflow utilities should publish a dedicated browser module');
   assert.ok(conversationListToolsJs.includes('AigsConversationListTools'), 'conversation list utilities should publish a dedicated browser module');
@@ -191,7 +194,7 @@ function main() {
   assert.ok(appJs.includes('formatChatMessageHtml'), 'workspace should format chat replies with structured rich text rendering');
   assert.ok(appJs.includes('updateDropdownScrollState'), 'workspace should keep the chat model dropdown scroll hint state in sync');
   assert.ok(appJs.includes('dropdown-scroll-hint'), 'workspace should render a scroll hint for long chat model lists');
-  assert.ok(appJs.includes("menu.addEventListener('click'"), 'workspace should delegate chat model option clicks after async model loading');
+  assert.ok(workspaceUiToolsJs.includes("menu.addEventListener('click'"), 'workspace ui utilities should delegate chat model option clicks after async model loading');
   assert.ok(appJs.includes('initializeChatModelDropdownLoadingState'), 'workspace should initialize chat model dropdown loading state before async models return');
   assert.ok(appJs.includes('正在加载模型列表...'), 'workspace should expose a visible loading placeholder for chat model dropdown initialization');
   assert.ok(workspaceInitToolsJs.includes('loadChatModelOptions'), 'workspace init utilities should start loading chat models without blocking the rest of chat initialization');
@@ -226,6 +229,7 @@ function main() {
   assert.ok(appJs.includes('requireWorkspaceConversationTools'), 'workspace should wire the dedicated conversation module through app assembly');
   assert.ok(appJs.includes('requireWorkspaceStateTools'), 'workspace should wire the dedicated state module through app assembly');
   assert.ok(appJs.includes('requireWorkspaceShellTools'), 'workspace should wire the dedicated shell module through app assembly');
+  assert.ok(appJs.includes('requireWorkspaceUiTools'), 'workspace should wire the dedicated ui module through app assembly');
   assert.ok(appJs.includes('requireWorkspaceInitTools'), 'workspace should wire the dedicated init module through app assembly');
   assert.ok(appJs.includes('requireChatEntryTools'), 'workspace should wire the dedicated chat entry module through app assembly');
   assert.ok(appJs.includes('requireChatMessageMetaTools'), 'workspace should wire the dedicated chat message meta module through app assembly');
