@@ -33,6 +33,7 @@ const {
     buildSystemTemplateSeed
 } = require('./state-store-helpers');
 const { createStateStoreMutations } = require('./state-store-mutations');
+const { createStateStoreAuth } = require('./state-store-auth');
 
 const LOGIN_FAILURE_LOCK_THRESHOLD = 5;
 const LOGIN_FAILURE_LOCK_MS = 15 * 60 * 1000;
@@ -1014,6 +1015,46 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         return timeline.find(item => item.id === message.id) || message;
     }
 
+    const stateStoreAuth = createStateStoreAuth({
+        sessionTtlMs,
+        LOGIN_FAILURE_LOCK_THRESHOLD,
+        LOGIN_FAILURE_LOCK_MS,
+        hashPassword,
+        hashPasswordAsync,
+        verifyPassword,
+        verifyPasswordAsync,
+        hashOpaqueToken,
+        createOpaqueToken,
+        normalizeUserRecord,
+        normalizeCredentialRecord,
+        normalizeAuthTokenRecord,
+        buildAuthTokenSummary,
+        cleanupExpiredSessions,
+        cleanupAuthTokens,
+        runInTransaction,
+        appendAuditLogRecord,
+        getUserByUsername: username => normalizeUserRecord(findUserByUsernameStmt.get(username)),
+        getUserById: userId => normalizeUserRecord(findUserByIdStmt.get(userId)),
+        insertUserStmt,
+        upsertCredentialStmt,
+        findUserByUsernameStmt,
+        getCredentialStmt,
+        incrementFailedLoginStmt,
+        resetFailedLoginStmt,
+        updateUserLoginStmt,
+        insertSessionStmt,
+        getSessionStmt,
+        deleteSessionStmt,
+        deleteUserSessionsStmt,
+        deleteUserSessionsExceptStmt,
+        insertAuthTokenStmt,
+        findAuthTokenByHashStmt,
+        findLatestAuthTokenByUserPurposeStmt,
+        findActiveAuthTokenByUserPurposeStmt,
+        markAuthTokenUsedStmt,
+        markUserPurposeTokensUsedStmt
+    });
+
     const stateStoreMutations = createStateStoreMutations({
         db,
         maxHistoryItems,
@@ -1104,82 +1145,11 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         },
 
         createUser(user = {}, options = {}) {
-            const username = String(user.username || '').trim();
-            const password = String(user.password || '').trim();
-            if (!username || !password) {
-                throw new Error('username and password are required');
-            }
-            const existing = this.getUserByUsername(username);
-            if (existing) return existing;
-
-            const now = Date.now();
-            const userId = crypto.randomUUID();
-            return runInTransaction(() => {
-                insertUserStmt.run(
-                    userId,
-                    username,
-                    user.email || null,
-                    user.displayName || username,
-                    user.status || 'active',
-                    user.role || 'user',
-                    user.planCode || 'free',
-                    user.timezone || 'Asia/Shanghai',
-                    user.locale || 'zh-CN',
-                    now,
-                    now
-                );
-                upsertCredentialStmt.run(userId, hashPassword(password), now, user.mustResetPassword ? 1 : 0);
-                const createdUser = this.getUserById(userId);
-                if (options.auditLog && createdUser) {
-                    appendAuditLogRecord({
-                        ...options.auditLog,
-                        targetUserId: options.auditLog.targetUserId || createdUser.id,
-                        targetUsername: options.auditLog.targetUsername || createdUser.username,
-                        targetRole: options.auditLog.targetRole || createdUser.role
-                    });
-                }
-                return createdUser;
-            });
+            return stateStoreAuth.createUser(user, options);
         },
 
         async createUserAsync(user = {}, options = {}) {
-            const username = String(user.username || '').trim();
-            const password = String(user.password || '').trim();
-            if (!username || !password) {
-                throw new Error('username and password are required');
-            }
-            const existing = this.getUserByUsername(username);
-            if (existing) return existing;
-
-            const passwordHash = await hashPasswordAsync(password);
-            const now = Date.now();
-            const userId = crypto.randomUUID();
-            return runInTransaction(() => {
-                insertUserStmt.run(
-                    userId,
-                    username,
-                    user.email || null,
-                    user.displayName || username,
-                    user.status || 'active',
-                    user.role || 'user',
-                    user.planCode || 'free',
-                    user.timezone || 'Asia/Shanghai',
-                    user.locale || 'zh-CN',
-                    now,
-                    now
-                );
-                upsertCredentialStmt.run(userId, passwordHash, now, user.mustResetPassword ? 1 : 0);
-                const createdUser = this.getUserById(userId);
-                if (options.auditLog && createdUser) {
-                    appendAuditLogRecord({
-                        ...options.auditLog,
-                        targetUserId: options.auditLog.targetUserId || createdUser.id,
-                        targetUsername: options.auditLog.targetUsername || createdUser.username,
-                        targetRole: options.auditLog.targetRole || createdUser.role
-                    });
-                }
-                return createdUser;
-            });
+            return stateStoreAuth.createUserAsync(user, options);
         },
 
         updateUser(userId, patch = {}, options = {}) {
@@ -1223,228 +1193,47 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         },
 
         authenticateUser(username, password) {
-            const user = normalizeUserRecord(findUserByUsernameStmt.get(username));
-            if (!user) return null;
-            if (user.status !== 'active') {
-                return {
-                    errorCode: 'user_disabled',
-                    error: '账号已被禁用，请联系管理员',
-                    status: 403
-                };
-            }
-            const credential = normalizeCredentialRecord(getCredentialStmt.get(user.id));
-            const now = Date.now();
-            if (!credential) return null;
-            if (credential.lockedUntil && credential.lockedUntil > now) {
-                return {
-                    errorCode: 'login_locked',
-                    error: '账号已被临时锁定，请 15 分钟后重试',
-                    status: 423
-                };
-            }
-            if (!verifyPassword(password, credential.passwordHash)) {
-                const failedCount = Number(credential.failedLoginCount || 0) + 1;
-                const lockedUntil = failedCount >= LOGIN_FAILURE_LOCK_THRESHOLD ? now + LOGIN_FAILURE_LOCK_MS : null;
-                incrementFailedLoginStmt.run(LOGIN_FAILURE_LOCK_THRESHOLD, lockedUntil, user.id);
-                if (lockedUntil) {
-                    return {
-                        errorCode: 'login_locked',
-                        error: '账号已被临时锁定，请 15 分钟后重试',
-                        status: 423
-                    };
-                }
-                return null;
-            }
-            resetFailedLoginStmt.run(user.id);
-            updateUserLoginStmt.run(now, now, user.id);
-            user.lastLoginAt = now;
-            user.mustResetPassword = Boolean(credential.mustResetPassword);
-            return user;
+            return stateStoreAuth.authenticateUser(username, password);
         },
 
         async authenticateUserAsync(username, password) {
-            const user = normalizeUserRecord(findUserByUsernameStmt.get(username));
-            if (!user) return null;
-            if (user.status !== 'active') {
-                return {
-                    errorCode: 'user_disabled',
-                    error: '账号已被禁用，请联系管理员',
-                    status: 403
-                };
-            }
-            const credential = normalizeCredentialRecord(getCredentialStmt.get(user.id));
-            const now = Date.now();
-            if (!credential) return null;
-            if (credential.lockedUntil && credential.lockedUntil > now) {
-                return {
-                    errorCode: 'login_locked',
-                    error: '账号已被临时锁定，请 15 分钟后重试',
-                    status: 423
-                };
-            }
-            const verified = await verifyPasswordAsync(password, credential.passwordHash);
-            if (!verified) {
-                incrementFailedLoginStmt.run(LOGIN_FAILURE_LOCK_THRESHOLD, now + LOGIN_FAILURE_LOCK_MS, user.id);
-                const updatedCredential = normalizeCredentialRecord(getCredentialStmt.get(user.id));
-                if (updatedCredential?.lockedUntil && updatedCredential.lockedUntil > now) {
-                    return {
-                        errorCode: 'login_locked',
-                        error: '账号已被临时锁定，请 15 分钟后重试',
-                        status: 423
-                    };
-                }
-                return null;
-            }
-            resetFailedLoginStmt.run(user.id);
-            updateUserLoginStmt.run(now, now, user.id);
-            user.lastLoginAt = now;
-            user.mustResetPassword = Boolean(credential.mustResetPassword);
-            return user;
+            return stateStoreAuth.authenticateUserAsync(username, password);
         },
 
         getSession(token) {
-            if (!token) return null;
-            cleanupExpiredSessions();
-            const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-            return getSessionStmt.get(tokenHash) || null;
+            return stateStoreAuth.getSession(token);
         },
 
         createSession(user) {
-            cleanupExpiredSessions();
-            const token = require('crypto').randomBytes(24).toString('hex');
-            const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-            const createdAt = Date.now();
-            const expiresAt = createdAt + sessionTtlMs;
-            insertSessionStmt.run(crypto.randomUUID(), user.id, tokenHash, createdAt, createdAt, expiresAt);
-            return { token, userId: user.id, username: user.username, createdAt, expiresAt };
+            return stateStoreAuth.createSession(user);
         },
 
         clearSession(token) {
-            if (!token) return;
-            const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-            deleteSessionStmt.run(tokenHash);
+            return stateStoreAuth.clearSession(token);
         },
 
         issueUserToken(userId, purpose, options = {}) {
-            const user = this.getUserById(userId);
-            if (!user) return null;
-
-            const ttlMs = Math.max(60 * 1000, Number(options.ttlMs || 60 * 60 * 1000));
-            return runInTransaction(() => {
-                const now = Date.now();
-                cleanupAuthTokens(now);
-                markUserPurposeTokensUsedStmt.run(now, userId, purpose);
-                const token = createOpaqueToken();
-                const expiresAt = now + ttlMs;
-                insertAuthTokenStmt.run(
-                    crypto.randomUUID(),
-                    userId,
-                    purpose,
-                    hashOpaqueToken(token),
-                    options.requestedIdentity || user.username,
-                    options.createdByUserId || null,
-                    JSON.stringify(options.metadata || {}),
-                    now,
-                    expiresAt
-                );
-                return {
-                    token,
-                    userId,
-                    purpose,
-                    requestedIdentity: options.requestedIdentity || user.username,
-                    metadata: options.metadata || {},
-                    createdAt: now,
-                    expiresAt
-                };
-            });
+            return stateStoreAuth.issueUserToken(userId, purpose, options);
         },
 
         getUserToken(purpose, token) {
-            const rawToken = String(token || '').trim();
-            if (!rawToken) return null;
-            const now = Date.now();
-            cleanupAuthTokens(now);
-            const record = normalizeAuthTokenRecord(findAuthTokenByHashStmt.get(purpose, hashOpaqueToken(rawToken)));
-            if (!record || record.usedAt || record.expiresAt < now) {
-                return null;
-            }
-            const user = this.getUserById(record.userId);
-            if (!user) return null;
-            return {
-                ...record,
-                user
-            };
+            return stateStoreAuth.getUserToken(purpose, token);
         },
 
         consumeUserToken(purpose, token) {
-            const rawToken = String(token || '').trim();
-            if (!rawToken) return null;
-            return runInTransaction(() => {
-                const now = Date.now();
-                cleanupAuthTokens(now);
-                const record = normalizeAuthTokenRecord(findAuthTokenByHashStmt.get(purpose, hashOpaqueToken(rawToken)));
-                if (!record || record.usedAt || record.expiresAt < now) {
-                    return null;
-                }
-                const user = this.getUserById(record.userId);
-                if (!user) return null;
-                const result = markAuthTokenUsedStmt.run(now, record.id);
-                if (Number(result?.changes || 0) < 1) {
-                    return null;
-                }
-                return {
-                    ...record,
-                    usedAt: now,
-                    user
-                };
-            });
+            return stateStoreAuth.consumeUserToken(purpose, token);
         },
 
         getLatestUserTokenSummary(userId, purpose) {
-            if (!userId || !purpose) return null;
-            const now = Date.now();
-            cleanupAuthTokens(now);
-            const record = normalizeAuthTokenRecord(findLatestAuthTokenByUserPurposeStmt.get(userId, purpose));
-            return buildAuthTokenSummary(record, { now });
+            return stateStoreAuth.getLatestUserTokenSummary(userId, purpose);
         },
 
         getActiveUserTokenSummary(userId, purpose) {
-            if (!userId || !purpose) return null;
-            const now = Date.now();
-            cleanupAuthTokens(now);
-            const record = normalizeAuthTokenRecord(findActiveAuthTokenByUserPurposeStmt.get(userId, purpose, now));
-            return buildAuthTokenSummary(record, { now, status: record ? 'active' : null });
+            return stateStoreAuth.getActiveUserTokenSummary(userId, purpose);
         },
 
         revokeUserTokens(userId, purpose) {
-            if (!userId || !purpose) {
-                return {
-                    revoked: false,
-                    count: 0,
-                    summary: null
-                };
-            }
-            return runInTransaction(() => {
-                const now = Date.now();
-                cleanupAuthTokens(now);
-                const record = normalizeAuthTokenRecord(findActiveAuthTokenByUserPurposeStmt.get(userId, purpose, now));
-                if (!record) {
-                    return {
-                        revoked: false,
-                        count: 0,
-                        summary: null
-                    };
-                }
-                const result = markUserPurposeTokensUsedStmt.run(now, userId, purpose);
-                return {
-                    revoked: Number(result?.changes || 0) > 0,
-                    count: Number(result?.changes || 0),
-                    summary: buildAuthTokenSummary({
-                        ...record,
-                        usedAt: now
-                    }, { now, status: 'revoked' })
-                };
-            });
+            return stateStoreAuth.revokeUserTokens(userId, purpose);
         },
 
         consumeRateLimit(ruleName, bucketKey, config = {}) {
@@ -1492,143 +1281,19 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         },
 
         changeCurrentUserPassword(userId, currentPassword, nextPassword, options = {}) {
-            const user = this.getUserById(userId);
-            if (!user) return null;
-
-            const credential = normalizeCredentialRecord(getCredentialStmt.get(userId));
-            if (!credential) {
-                return {
-                    errorCode: 'credential_missing',
-                    error: '当前账号暂时无法修改密码',
-                    status: 409
-                };
-            }
-
-            if (!verifyPassword(currentPassword, credential.passwordHash)) {
-                return {
-                    errorCode: 'current_password_incorrect',
-                    error: '当前密码不正确',
-                    status: 400
-                };
-            }
-
-            if (verifyPassword(nextPassword, credential.passwordHash)) {
-                return {
-                    errorCode: 'password_unchanged',
-                    error: '新密码不能与当前密码相同',
-                    status: 400
-                };
-            }
-
-            const now = Date.now();
-            upsertCredentialStmt.run(userId, hashPassword(nextPassword), now, 0);
-            if (options.keepSessionId) {
-                deleteUserSessionsExceptStmt.run(userId, options.keepSessionId);
-            } else {
-                deleteUserSessionsStmt.run(userId);
-            }
-            return this.getUserById(userId);
+            return stateStoreAuth.changeCurrentUserPassword(userId, currentPassword, nextPassword, options);
         },
 
         async changeCurrentUserPasswordAsync(userId, currentPassword, nextPassword, options = {}) {
-            const user = this.getUserById(userId);
-            if (!user) return null;
-
-            const credential = normalizeCredentialRecord(getCredentialStmt.get(userId));
-            if (!credential) {
-                return {
-                    errorCode: 'credential_missing',
-                    error: '当前账号暂时无法修改密码',
-                    status: 409
-                };
-            }
-
-            if (!await verifyPasswordAsync(currentPassword, credential.passwordHash)) {
-                return {
-                    errorCode: 'current_password_incorrect',
-                    error: '当前密码不正确',
-                    status: 400
-                };
-            }
-
-            if (await verifyPasswordAsync(nextPassword, credential.passwordHash)) {
-                return {
-                    errorCode: 'password_unchanged',
-                    error: '新密码不能与当前密码相同',
-                    status: 400
-                };
-            }
-
-            const now = Date.now();
-            const nextPasswordHash = await hashPasswordAsync(nextPassword);
-            upsertCredentialStmt.run(userId, nextPasswordHash, now, 0);
-            if (options.keepSessionId) {
-                deleteUserSessionsExceptStmt.run(userId, options.keepSessionId);
-            } else {
-                deleteUserSessionsStmt.run(userId);
-            }
-            return this.getUserById(userId);
+            return stateStoreAuth.changeCurrentUserPasswordAsync(userId, currentPassword, nextPassword, options);
         },
 
         resetUserPassword(userId, password, options = {}) {
-            const user = this.getUserById(userId);
-            if (!user) return null;
-
-            const nextPassword = String(password || '');
-            if (!nextPassword.trim()) {
-                throw new Error('password is required');
-            }
-
-            return runInTransaction(() => {
-                const now = Date.now();
-                upsertCredentialStmt.run(userId, hashPassword(nextPassword), now, options.requirePasswordChange ? 1 : 0);
-                if (options.keepSessionId) {
-                    deleteUserSessionsExceptStmt.run(userId, options.keepSessionId);
-                } else {
-                    deleteUserSessionsStmt.run(userId);
-                }
-                const updatedUser = this.getUserById(userId);
-                if (options.auditLog && updatedUser) {
-                    appendAuditLogRecord({
-                        ...options.auditLog,
-                        targetUserId: options.auditLog.targetUserId || updatedUser.id,
-                        targetUsername: options.auditLog.targetUsername || updatedUser.username,
-                        targetRole: options.auditLog.targetRole || updatedUser.role
-                    });
-                }
-                return updatedUser;
-            });
+            return stateStoreAuth.resetUserPassword(userId, password, options);
         },
 
         async resetUserPasswordAsync(userId, password, options = {}) {
-            const user = this.getUserById(userId);
-            if (!user) return null;
-
-            const nextPassword = String(password || '');
-            if (!nextPassword.trim()) {
-                throw new Error('password is required');
-            }
-
-            const nextPasswordHash = await hashPasswordAsync(nextPassword);
-            return runInTransaction(() => {
-                const now = Date.now();
-                upsertCredentialStmt.run(userId, nextPasswordHash, now, options.requirePasswordChange ? 1 : 0);
-                if (options.keepSessionId) {
-                    deleteUserSessionsExceptStmt.run(userId, options.keepSessionId);
-                } else {
-                    deleteUserSessionsStmt.run(userId);
-                }
-                const updatedUser = this.getUserById(userId);
-                if (options.auditLog && updatedUser) {
-                    appendAuditLogRecord({
-                        ...options.auditLog,
-                        targetUserId: options.auditLog.targetUserId || updatedUser.id,
-                        targetUsername: options.auditLog.targetUsername || updatedUser.username,
-                        targetRole: options.auditLog.targetRole || updatedUser.role
-                    });
-                }
-                return updatedUser;
-            });
+            return stateStoreAuth.resetUserPasswordAsync(userId, password, options);
         },
 
         listConversations(userId, limit = 40) {

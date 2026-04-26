@@ -1802,6 +1802,29 @@
         escapeHtml
       })
     : null;
+  const workspaceGenerationTools = window.AigsWorkspaceGenerationTools?.createTools
+    ? window.AigsWorkspaceGenerationTools.createTools({
+        getElement: $,
+        apiFetch,
+        showToast,
+        showLoading,
+        hideLoading,
+        startInlineProgress,
+        stopInlineProgress,
+        resolveApiAssetUrl,
+        loadQuota,
+        refreshUsageToday,
+        recordFeatureHistory,
+        setCurrentResult: (feature, value) => {
+          currentResult[feature] = value;
+        },
+        renderFeatureResult,
+        escapeHtml,
+        applyVoiceSourceMode,
+        fileToBase64,
+        openImageModal
+      })
+    : null;
   const conversationListTools = window.AigsConversationListTools?.createTools
     ? window.AigsConversationListTools.createTools({
         getConversationState: () => conversationState,
@@ -1886,6 +1909,13 @@
       throw new Error('AigsWorkspaceTemplateTools 未加载');
     }
     return workspaceTemplateTools;
+  }
+
+  function requireWorkspaceGenerationTools() {
+    if (!workspaceGenerationTools) {
+      throw new Error('AigsWorkspaceGenerationTools 未加载');
+    }
+    return workspaceGenerationTools;
   }
 
   function requireConversationListTools() {
@@ -3161,519 +3191,51 @@
   //  Generic Content Generator
   // ============================================
   async function generateContent({ apiEndpoint, domIds, resultTab, loadingText, successMessage, onSuccess, historyFeature, buildHistoryEntry }) {
-    const config = {};
-    for (const [key, id] of Object.entries(domIds)) {
-      const el = $(id);
-      config[key] = el ? (el.value != null ? el.value : el.textContent || '') : '';
-    }
-
-    // Validation: reject empty strings
-    if (Object.values(config).every(v => !String(v).trim())) {
-      showToast('请填写必要信息', 'error');
-      return;
-    }
-
-    const btn = $(`btn-generate-${resultTab}`);
-    const resultEl = $(`${resultTab}-result`);
-
-    if (btn) btn.disabled = true;
-    if (resultEl) resultEl.setAttribute('hidden', '');
-
-    showLoading(loadingText, 0);
-    startInlineProgress(resultTab, `${resultTab}-progress-fill`, `${resultTab}-progress-text`);
-
-    try {
-      const res = await apiFetch(apiEndpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: '请求失败' }));
-        throw new Error(err.error || '生成失败');
-      }
-
-      const data = await res.json();
-      stopInlineProgress();
-
-      if (onSuccess) onSuccess(data);
-      currentResult[resultTab] = data;
-      if (historyFeature && buildHistoryEntry) {
-        const historyEntry = buildHistoryEntry(data, config);
-        if (historyEntry) {
-          recordFeatureHistory(historyFeature, historyEntry.title, historyEntry.summary, historyEntry.inputs, historyEntry.result);
-        }
-      }
-
-      const area = $(`${resultTab}-result`);
-      if (area) { area.removeAttribute('hidden'); area.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' }); }
-      loadQuota();
-      refreshUsageToday();
-      showToast(successMessage, 'success');
-
-    } catch (err) {
-      stopInlineProgress();
-      showToast(err.message || '生成失败，请重试', 'error');
-    } finally {
-      hideLoading();
-      if (btn) btn.disabled = false;
-    }
+    return requireWorkspaceGenerationTools().generateContent({
+      apiEndpoint,
+      domIds,
+      resultTab,
+      loadingText,
+      successMessage,
+      onSuccess,
+      historyFeature,
+      buildHistoryEntry
+    });
   }
 
   // ============================================
   //  Content Generators (thin wrappers)
   // ============================================
   async function generateMusic() {
-    const prompt = $('music-prompt')?.value?.trim();
-    if (!prompt) { showToast('请输入歌词或描述', 'error'); return; }
-
-    const btn = $('btn-generate-music');
-    const resultEl = $('music-result');
-
-    if (btn) btn.disabled = true;
-    if (resultEl) resultEl.setAttribute('hidden', '');
-
-    const style = $('music-style')?.value || '';
-    const bpm = $('music-bpm')?.value || '';
-    const key = $('music-key')?.value || '';
-    const duration = $('music-duration')?.value || '';
-
-    startInlineProgress('music', 'music-progress-fill', 'music-progress-text');
-
-    try {
-      // 1. 启动音乐生成任务
-      const res = await apiFetch('/api/generate/music', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, style, bpm, key, duration }),
-      });
-
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-
-      const taskId = data.taskId;
-      if (!taskId) throw new Error('未返回任务ID');
-
-      // 2. 轮询检查任务状态
-      const checkStatus = async () => {
-        const statusRes = await apiFetch('/api/music/status', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ taskId }),
-        });
-        return statusRes.json();
-      };
-
-      // 轮询直到完成
-      let statusData;
-      let attempts = 0;
-      const maxAttempts = 60; // 最多轮询60次
-
-      while (attempts < maxAttempts) {
-        await new Promise(r => setTimeout(r, 2000)); // 每2秒检查一次
-        statusData = await checkStatus();
-
-        if (statusData.status === 'completed') {
-          break;
-        } else if (statusData.status === 'error') {
-          throw new Error(statusData.error || '生成失败');
-        }
-        attempts++;
-      }
-
-      if (attempts >= maxAttempts) {
-        throw new Error('生成超时，请稍后查看结果');
-      }
-
-      // 3. 显示结果
-      stopInlineProgress();
-      $('music-audio').src = resolveApiAssetUrl(statusData.audio_url || statusData.url || '');
-      // 转换毫秒为秒显示
-      const durationMs = parseInt(statusData.duration) || 0;
-      const durationSec = (durationMs / 1000).toFixed(1);
-      $('music-duration-info').textContent = durationMs > 0 ? `${durationSec}秒` : '';
-      $('music-model-info').textContent = '模型: music-2.6';
-      recordFeatureHistory('music', prompt, `${style || '默认风格'} · ${duration || '自动时长'}`, { prompt, style, bpm, key, duration }, {
-        url: resolveApiAssetUrl(statusData.url || ''),
-        duration: statusData.duration || 0
-      });
-
-      if (resultEl) {
-        resultEl.removeAttribute('hidden');
-        resultEl.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
-      }
-      loadQuota();
-      refreshUsageToday();
-      showToast('音乐生成成功！', 'success');
-
-    } catch (err) {
-      stopInlineProgress();
-      showToast(err.message || '生成失败，请重试', 'error');
-    } finally {
-      if (btn) btn.disabled = false;
-    }
+    return requireWorkspaceGenerationTools().generateMusic();
   }
 
   function generateLyrics() {
-    generateContent({
-      apiEndpoint: '/api/generate/lyrics',
-      domIds: { prompt: 'lyrics-prompt', style: 'lyrics-style', structure: 'lyrics-structure' },
-      resultTab: 'lyrics',
-      loadingText: '正在创作歌词...',
-      successMessage: '歌词创作完成！',
-      historyFeature: 'lyrics',
-      onSuccess: data => {
-        $('lyrics-content').innerHTML = `<pre>${escapeHtml(data.lyrics || data.content || '')}</pre>`;
-        $('lyrics-meta').textContent = data.title ? `标题: ${data.title}` : '';
-      },
-      buildHistoryEntry: (data, config) => ({
-        title: data.title || config.prompt,
-        summary: data.lyrics || data.content || '',
-        inputs: config,
-        result: {
-          title: data.title,
-          lyrics: data.lyrics,
-          content: data.content
-        }
-      })
-    });
+    return requireWorkspaceGenerationTools().generateLyrics();
   }
 
   function generateCover() {
-    const prompt = $('cover-prompt')?.value?.trim();
-    const ratio = $('cover-ratio')?.value || '';
-    const style = $('cover-style')?.value || '';
-    if (!prompt) { showToast('请填写封面描述', 'error'); return; }
-
-    const btn = $('btn-generate-cover');
-    const resultEl = $('cover-result');
-    if (btn) btn.disabled = true;
-    if (resultEl) resultEl.setAttribute('hidden', '');
-
-    showLoading('正在生成封面...', 0);
-    startInlineProgress('cover', 'cover-progress-fill', 'cover-progress-text');
-
-    apiFetch('/api/generate/cover', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, ratio, style }),
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (data.error) throw new Error(data.error);
-        pollImageStatus(data.taskId, 60, { prompt, ratio, style });
-      })
-      .catch(err => {
-        stopInlineProgress();
-        showToast(err.message || '生成失败', 'error');
-        if (btn) btn.disabled = false;
-        hideLoading();
-      });
+    return requireWorkspaceGenerationTools().generateCover();
   }
 
   function pollImageStatus(taskId, maxRetries, inputs) {
-    const btn = $('btn-generate-cover');
-
-    const tryPoll = (retry) => {
-      apiFetch('/api/image/status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ taskId }),
-      })
-        .then(res => res.json())
-        .then(data => {
-          if (data.error) throw new Error(data.error);
-
-          if (data.status === 'completed') {
-            stopInlineProgress();
-            const img = $('cover-image');
-            img.src = resolveApiAssetUrl(data.url || '');
-            img.onclick = () => openImageModal(img.src);
-            $('cover-meta').textContent = data.model ? `模型: ${data.model}` : '';
-            $('cover-result')?.removeAttribute('hidden');
-            $('cover-result')?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
-            loadQuota();
-            refreshUsageToday();
-            recordFeatureHistory('cover', inputs.prompt, `${inputs.style || '自动风格'} · ${inputs.ratio || '1:1'}`, inputs, {
-              url: resolveApiAssetUrl(data.url),
-              size: data.size,
-              duration: data.duration
-            });
-            showToast('封面生成成功！', 'success');
-            if (btn) btn.disabled = false;
-            hideLoading();
-          } else if (data.status === 'error') {
-            throw new Error(data.error || '生成失败');
-          } else {
-            // pending / processing
-            if (retry >= maxRetries) {
-              throw new Error('生成超时，请重试');
-            }
-            setTimeout(() => tryPoll(retry + 1), 2000);
-          }
-        })
-        .catch(err => {
-          stopInlineProgress();
-          showToast(err.message || '生成失败', 'error');
-          if (btn) btn.disabled = false;
-          hideLoading();
-        });
-    };
-
-    tryPoll(0);
+    return requireWorkspaceGenerationTools().pollImageStatus(taskId, maxRetries, inputs);
   }
 
   async function generateVoice() {
-    const fileInput = $('voice-audio-file');
-    const urlInput = $('voice-audio-url');
-    const prompt = $('voice-prompt')?.value?.trim();
-
-    // 根据当前 Tab 判断来源
-    const activeTab = document.querySelector('.voice-source-tabs .source-tab.active')?.dataset.source;
-
-    if (activeTab === 'file' && fileInput?.files?.[0]) {
-      if (!prompt) { showToast('请填写翻唱描述', 'error'); return; }
-      await generateVoiceWithFile(fileInput.files[0], prompt);
-    } else if (activeTab === 'url') {
-      const audioUrl = urlInput?.value?.trim();
-      if (!audioUrl) { showToast('请填写歌曲链接', 'error'); return; }
-      if (!prompt) { showToast('请填写翻唱描述', 'error'); return; }
-      await generateVoiceWithUrl(audioUrl, prompt);
-    } else {
-      // 默认行为：优先文件其次 URL
-      const file = fileInput?.files?.[0];
-      const audioUrl = urlInput?.value?.trim();
-      if (file) {
-        if (!prompt) { showToast('请填写翻唱描述', 'error'); return; }
-        await generateVoiceWithFile(file, prompt);
-      } else if (audioUrl) {
-        if (!prompt) { showToast('请填写翻唱描述', 'error'); return; }
-        await generateVoiceWithUrl(audioUrl, prompt);
-      } else {
-        showToast('请上传音频文件或填写歌曲链接', 'error');
-      }
-    }
+    return requireWorkspaceGenerationTools().generateVoice();
   }
 
   async function generateVoiceWithFile(file, prompt) {
-    const btn = $('btn-generate-voice');
-    if (btn) btn.disabled = true;
-    showLoading('正在上传音频...', 0);
-
-    try {
-      // 1. 把文件转成 base64 上传
-      const base64 = await fileToBase64(file);
-      const uploadRes = await apiFetch('/api/upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: file.name, data: base64 }),
-      });
-      const uploadData = await uploadRes.json();
-      if (!uploadData.success) throw new Error(uploadData.error || '文件上传失败');
-
-      const audioUrl = resolveApiAssetUrl(uploadData.url);
-      showLoading('正在处理翻唱...', 50);
-
-      // 2. 用上传后的 URL 发起翻唱
-      await doVoiceGenerate(audioUrl, prompt);
-
-    } catch (err) {
-      hideLoading();
-      showToast(err.message || '处理失败', 'error');
-      if (btn) btn.disabled = false;
-    }
+    return requireWorkspaceGenerationTools().generateVoiceWithFile(file, prompt);
   }
 
   async function generateVoiceWithUrl(audioUrl, prompt) {
-    const btn = $('btn-generate-voice');
-    const resultEl = $('covervoice-result');
-    const progressTab = 'voice';
-
-    if (btn) btn.disabled = true;
-    if (resultEl) resultEl.setAttribute('hidden', '');
-
-    startInlineProgress(progressTab, `${progressTab}-progress-fill`, `${progressTab}-progress-text`);
-
-    try {
-      const config = {
-        audio_url: audioUrl,
-        prompt,
-        timbre: $('voice-timbre')?.value || '',
-        pitch: $('voice-pitch')?.value || '',
-      };
-
-      const res = await apiFetch('/api/generate/voice', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: '请求失败' }));
-        throw new Error(err.error || '生成失败');
-      }
-
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      
-      const taskId = data.taskId;
-      if (!taskId) throw new Error('未返回任务ID');
-
-      // 轮询检查任务状态
-      const checkStatus = async () => {
-        const statusRes = await apiFetch('/api/music-cover/status', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ taskId }),
-        });
-        return statusRes.json();
-      };
-
-      // 轮询直到完成
-      let statusData;
-      let attempts = 0;
-      const maxAttempts = 60;
-
-      while (attempts < maxAttempts) {
-        await new Promise(r => setTimeout(r, 2000));
-        statusData = await checkStatus();
-
-        if (statusData.status === 'completed') {
-          break;
-        } else if (statusData.status === 'error') {
-          throw new Error(statusData.error || '生成失败');
-        }
-        attempts++;
-      }
-
-      if (attempts >= maxAttempts) {
-        throw new Error('生成超时，请稍后查看结果');
-      }
-
-      stopInlineProgress();
-
-      $('voice-audio').src = resolveApiAssetUrl(statusData.url || '');
-      $('voice-meta').textContent = statusData.duration ? `时长: ${statusData.duration}s` : '';
-
-      if (resultEl) { resultEl.removeAttribute('hidden'); resultEl.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' }); }
-      currentResult['covervoice'] = statusData;
-      loadQuota();
-      refreshUsageToday();
-      recordFeatureHistory('covervoice', prompt, `${config.timbre || '自动音色'} · ${config.pitch || '原调'}`, {
-        prompt,
-        timbre: config.timbre,
-        pitch: config.pitch,
-        audio_url: audioUrl
-      }, {
-        url: resolveApiAssetUrl(statusData.url || ''),
-        duration: statusData.duration || 0
-      });
-      showToast('歌声翻唱完成！', 'success');
-
-    } catch (err) {
-      stopInlineProgress();
-      showToast(err.message || '生成失败，请重试', 'error');
-    } finally {
-      hideLoading();
-      if (btn) btn.disabled = false;
-    }
+    return requireWorkspaceGenerationTools().generateVoiceWithUrl(audioUrl, prompt);
   }
 
   async function doVoiceGenerate(audioUrl, prompt) {
-    const btn = $('btn-generate-voice');
-    const resultEl = $('covervoice-result');
-    const resultTab = 'covervoice';
-    const progressTab = 'voice';
-
-    if (btn) btn.disabled = true;
-    if (resultEl) resultEl.setAttribute('hidden', '');
-
-    startInlineProgress(progressTab, `${progressTab}-progress-fill`, `${progressTab}-progress-text`);
-
-    try {
-      const config = {
-        audio_url: audioUrl,
-        prompt,
-        timbre: $('voice-timbre')?.value || '',
-        pitch: $('voice-pitch')?.value || '',
-      };
-
-      const res = await apiFetch('/api/generate/voice', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: '请求失败' }));
-        throw new Error(err.error || '生成失败');
-      }
-
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      
-      const taskId = data.taskId;
-      if (!taskId) throw new Error('未返回任务ID');
-
-      // 轮询检查任务状态
-      const checkStatus = async () => {
-        const statusRes = await apiFetch('/api/music-cover/status', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ taskId }),
-        });
-        return statusRes.json();
-      };
-
-      // 轮询直到完成
-      let statusData;
-      let attempts = 0;
-      const maxAttempts = 60;
-
-      while (attempts < maxAttempts) {
-        await new Promise(r => setTimeout(r, 2000));
-        statusData = await checkStatus();
-
-        if (statusData.status === 'completed') {
-          break;
-        } else if (statusData.status === 'error') {
-          throw new Error(statusData.error || '生成失败');
-        }
-        attempts++;
-      }
-
-      if (attempts >= maxAttempts) {
-        throw new Error('生成超时，请稍后查看结果');
-      }
-
-      stopInlineProgress();
-
-      $('voice-audio').src = resolveApiAssetUrl(statusData.url || '');
-      $('voice-meta').textContent = statusData.duration ? `时长: ${statusData.duration}s` : '';
-
-      if (resultEl) { resultEl.removeAttribute('hidden'); resultEl.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' }); }
-      currentResult[resultTab] = statusData;
-      loadQuota();
-      refreshUsageToday();
-      recordFeatureHistory('covervoice', prompt, `${config.timbre || '自动音色'} · ${config.pitch || '原调'}`, {
-        prompt,
-        timbre: config.timbre,
-        pitch: config.pitch,
-        audio_url: audioUrl
-      }, {
-        url: resolveApiAssetUrl(statusData.url || ''),
-        duration: statusData.duration || 0
-      });
-      showToast('歌声翻唱完成！', 'success');
-
-    } catch (err) {
-      stopInlineProgress();
-      showToast(err.message || '生成失败，请重试', 'error');
-    } finally {
-      hideLoading();
-      if (btn) btn.disabled = false;
-    }
+    return requireWorkspaceGenerationTools().runVoiceGeneration(audioUrl, prompt);
   }
 
   function fileToBase64(file) {

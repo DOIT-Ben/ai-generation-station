@@ -26,6 +26,7 @@ function main() {
   const chatOutlineToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'chat-outline-tools.js'), 'utf8');
   const templateToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'template-tools.js'), 'utf8');
   const workspaceTemplateToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'workspace-template-tools.js'), 'utf8');
+  const workspaceGenerationToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'workspace-generation-tools.js'), 'utf8');
   const conversationWorkflowToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'conversation-workflow-tools.js'), 'utf8');
   const conversationListToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'conversation-list-tools.js'), 'utf8');
   const conversationActionToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'conversation-action-tools.js'), 'utf8');
@@ -43,6 +44,7 @@ function main() {
   assert.ok(html.includes('/js/chat-outline-tools.js'), 'index should load the chat outline utility module before app.js');
   assert.ok(html.includes('/js/template-tools.js'), 'index should load the template utility module before app.js');
   assert.ok(html.includes('/js/workspace-template-tools.js'), 'index should load the workspace template utility module before app.js');
+  assert.ok(html.includes('/js/workspace-generation-tools.js'), 'index should load the workspace generation utility module before app.js');
   assert.ok(html.includes('/js/conversation-workflow-tools.js'), 'index should load the conversation workflow utility module before app.js');
   assert.ok(html.includes('/js/conversation-list-tools.js'), 'index should load the conversation list utility module before app.js');
   assert.ok(html.includes('/js/conversation-action-tools.js'), 'index should load the conversation action utility module before app.js');
@@ -57,6 +59,7 @@ function main() {
   assert.ok(chatOutlineToolsJs.includes('AigsChatOutlineTools'), 'chat outline utilities should publish a dedicated browser module');
   assert.ok(templateToolsJs.includes('AigsTemplateTools'), 'template utilities should publish a dedicated browser module');
   assert.ok(workspaceTemplateToolsJs.includes('AigsWorkspaceTemplateTools'), 'workspace template utilities should publish a dedicated browser module');
+  assert.ok(workspaceGenerationToolsJs.includes('AigsWorkspaceGenerationTools'), 'workspace generation utilities should publish a dedicated browser module');
   assert.ok(conversationWorkflowToolsJs.includes('AigsConversationWorkflowTools'), 'conversation workflow utilities should publish a dedicated browser module');
   assert.ok(conversationListToolsJs.includes('AigsConversationListTools'), 'conversation list utilities should publish a dedicated browser module');
   assert.ok(conversationActionToolsJs.includes('AigsConversationActionTools'), 'conversation action utilities should publish a dedicated browser module');
@@ -196,6 +199,10 @@ function main() {
   assert.ok(appJs.includes('renderChatSuggestionStrip'), 'workspace should consolidate chat prompt suggestions into one adaptive strip');
   assert.ok(appJs.includes('getChatExperienceStage'), 'workspace should adapt chat composer copy to the current conversation stage');
   assert.ok(appJs.includes('syncChatViewportState'), 'workspace should react to mobile visual viewport changes while composing');
+  assert.ok(appJs.includes('requireWorkspaceGenerationTools'), 'workspace should wire the dedicated generation module through app assembly');
+  assert.ok(workspaceGenerationToolsJs.includes('/api/generate/music'), 'workspace generation utilities should own music generation orchestration');
+  assert.ok(workspaceGenerationToolsJs.includes('/api/generate/cover'), 'workspace generation utilities should own cover generation orchestration');
+  assert.ok(workspaceGenerationToolsJs.includes('/api/generate/voice'), 'workspace generation utilities should own voice generation orchestration');
   assert.ok(appJs.includes('setChatArchivedCollapsed'), 'workspace should support collapsing the archived conversation section');
   assert.ok(appJs.includes('syncQuotaCardState'), 'workspace should keep nav quota collapsed state in sync');
   assert.ok(appJs.includes("['dark', 'light', 'paper']"), 'workspace theme toggle should support paper eye-care mode');
