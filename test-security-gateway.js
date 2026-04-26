@@ -442,6 +442,153 @@ async function testUploadInputGuards() {
   });
 }
 
+async function testRateLimitsAndAuditTrails() {
+  await withServer(async server => {
+    const uniqueSuffix = `${Date.now()}${Math.random().toString(16).slice(2, 8)}`;
+    const targetUsername = `invite_${uniqueSuffix}`;
+    const targetEmail = `${targetUsername}@example.com`;
+
+    const adminLogin = await loginWithCsrf(server, {
+      username: 'studio',
+      password: 'AIGS2026!'
+    });
+    assert(adminLogin.response.status === 200, `Expected admin login before rate-limit tests to succeed, got ${adminLogin.response.status}`);
+    const adminCookies = mergeCookieHeaders(adminLogin.csrfCookieHeader, adminLogin.sessionCookieHeader);
+
+    const createUser = await request(server, '/api/admin/users', 'POST', {
+      username: targetUsername,
+      email: targetEmail,
+      password: 'InvitePass123!',
+      displayName: 'Invite Target',
+      role: 'user',
+      planCode: 'free'
+    }, {
+      Cookie: adminCookies,
+      'X-CSRF-Token': adminLogin.csrfToken
+    });
+    assert(createUser.status === 200, `Expected admin create-user before invite tests to succeed, got ${createUser.status}`);
+    const targetUserId = createUser.data?.user?.id;
+    assert(Boolean(targetUserId), 'Expected admin create-user response to include target user id');
+
+    const inviteIssue = await request(server, `/api/admin/users/${targetUserId}/invite`, 'POST', {}, {
+      Cookie: adminCookies,
+      'X-CSRF-Token': adminLogin.csrfToken
+    });
+    assert(inviteIssue.status === 200, `Expected invite issue to succeed, got ${inviteIssue.status}`);
+
+    const inviteResend = await request(server, `/api/admin/users/${targetUserId}/invite-resend`, 'POST', {}, {
+      Cookie: adminCookies,
+      'X-CSRF-Token': adminLogin.csrfToken
+    });
+    assert(inviteResend.status === 200, `Expected invite resend to succeed, got ${inviteResend.status}`);
+
+    const inviteRevoke = await request(server, `/api/admin/users/${targetUserId}/invite-revoke`, 'POST', {}, {
+      Cookie: adminCookies,
+      'X-CSRF-Token': adminLogin.csrfToken
+    });
+    assert(inviteRevoke.status === 200, `Expected invite revoke to succeed, got ${inviteRevoke.status}`);
+
+    const inviteIssueLogs = await request(
+      server,
+      `/api/admin/audit-logs?action=user_invite_issue&targetUsername=${encodeURIComponent(targetUsername)}`,
+      'GET',
+      null,
+      { Cookie: adminLogin.sessionCookieHeader }
+    );
+    assert(inviteIssueLogs.status === 200, `Expected invite issue audit-log query to succeed, got ${inviteIssueLogs.status}`);
+    const inviteIssueEntry = Array.isArray(inviteIssueLogs.data?.items)
+      ? inviteIssueLogs.data.items.find(item => item.action === 'user_invite_issue' && item.targetUsername === targetUsername)
+      : null;
+    assert(Boolean(inviteIssueEntry), 'Expected invite issue audit log entry to exist');
+    assert(inviteIssueEntry.details?.recipientEmail === targetEmail, 'Expected invite issue audit log to capture recipientEmail');
+
+    const inviteResendLogs = await request(
+      server,
+      `/api/admin/audit-logs?action=user_invite_resend&targetUsername=${encodeURIComponent(targetUsername)}`,
+      'GET',
+      null,
+      { Cookie: adminLogin.sessionCookieHeader }
+    );
+    assert(inviteResendLogs.status === 200, `Expected invite resend audit-log query to succeed, got ${inviteResendLogs.status}`);
+    const inviteResendEntry = Array.isArray(inviteResendLogs.data?.items)
+      ? inviteResendLogs.data.items.find(item => item.action === 'user_invite_resend' && item.targetUsername === targetUsername)
+      : null;
+    assert(Boolean(inviteResendEntry), 'Expected invite resend audit log entry to exist');
+    assert(inviteResendEntry.details?.recipientEmail === targetEmail, 'Expected invite resend audit log to capture recipientEmail');
+
+    const inviteRevokeLogs = await request(
+      server,
+      `/api/admin/audit-logs?action=user_invite_revoke&targetUsername=${encodeURIComponent(targetUsername)}`,
+      'GET',
+      null,
+      { Cookie: adminLogin.sessionCookieHeader }
+    );
+    assert(inviteRevokeLogs.status === 200, `Expected invite revoke audit-log query to succeed, got ${inviteRevokeLogs.status}`);
+    const inviteRevokeEntry = Array.isArray(inviteRevokeLogs.data?.items)
+      ? inviteRevokeLogs.data.items.find(item => item.action === 'user_invite_revoke' && item.targetUsername === targetUsername)
+      : null;
+    assert(Boolean(inviteRevokeEntry), 'Expected invite revoke audit log entry to exist');
+    assert(Number(inviteRevokeEntry.details?.revokedCount || 0) >= 1, 'Expected invite revoke audit log to capture revokedCount');
+
+    const resetPassword = await request(server, `/api/admin/users/${targetUserId}/password`, 'POST', {
+      password: 'InvitePass456!'
+    }, {
+      Cookie: adminCookies,
+      'X-CSRF-Token': adminLogin.csrfToken
+    });
+    assert(resetPassword.status === 200, `Expected admin password reset to succeed, got ${resetPassword.status}`);
+    assert(resetPassword.data?.sessionRetained === false, 'Expected admin reset of another user to not retain the admin session on target');
+
+    const resetPasswordLogs = await request(
+      server,
+      `/api/admin/audit-logs?action=user_password_reset&targetUsername=${encodeURIComponent(targetUsername)}`,
+      'GET',
+      null,
+      { Cookie: adminLogin.sessionCookieHeader }
+    );
+    assert(resetPasswordLogs.status === 200, `Expected password reset audit-log query to succeed, got ${resetPasswordLogs.status}`);
+    const resetPasswordEntry = Array.isArray(resetPasswordLogs.data?.items)
+      ? resetPasswordLogs.data.items.find(item => item.action === 'user_password_reset' && item.targetUsername === targetUsername)
+      : null;
+    assert(Boolean(resetPasswordEntry), 'Expected password reset audit log entry to exist');
+    assert(resetPasswordEntry.details?.requirePasswordChange === true, 'Expected password reset audit log to mark requirePasswordChange');
+    assert(resetPasswordEntry.details?.sessionRetained === false, 'Expected password reset audit log to capture sessionRetained=false');
+
+    const secondResetPassword = await request(server, `/api/admin/users/${targetUserId}/password`, 'POST', {
+      password: 'InvitePass789!'
+    }, {
+      Cookie: adminCookies,
+      'X-CSRF-Token': adminLogin.csrfToken
+    });
+    assert(secondResetPassword.status === 429, `Expected second admin password reset to be rate-limited, got ${secondResetPassword.status}`);
+    assert(secondResetPassword.data?.reason === 'admin_password_reset_rate_limited', 'Expected second admin password reset to hit admin_password_reset_rate_limited');
+
+    const forgotPasswordCsrf = await bootstrapCsrf(server);
+    assert(forgotPasswordCsrf.response.status === 200, `Expected CSRF bootstrap before forgot-password tests to return 200, got ${forgotPasswordCsrf.response.status}`);
+    const forgotPasswordHeaders = {
+      Cookie: forgotPasswordCsrf.csrfCookieHeader,
+      'X-CSRF-Token': forgotPasswordCsrf.csrfToken
+    };
+
+    const firstForgotPassword = await request(server, '/api/auth/forgot-password', 'POST', {
+      username: targetUsername
+    }, forgotPasswordHeaders);
+    assert(firstForgotPassword.status === 200, `Expected first forgot-password request to succeed, got ${firstForgotPassword.status}`);
+
+    const secondForgotPassword = await request(server, '/api/auth/forgot-password', 'POST', {
+      username: targetUsername
+    }, forgotPasswordHeaders);
+    assert(secondForgotPassword.status === 429, `Expected second forgot-password request to be rate-limited, got ${secondForgotPassword.status}`);
+    assert(secondForgotPassword.data?.reason === 'forgot_password_rate_limited', 'Expected second forgot-password request to hit forgot_password_rate_limited');
+  }, {
+    env: {
+      PORT: '18810',
+      FORGOT_PASSWORD_RATE_LIMIT_MAX: '1',
+      ADMIN_PASSWORD_RESET_RATE_LIMIT_MAX: '1'
+    }
+  });
+}
+
 async function main() {
   await testHealthAndSecurityHeaders();
   await testSameOriginAndAllowedCors();
@@ -449,6 +596,7 @@ async function main() {
   await testMalformedCookieAndOutputPathHandling();
   await testAdminAccessBoundaries();
   await testUploadInputGuards();
+  await testRateLimitsAndAuditTrails();
   console.log('Security gateway tests passed');
 }
 
