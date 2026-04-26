@@ -314,9 +314,10 @@ function createServer(options = {}) {
 
 function startServer(options = {}) {
     const server = createServer(options);
-    const { PORT } = server.appConfig;
-    server.listen(PORT, () => {
-        console.log(`🎙️ AI 内容生成站已启动: http://localhost:${PORT}`);
+    const { PORT, BIND_HOST } = server.appConfig;
+    server.listen(PORT, BIND_HOST, () => {
+        const displayHost = BIND_HOST === '0.0.0.0' || BIND_HOST === '::' ? 'localhost' : BIND_HOST;
+        console.log(`🎙️ AI 内容生成站已启动: http://${displayHost}:${PORT}`);
     });
     return server;
 }

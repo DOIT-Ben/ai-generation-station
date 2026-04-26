@@ -68,10 +68,18 @@ function main() {
     NODE_ENV: 'development'
   });
   assert.strictEqual(developmentConfig.APP_PASSWORD, 'AIGS2026!');
+  assert.strictEqual(developmentConfig.BIND_HOST, '127.0.0.1');
+
+  const explicitBindHostConfig = assertConfigPasses({
+    NODE_ENV: 'development',
+    BIND_HOST: '0.0.0.0'
+  });
+  assert.strictEqual(explicitBindHostConfig.BIND_HOST, '0.0.0.0');
 
   const envExample = fs.readFileSync(path.join(__dirname, '.env.example'), 'utf8');
   assert.ok(envExample.includes('CSRF_SECRET='), '.env.example should document CSRF_SECRET');
   assert.ok(envExample.includes('APP_PASSWORD='), '.env.example should document APP_PASSWORD');
+  assert.ok(envExample.includes('BIND_HOST=127.0.0.1'), '.env.example should document loopback BIND_HOST');
 
   console.log('Production config safety tests passed');
 }

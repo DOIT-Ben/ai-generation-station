@@ -25,18 +25,18 @@
     <main class="portal-layout portal-layout--stacked account-page-layout">
       <section class="portal-surface-card account-hero-panel">
         <div class="account-hero-grid">
-          <div class="portal-copy-stack">
-            <div class="portal-eyebrow">My Account</div>
-            <h1>账户设置与安全中心</h1>
-            <p class="portal-lead">这里专门处理你的账号资料、安全动作和常用入口。创作流程回到工作台，后台管理保留在管理员页面。</p>
+          <div class="portal-copy-stack account-hero-copy">
+            <div class="portal-eyebrow">Profile Hub</div>
+            <h1>把身份、权限和安全操作收进一个更清晰的个人中心。</h1>
+            <p class="portal-lead">这里不再堆一排解释卡，而是先告诉你“当前是谁、状态如何、下一步能做什么”，再进入改密和跳转动作。</p>
             <div id="account-reset-banner" class="portal-banner" hidden></div>
           </div>
 
-          <div class="account-profile-summary">
+          <div class="account-profile-summary account-profile-summary--hero">
             <div class="account-profile-top">
               <div id="account-avatar-badge" class="account-avatar-badge">A</div>
               <div class="account-profile-copy">
-                <span class="account-profile-label">当前登录账号</span>
+                <span class="account-profile-label">当前账号</span>
                 <strong id="account-display-name">-</strong>
                 <p id="account-username-line">账号：-</p>
                 <p id="account-email-line">邮箱：-</p>
@@ -47,57 +47,73 @@
               <span class="portal-pill" id="account-plan-pill">套餐：-</span>
               <span class="portal-pill" id="account-password-pill">密码状态：-</span>
             </div>
+            <div class="account-hero-status-grid">
+              <article class="account-status-tile">
+                <span>当前访问级别</span>
+                <strong id="account-role-heading">-</strong>
+                <p id="account-security-entry-note">-</p>
+              </article>
+              <article class="account-status-tile">
+                <span>密码安全状态</span>
+                <strong id="account-password-status-heading">-</strong>
+                <p id="account-password-status-note">-</p>
+              </article>
+            </div>
           </div>
         </div>
       </section>
 
       <section class="account-dashboard">
         <aside class="account-side-stack">
-          <article class="portal-surface-card account-sidebar-card">
+          <article class="portal-surface-card account-sidebar-card account-sidebar-card--overview">
             <div class="account-section-heading">
               <span class="account-section-kicker">Overview</span>
+              <h2>账户概览</h2>
+              <p>把最常看的身份信息放成结构化概览，而不是散在不同说明块里。</p>
+            </div>
+            <div class="account-overview-grid">
+              <article class="account-overview-card">
+                <span>显示名</span>
+                <strong id="account-overview-display-name">-</strong>
+                <p>你在系统内最常被看到的名称。</p>
+              </article>
+              <article class="account-overview-card">
+                <span>登录账号</span>
+                <strong id="account-overview-username">-</strong>
+                <p>用于登录与管理员定位账号。</p>
+              </article>
+              <article class="account-overview-card">
+                <span>邮箱地址</span>
+                <strong id="account-overview-email">-</strong>
+                <p>用于找回密码和系统通知。</p>
+              </article>
+              <article class="account-overview-card">
+                <span>当前套餐</span>
+                <strong id="account-overview-plan">-</strong>
+                <p>决定你默认可用的权限层级。</p>
+              </article>
+            </div>
+          </article>
+
+          <article class="portal-surface-card account-sidebar-card">
+            <div class="account-section-heading">
+              <span class="account-section-kicker">Quick Access</span>
               <h2>常用入口</h2>
-              <p>账户页只保留和你本人相关的动作，创作与用户批量管理不再混在一起。</p>
+              <p>高频跳转保持简短，避免让账户页再次长成一个说明文档。</p>
             </div>
             <div class="account-action-list">
               <a class="btn btn-secondary" href="/">返回工作台</a>
               <a class="btn btn-secondary" id="account-admin-link" href="/admin/" hidden>进入管理后台</a>
             </div>
-            <p class="account-inline-copy">对话、歌词、音乐、图片和翻唱继续在工作台完成；管理员批量管理继续在后台处理。</p>
-          </article>
-
-          <article class="portal-surface-card account-sidebar-card">
-            <div class="account-section-heading">
-              <span class="account-section-kicker">Scope</span>
-              <h2>本页负责什么</h2>
-              <p>这不是后台，也不是创作页，而是标准的个人账户中心。</p>
-            </div>
-            <ul class="account-scope-list">
-              <li>查看当前登录账号的身份、角色与套餐信息</li>
-              <li>修改自己的登录密码并处理临时密码状态</li>
-              <li>快速回到工作台或管理后台</li>
-            </ul>
+            <p class="account-inline-copy">创作、对话、图片、音乐和翻唱继续回工作台完成；管理员批量操作继续放在后台。</p>
           </article>
         </aside>
 
         <section class="portal-surface-card account-security-card">
           <div class="account-section-heading">
             <span class="account-section-kicker">Security</span>
-            <h2>密码与安全</h2>
-            <p>把高频查看信息和高风险操作分开，密码修改放在一个独立、清晰的区域里。</p>
-          </div>
-
-          <div class="account-security-overview">
-            <article class="account-status-tile">
-              <span>当前密码状态</span>
-              <strong id="account-password-status-heading">-</strong>
-              <p id="account-password-status-note">-</p>
-            </article>
-            <article class="account-status-tile">
-              <span>当前访问级别</span>
-              <strong id="account-role-heading">-</strong>
-              <p id="account-security-entry-note">-</p>
-            </article>
+            <h2>密码与登录安全</h2>
+            <p>真正需要你操作的高风险动作只保留在这一块，避免页面上到处都是安全相关的碎信息。</p>
           </div>
 
           <form id="account-password-form" class="admin-form account-security-form">

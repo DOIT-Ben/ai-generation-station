@@ -46,6 +46,7 @@
     });
     $('auth-pane-token')?.setAttribute('hidden', '');
     $('auth-mode-tabs')?.removeAttribute('hidden');
+    $('auth-entry-head')?.removeAttribute('hidden');
     clearAllFeedback();
   }
 
@@ -78,6 +79,7 @@
     $('auth-pane-forgot')?.setAttribute('hidden', '');
     $('auth-pane-token')?.removeAttribute('hidden');
     $('auth-mode-tabs')?.setAttribute('hidden', '');
+    $('auth-entry-head')?.setAttribute('hidden', '');
 
     try {
       const result = tokenIntent.mode === 'invite'
@@ -117,7 +119,11 @@
 
     try {
       const user = await persistence.login(username, password);
-      SiteShell.showToast('登录成功', 'success', 1600);
+      SiteShell.queueWelcomeToast?.({
+        title: `欢迎回来，${user?.displayName || user?.username || username}`,
+        message: '已进入工作台，可以继续创作',
+        duration: 1900
+      });
       window.location.href = getRedirectTarget(user);
     } catch (error) {
       setFeedback('login-feedback', error.message || '登录失败');
@@ -157,7 +163,11 @@
         displayName,
         password
       });
-      SiteShell.showToast('注册成功，正在进入工作台', 'success', 1600);
+      SiteShell.queueWelcomeToast?.({
+        title: `欢迎你，${user?.displayName || user?.username || username}`,
+        message: '账号已创建，工作台已准备好',
+        duration: 1900
+      });
       window.location.href = getRedirectTarget(user);
     } catch (error) {
       setFeedback('register-feedback', error.message || '注册失败');
@@ -208,7 +218,11 @@
         ? await persistence.activateInvitation(tokenIntent.token, password)
         : await persistence.completePasswordReset(tokenIntent.token, password);
       const user = result?.user || result;
-      SiteShell.showToast(tokenIntent.mode === 'invite' ? '账号激活成功' : '密码重置成功', 'success', 1600);
+      SiteShell.queueWelcomeToast?.({
+        title: tokenIntent.mode === 'invite' ? '账号已激活' : '密码已更新',
+        message: '已进入工作台，可以继续使用',
+        duration: 1900
+      });
       window.location.href = getRedirectTarget(user);
     } catch (error) {
       setFeedback('token-feedback', error.message || '操作失败');

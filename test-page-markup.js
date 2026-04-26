@@ -14,6 +14,7 @@ function main() {
   const siteShellJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'site-shell.js'), 'utf8');
 
   assert.ok(html.includes('/js/app-shell.js'), 'index should load app-shell.js before app.js');
+  assert.ok(html.includes('/js/site-shell.js'), 'index should load site-shell.js before app.js for queued auth feedback');
   assert.ok(html.includes('name="aigs-api-base-url"'), 'index should expose the optional API base-url meta tag');
   assert.ok(html.includes('/images/AG-logo.png'), 'index should expose the AG logo asset');
   assert.ok(html.includes('rel="icon"'), 'index should expose a favicon link');
@@ -34,8 +35,8 @@ function main() {
   assert.ok(html.includes('id="chat-archived-list"'), 'index should contain archived conversation list');
   assert.ok(html.includes('data-chat-archived-toggle="true"'), 'index should contain archived conversation collapse toggle');
   assert.ok(html.includes('id="chat-conversation-title"'), 'index should contain active conversation title');
-  assert.ok(html.includes('id="workspace-resume-card"'), 'index should contain the workspace resume card');
-  assert.ok(html.includes('id="workspace-clear-draft"'), 'index should contain the workspace clear-draft action');
+  assert.ok(!html.includes('id="workspace-resume-card"'), 'index should no longer contain the retired workspace resume card');
+  assert.ok(!html.includes('id="workspace-clear-draft"'), 'index should no longer contain the retired workspace clear-draft action');
   assert.ok(html.includes('id="chat-scroll-to-latest"'), 'index should contain the chat scroll-to-latest action');
   assert.ok(html.includes('id="chat-request-status"'), 'index should contain chat request status feedback');
   assert.ok(html.includes('id="btn-chat-stop"'), 'index should contain chat stop-generation action');
@@ -43,8 +44,8 @@ function main() {
   assert.ok(!html.includes('id="chat-excerpt-shelf"'), 'index should no longer contain the chat excerpt shelf');
   assert.ok(!html.includes('id="chat-context-strip"'), 'index should no longer contain the chat context strip');
   assert.ok(!html.includes('id="chat-reading-outline"'), 'index should no longer contain the chat reading outline');
-  assert.ok(html.includes('id="workspace-asset-strip"'), 'index should contain workspace asset strip');
-  assert.ok(html.includes('id="workspace-asset-stats"'), 'index should contain workspace asset stats');
+  assert.ok(!html.includes('id="workspace-asset-strip"'), 'index should no longer contain workspace asset strip');
+  assert.ok(!html.includes('id="workspace-asset-stats"'), 'index should no longer contain workspace asset stats');
   assert.ok(html.includes('id="btn-quota-toggle"'), 'index should contain nav quota collapse toggle');
   assert.ok(html.includes('id="quota-summary"'), 'index should contain nav quota summary line');
   assert.ok(html.includes('id="btn-chat-new-conversation"'), 'index should contain new conversation button');
@@ -56,8 +57,8 @@ function main() {
   assert.ok(html.includes('gpt-4.1-mini'), 'index should expose the default chat model label');
   assert.ok(html.includes('id="covervoice-result"'), 'voice result id should be aligned with app logic');
   assert.ok(html.includes('>会话<'), 'chat conversation sidebar title should be simplified and localized to Chinese');
-  assert.ok(html.includes('继续上次工作'), 'workspace should surface the personal resume card copy');
-  assert.ok(html.indexOf('id="workspace-resume-card"') > html.indexOf('id="tab-chat"'), 'workspace resume strip should render near the bottom of the main content');
+  assert.ok(!html.includes('继续上次工作'), 'workspace should no longer surface the retired personal resume card copy');
+  assert.ok(!html.includes('最近资产'), 'workspace should no longer render bottom recent-asset copy');
   assert.ok(html.includes('新建对话'), 'chat new conversation button should be localized to Chinese');
   assert.ok(html.includes('搜索会话'), 'conversation search should be localized to Chinese');
   assert.ok(html.includes('已归档'), 'archived conversation section should be localized to Chinese');
@@ -76,6 +77,8 @@ function main() {
   assert.ok(accountHtml.includes('id="account-password-form"'), 'account page should contain the account password form');
   assert.ok(accountHtml.includes('id="account-password-status-heading"'), 'account page should expose the security status summary');
   assert.ok(accountHtml.includes('id="account-admin-link"'), 'account page should expose the admin shortcut link placeholder');
+  assert.ok(accountHtml.includes('id="account-overview-display-name"'), 'account page should expose a structured profile overview display-name field');
+  assert.ok(accountHtml.includes('id="account-overview-plan"'), 'account page should expose a structured profile overview plan field');
   assert.ok(adminHtml.includes('/js/admin-page.js'), 'admin page should load the admin page controller');
   assert.ok(adminHtml.includes('name="aigs-api-base-url"'), 'admin page should expose the optional API base-url meta tag');
   assert.ok(adminHtml.includes('id="admin-create-user-form"'), 'admin page should contain admin create-user form');
@@ -104,13 +107,13 @@ function main() {
   assert.ok(appJs.includes('jumpToChatExcerpt'), 'workspace should support jumping back to an excerpted message');
   assert.ok(appJs.includes('copyChatExcerptBundle'), 'workspace should support copying visible chat excerpts');
   assert.ok(appJs.includes('insertChatExcerptIntoComposer'), 'workspace should allow reusing excerpted content in composer');
-  assert.ok(appJs.includes('renderWorkspaceAssetStrip'), 'workspace should render cross-page asset strip');
-  assert.ok(appJs.includes('applyChatAssetToCurrentWorkspace'), 'workspace should apply chat assets to the current workspace');
+  assert.ok(!appJs.includes('renderWorkspaceAssetStrip'), 'workspace should not keep a retired bottom asset-strip helper');
+  assert.ok(!appJs.includes('applyChatAssetToCurrentWorkspace'), 'workspace should not keep dead bottom asset application logic');
   assert.ok(appJs.includes('buildAssistantMessageCompactSummary'), 'workspace should build compact summaries for long assistant replies');
   assert.ok(appJs.includes('toggleAssistantMessageCompact'), 'workspace should toggle long assistant reply compact mode');
   assert.ok(appJs.includes('setChatExcerptArchived'), 'workspace should support archiving chat excerpts');
   assert.ok(appJs.includes('clearArchivedChatExcerpts'), 'workspace should support clearing archived chat excerpts');
-  assert.ok(appJs.includes('openArchivedChatAssetsPanel'), 'workspace should support opening archived chat assets from asset strip');
+  assert.ok(!appJs.includes('openArchivedChatAssetsPanel'), 'workspace should not keep dead bottom asset panel helpers');
   assert.ok(appJs.includes('retryTransientAssistantMessage'), 'workspace should expose retry actions for failed assistant replies');
   assert.ok(appJs.includes('data-chat-message-actions-toggle'), 'workspace should expose a compact assistant action toggle for version history');
   assert.ok(appJs.includes('stopChatGeneration'), 'workspace should expose stop-generation behavior');
@@ -127,8 +130,15 @@ function main() {
   assert.ok(appJs.includes("paper: '护眼模式'"), 'workspace theme toggle should label paper eye-care mode');
   assert.ok(appJs.includes('normalizeTheme'), 'workspace theme toggle should normalize unknown theme values');
   assert.ok(siteShellJs.includes("['dark', 'light', 'paper']"), 'portal theme toggle should support paper eye-care mode');
-  assert.ok(authPageJs.includes('注册成功，正在进入工作台'), 'auth page should contain a register success flow');
-  assert.ok(authPageJs.includes('账号激活成功'), 'auth page should contain an invite-activation success flow');
+  assert.ok(siteShellJs.includes('showWelcomeToast'), 'portal shell should expose a welcome toast helper for auth success feedback');
+  assert.ok(siteShellJs.includes('queueWelcomeToast'), 'portal shell should queue auth success feedback before redirect');
+  assert.ok(siteShellJs.includes('consumeQueuedWelcomeToast'), 'portal shell should consume auth success feedback after landing');
+  assert.ok(authHtml.includes('id="auth-entry-head"'), 'auth page should expose a standard entry heading block');
+  assert.ok(authHtml.includes('欢迎回来'), 'auth page should present a welcoming login-first heading');
+  assert.ok(authPageJs.includes('queueWelcomeToast'), 'auth page should queue the welcome toast before redirect');
+  assert.ok(!authPageJs.includes('await SiteShell.showWelcomeToast'), 'auth page should not wait for welcome toast before entering workspace');
+  assert.ok(authPageJs.includes('账号已创建，工作台已准备好'), 'auth page should contain a register success flow');
+  assert.ok(authPageJs.includes('账号已激活'), 'auth page should contain an invite-activation success flow');
   assert.ok(accountPageJs.includes('密码已更新，当前会话已保留。'), 'account page should surface password update success feedback');
   assert.ok(adminPageJs.includes('已撤销'), 'admin page should support invitation revocation copy');
   assert.ok(adminHtml.includes('审计日志'), 'admin page should expose localized audit log copy');

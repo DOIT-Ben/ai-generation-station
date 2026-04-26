@@ -88,6 +88,7 @@ function createConfig(options = {}) {
     const env = options.env || process.env;
     const localConfig = loadLocalConfig();
     const PORT = Number(getConfigValue(env, localConfig, 'PORT', 18791));
+    const BIND_HOST = String(getConfigValue(env, localConfig, 'BIND_HOST', '127.0.0.1') || '127.0.0.1').trim() || '127.0.0.1';
     const OUTPUT_DIR = resolveOutputDir(getConfigValue(env, localConfig, 'OUTPUT_DIR', undefined));
     const API_KEY = getConfigValue(env, localConfig, 'MINIMAX_API_KEY', '') || '';
     const CHAT_API_BASE_URL = String(getConfigValue(env, localConfig, 'CHAT_API_BASE_URL', 'https://api.suneora.com/v1') || 'https://api.suneora.com/v1').trim() || 'https://api.suneora.com/v1';
@@ -191,6 +192,7 @@ function createConfig(options = {}) {
         PUBLIC_DIR,
         API_HOST,
         PORT,
+        BIND_HOST,
         OUTPUT_DIR,
         API_KEY,
         CHAT_API_BASE_URL,

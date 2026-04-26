@@ -8,6 +8,7 @@
   'use strict';
 
   const THEME_STORAGE_KEY = 'aigs.theme';
+  const PENDING_WELCOME_TOAST_KEY = 'aigs.pendingWelcomeToast';
   const THEME_SEQUENCE = ['dark', 'light', 'paper'];
   const THEME_TIPS = {
     dark: '深色模式',
@@ -56,6 +57,125 @@
       toast.style.animation = 'fadeOut 0.35s ease forwards';
       window.setTimeout(() => toast.remove(), 400);
     }, duration);
+  }
+
+  function showWelcomeToast(options = {}) {
+    const title = String(options.title || '欢迎回来').trim() || '欢迎回来';
+    const message = String(options.message || '正在进入工作台').trim() || '正在进入工作台';
+    const duration = Number(options.duration || 1800);
+    const host = document.createElement('div');
+    const shell = document.createElement('div');
+    const card = document.createElement('div');
+    const content = document.createElement('div');
+    const icon = document.createElement('span');
+    const eyebrow = document.createElement('span');
+    const heading = document.createElement('strong');
+    const copy = document.createElement('p');
+    const progress = document.createElement('span');
+    const closeButton = document.createElement('button');
+
+    host.className = 'welcome-toast-host';
+    shell.className = 'welcome-toast-shell';
+    progress.className = 'welcome-toast-progress';
+    progress.style.transform = 'scaleX(0)';
+    card.className = 'welcome-toast-card';
+    content.className = 'welcome-toast-content';
+    icon.className = 'welcome-toast-icon';
+    icon.innerHTML = `
+      <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+        <circle cx="10" cy="10" r="8.25"></circle>
+        <path d="M6.2 10.3l2.45 2.45 5.15-5.4"></path>
+      </svg>
+    `;
+    eyebrow.className = 'welcome-toast-eyebrow';
+    eyebrow.textContent = 'Back to Flow';
+    closeButton.className = 'welcome-toast-close';
+    closeButton.type = 'button';
+    closeButton.setAttribute('aria-label', '关闭欢迎提示');
+    closeButton.textContent = '×';
+    heading.textContent = title;
+    copy.textContent = message;
+
+    content.appendChild(icon);
+    content.appendChild(eyebrow);
+    content.appendChild(heading);
+    content.appendChild(copy);
+    card.appendChild(closeButton);
+    card.appendChild(content);
+    shell.appendChild(progress);
+    shell.appendChild(card);
+    host.appendChild(shell);
+    document.body.appendChild(host);
+
+    const startedAt = performance.now();
+    let rafId = 0;
+    let finishTimer = 0;
+    let isClosed = false;
+
+    const finish = () => {
+      if (isClosed) return;
+      isClosed = true;
+      if (rafId) {
+        window.cancelAnimationFrame(rafId);
+      }
+      if (finishTimer) {
+        window.clearTimeout(finishTimer);
+      }
+      host.classList.add('is-leaving');
+      window.setTimeout(() => {
+        host.remove();
+      }, 420);
+    };
+
+    const tick = now => {
+      const progress = Math.min((now - startedAt) / duration, 1);
+      if (progress >= 0 && progress <= 1) {
+        const nextScale = Math.max(0.0001, progress);
+        host.querySelector('.welcome-toast-progress')?.style.setProperty('transform', `scaleX(${nextScale})`);
+      }
+      if (progress < 1 && !isClosed) {
+        rafId = window.requestAnimationFrame(tick);
+      }
+    };
+    rafId = window.requestAnimationFrame(tick);
+
+    return new Promise(resolve => {
+      const resolveAndFinish = () => {
+        finish();
+        window.setTimeout(resolve, 420);
+      };
+      closeButton.addEventListener('click', resolveAndFinish, { once: true });
+      finishTimer = window.setTimeout(resolveAndFinish, duration);
+    });
+  }
+
+  function queueWelcomeToast(options = {}) {
+    try {
+      window.sessionStorage.setItem(PENDING_WELCOME_TOAST_KEY, JSON.stringify({
+        title: String(options.title || '欢迎回来').trim() || '欢迎回来',
+        message: String(options.message || '正在进入工作台').trim() || '正在进入工作台',
+        duration: Number(options.duration || 1800)
+      }));
+    } catch {
+      // Navigation must keep working even when sessionStorage is unavailable.
+    }
+  }
+
+  function consumeQueuedWelcomeToast() {
+    try {
+      const raw = window.sessionStorage.getItem(PENDING_WELCOME_TOAST_KEY);
+      if (!raw) return null;
+      window.sessionStorage.removeItem(PENDING_WELCOME_TOAST_KEY);
+      const payload = JSON.parse(raw);
+      if (!payload || typeof payload !== 'object') return null;
+      return {
+        title: String(payload.title || '欢迎回来').trim() || '欢迎回来',
+        message: String(payload.message || '正在进入工作台').trim() || '正在进入工作台',
+        duration: Number(payload.duration || 1800)
+      };
+    } catch {
+      return null;
+    }
   }
 
   function normalizeTheme(theme) {
@@ -231,8 +351,9 @@
         <a class="portal-brand" href="/">
           <span class="portal-brand-mark">AI</span>
           <span class="portal-brand-copy">
-            <strong>AI Generation</strong>
-            <span>Station</span>
+            <strong>AI</strong>
+            <span>Generation</span>
+            <em>Station</em>
           </span>
         </a>
         <button class="portal-nav-toggle" type="button" data-portal-nav-toggle aria-expanded="true" aria-label="收起页面导航">收起</button>
@@ -270,6 +391,9 @@
     escapeHtml,
     formatTime,
     showToast,
+    showWelcomeToast,
+    queueWelcomeToast,
+    consumeQueuedWelcomeToast,
     getStoredTheme,
     setTheme,
     bindThemeToggle,

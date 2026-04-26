@@ -8,6 +8,8 @@ Provide one canonical proxy baseline for exposing the current Node server safely
 
 - backend app port:
   - `18791`
+- recommended backend bind host:
+  - `127.0.0.1`
 - canonical backend health endpoint:
   - `/api/health`
 - same-origin frontend and API are still the default deployment model
@@ -21,6 +23,9 @@ Provide one canonical proxy baseline for exposing the current Node server safely
 - `TRUST_PROXY=true`
 - `SESSION_COOKIE_SECURE=true`
 - `SESSION_COOKIE_SAME_SITE=Lax`
+- `BIND_HOST=127.0.0.1`
+
+Keep `BIND_HOST=127.0.0.1` when the public entry is Caddy, Nginx, Cloudflare Tunnel, or another local reverse proxy on the same machine. Only use `BIND_HOST=0.0.0.0` when the host firewall and network policy intentionally allow direct access to this Node service.
 
 Optional:
 
@@ -84,15 +89,16 @@ server {
 ## Verification
 
 1. open `/api/health` through the proxy and confirm `200`
-2. log in once and confirm the returned session cookie includes `Secure`
-3. confirm backend audit logs record the client IP rather than only loopback/proxy IP
-4. confirm browser responses include:
+2. confirm the backend process listens on `127.0.0.1:18791` unless direct LAN access is intentionally required
+3. log in once and confirm the returned session cookie includes `Secure`
+4. confirm backend audit logs record the client IP rather than only loopback/proxy IP
+5. confirm browser responses include:
    - `Content-Security-Policy`
    - `X-Frame-Options`
    - `X-Content-Type-Options`
    - `Referrer-Policy`
-5. confirm a disallowed `Origin` on `/api/*` returns `403`
-6. if using a separate-site frontend:
+6. confirm a disallowed `Origin` on `/api/*` returns `403`
+7. if using a separate-site frontend:
    - confirm `GET /api/auth/csrf` returns `200` for the allowed frontend origin
    - confirm the response sets an HttpOnly CSRF seed cookie
    - confirm the browser preflight allows `X-CSRF-Token`

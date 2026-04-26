@@ -160,7 +160,6 @@ async function assertWorkspaceAuthenticated(page, username, options = {}) {
   await page.locator('#sidebar').waitFor({ state: 'visible' });
   await page.locator('#theme-toggle').waitFor({ state: 'visible' });
   await page.locator('#btn-logout').waitFor({ state: 'visible' });
-  await page.locator('#workspace-resume-card').waitFor({ state: 'attached' });
   const userPanelText = await page.locator('#user-panel').innerText();
   assert.ok(userPanelText.includes(username), `workspace user panel should render ${username}`);
   if (options.isAdmin === true) {
@@ -254,13 +253,10 @@ async function assertWorkspaceResumePersistence(page, uniqueSeed) {
     const tab = document.getElementById('tab-lyrics');
     const nav = document.querySelector('.nav-item[data-tab="lyrics"]');
     const input = document.getElementById('lyrics-prompt');
-    const resumeCard = document.getElementById('workspace-resume-card');
     return Boolean(
       tab?.classList.contains('active') &&
       nav?.classList.contains('active') &&
-      input?.value === expected &&
-      resumeCard &&
-      !resumeCard.hasAttribute('hidden')
+      input?.value === expected
     );
   }, lyricsDraft);
 

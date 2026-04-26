@@ -66,6 +66,10 @@
     setText('account-display-name', displayName);
     setText('account-username-line', `账号：${username}`);
     setText('account-email-line', `邮箱：${email}`);
+    setText('account-overview-display-name', displayName);
+    setText('account-overview-username', username);
+    setText('account-overview-email', email);
+    setText('account-overview-plan', planLabel);
     setText('account-role-pill', `角色：${roleLabel}`);
     setText('account-plan-pill', `套餐：${planLabel}`);
     setText('account-password-pill', `密码状态：${mustResetPassword ? '需立即修改' : '正常'}`);
@@ -81,8 +85,8 @@
     setText(
       'account-security-entry-note',
       session.role === 'admin'
-        ? '你当前拥有管理员权限，可从左侧快捷入口继续进入管理后台。'
-        : '当前账号为普通成员，这里只展示你本人相关的设置与安全操作。'
+        ? '你当前拥有管理员权限，可以从快捷入口进入后台。'
+        : '当前账号为普通成员，这里只保留和你本人有关的安全设置。'
     );
     $('account-admin-link')?.toggleAttribute('hidden', session.role !== 'admin');
   }
