@@ -30,6 +30,7 @@ function main() {
   const templateToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'template-tools.js'), 'utf8');
   const workspaceTemplateToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'workspace-template-tools.js'), 'utf8');
   const workspaceGenerationToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'workspace-generation-tools.js'), 'utf8');
+  const workspaceMediaToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'workspace-media-tools.js'), 'utf8');
   const workspaceConversationToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'workspace-conversation-tools.js'), 'utf8');
   const workspaceStateToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'workspace-state-tools.js'), 'utf8');
   const workspaceShellToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'workspace-shell-tools.js'), 'utf8');
@@ -58,6 +59,7 @@ function main() {
   assert.ok(html.includes('/js/template-tools.js'), 'index should load the template utility module before app.js');
   assert.ok(html.includes('/js/workspace-template-tools.js'), 'index should load the workspace template utility module before app.js');
   assert.ok(html.includes('/js/workspace-generation-tools.js'), 'index should load the workspace generation utility module before app.js');
+  assert.ok(html.includes('/js/workspace-media-tools.js'), 'index should load the workspace media utility module before app.js');
   assert.ok(html.includes('/js/workspace-conversation-tools.js'), 'index should load the workspace conversation utility module before app.js');
   assert.ok(html.includes('/js/workspace-state-tools.js'), 'index should load the workspace state utility module before app.js');
   assert.ok(html.includes('/js/workspace-shell-tools.js'), 'index should load the workspace shell utility module before app.js');
@@ -83,6 +85,7 @@ function main() {
   assert.ok(templateToolsJs.includes('AigsTemplateTools'), 'template utilities should publish a dedicated browser module');
   assert.ok(workspaceTemplateToolsJs.includes('AigsWorkspaceTemplateTools'), 'workspace template utilities should publish a dedicated browser module');
   assert.ok(workspaceGenerationToolsJs.includes('AigsWorkspaceGenerationTools'), 'workspace generation utilities should publish a dedicated browser module');
+  assert.ok(workspaceMediaToolsJs.includes('AigsWorkspaceMediaTools'), 'workspace media utilities should publish a dedicated browser module');
   assert.ok(workspaceConversationToolsJs.includes('AigsWorkspaceConversationTools'), 'workspace conversation utilities should publish a dedicated browser module');
   assert.ok(workspaceStateToolsJs.includes('AigsWorkspaceStateTools'), 'workspace state utilities should publish a dedicated browser module');
   assert.ok(workspaceShellToolsJs.includes('AigsWorkspaceShellTools'), 'workspace shell utilities should publish a dedicated browser module');
@@ -232,6 +235,7 @@ function main() {
   assert.ok(appJs.includes('getChatExperienceStage'), 'workspace should adapt chat composer copy to the current conversation stage');
   assert.ok(appJs.includes('syncChatViewportState'), 'workspace should react to mobile visual viewport changes while composing');
   assert.ok(appJs.includes('requireWorkspaceGenerationTools'), 'workspace should wire the dedicated generation module through app assembly');
+  assert.ok(appJs.includes('requireWorkspaceMediaTools'), 'workspace should wire the dedicated media module through app assembly');
   assert.ok(appJs.includes('requireWorkspaceConversationTools'), 'workspace should wire the dedicated conversation module through app assembly');
   assert.ok(appJs.includes('requireWorkspaceStateTools'), 'workspace should wire the dedicated state module through app assembly');
   assert.ok(appJs.includes('requireWorkspaceShellTools'), 'workspace should wire the dedicated shell module through app assembly');
