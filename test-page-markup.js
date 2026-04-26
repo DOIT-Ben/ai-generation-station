@@ -34,6 +34,7 @@ function main() {
   const workspaceStateToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'workspace-state-tools.js'), 'utf8');
   const workspaceShellToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'workspace-shell-tools.js'), 'utf8');
   const workspaceUiToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'workspace-ui-tools.js'), 'utf8');
+  const workspacePageInitToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'workspace-page-init-tools.js'), 'utf8');
   const workspaceInitToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'workspace-init-tools.js'), 'utf8');
   const conversationWorkflowToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'conversation-workflow-tools.js'), 'utf8');
   const conversationListToolsJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'conversation-list-tools.js'), 'utf8');
@@ -60,6 +61,7 @@ function main() {
   assert.ok(html.includes('/js/workspace-state-tools.js'), 'index should load the workspace state utility module before app.js');
   assert.ok(html.includes('/js/workspace-shell-tools.js'), 'index should load the workspace shell utility module before app.js');
   assert.ok(html.includes('/js/workspace-ui-tools.js'), 'index should load the workspace ui utility module before app.js');
+  assert.ok(html.includes('/js/workspace-page-init-tools.js'), 'index should load the workspace page-init utility module before app.js');
   assert.ok(html.includes('/js/workspace-init-tools.js'), 'index should load the workspace init utility module before app.js');
   assert.ok(html.includes('/js/conversation-workflow-tools.js'), 'index should load the conversation workflow utility module before app.js');
   assert.ok(html.includes('/js/conversation-list-tools.js'), 'index should load the conversation list utility module before app.js');
@@ -83,6 +85,7 @@ function main() {
   assert.ok(workspaceStateToolsJs.includes('AigsWorkspaceStateTools'), 'workspace state utilities should publish a dedicated browser module');
   assert.ok(workspaceShellToolsJs.includes('AigsWorkspaceShellTools'), 'workspace shell utilities should publish a dedicated browser module');
   assert.ok(workspaceUiToolsJs.includes('AigsWorkspaceUiTools'), 'workspace ui utilities should publish a dedicated browser module');
+  assert.ok(workspacePageInitToolsJs.includes('AigsWorkspacePageInitTools'), 'workspace page-init utilities should publish a dedicated browser module');
   assert.ok(workspaceInitToolsJs.includes('AigsWorkspaceInitTools'), 'workspace init utilities should publish a dedicated browser module');
   assert.ok(conversationWorkflowToolsJs.includes('AigsConversationWorkflowTools'), 'conversation workflow utilities should publish a dedicated browser module');
   assert.ok(conversationListToolsJs.includes('AigsConversationListTools'), 'conversation list utilities should publish a dedicated browser module');
@@ -230,6 +233,7 @@ function main() {
   assert.ok(appJs.includes('requireWorkspaceStateTools'), 'workspace should wire the dedicated state module through app assembly');
   assert.ok(appJs.includes('requireWorkspaceShellTools'), 'workspace should wire the dedicated shell module through app assembly');
   assert.ok(appJs.includes('requireWorkspaceUiTools'), 'workspace should wire the dedicated ui module through app assembly');
+  assert.ok(appJs.includes('requireWorkspacePageInitTools'), 'workspace should wire the dedicated page-init module through app assembly');
   assert.ok(appJs.includes('requireWorkspaceInitTools'), 'workspace should wire the dedicated init module through app assembly');
   assert.ok(appJs.includes('requireChatEntryTools'), 'workspace should wire the dedicated chat entry module through app assembly');
   assert.ok(appJs.includes('requireChatMessageMetaTools'), 'workspace should wire the dedicated chat message meta module through app assembly');

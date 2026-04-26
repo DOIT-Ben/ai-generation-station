@@ -32,16 +32,7 @@ const {
     buildAuditLogQuery,
     buildSystemTemplateSeed
 } = require('./state-store-helpers');
-const { createStateStoreMutations } = require('./state-store-mutations');
-const { createStateStoreAuth } = require('./state-store-auth');
-const { createStateStoreMaintenance } = require('./state-store-maintenance');
-const { createStateStoreQueries } = require('./state-store-queries');
-const { createStateStoreConversations } = require('./state-store-conversations');
-const { createStateStoreBootstrap } = require('./state-store-bootstrap');
-const { createStateStoreCore } = require('./state-store-core');
-const { createStateStoreFacade } = require('./state-store-facade');
-const { createStateStoreSnapshots } = require('./state-store-snapshots');
-const { createStateStoreUsers } = require('./state-store-users');
+const { createStateStoreServices } = require('./state-store-services');
 
 const LOGIN_FAILURE_LOCK_THRESHOLD = 5;
 const LOGIN_FAILURE_LOCK_MS = 15 * 60 * 1000;
@@ -810,73 +801,51 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         LIMIT ?
     `);
 
-    const stateStoreCore = createStateStoreCore({
+    const { facade } = createStateStoreServices({
         db,
-        insertAuditLogStmt
-    });
-
-    const stateStoreBootstrap = createStateStoreBootstrap({
         fs,
         crypto,
-        db,
         legacyFilePath,
         sessionTtlMs,
+        maxHistoryItems,
         seedUser,
-        hashPassword,
-        safeParseJson,
-        normalizeUserRecord,
-        normalizeCredentialRecord,
-        buildSystemTemplateSeed,
-        findUserByUsernameStmt,
-        getCredentialStmt,
-        insertUserStmt,
-        upsertCredentialStmt,
-        countSessionsStmt,
-        countHistoryStmt,
-        insertSessionStmt,
-        insertHistoryStmt,
-        countSystemTemplatesStmt,
-        insertSystemTemplateStmt,
-        markInterruptedTasksStmt
-    });
-
-    stateStoreBootstrap.runStartupBootstrap();
-
-    const stateStoreSnapshots = createStateStoreSnapshots({
-        deleteExpiredSessionsStmt,
-        deleteExpiredAuthTokensStmt,
-        cleanupExpiredRateLimitEventsStmt,
-        normalizeConversation,
-        normalizeConversationMessage,
-        buildConversationTimeline,
-        selectConversationByIdStmt,
-        listConversationMessagesStmt,
-        selectConversationMessageByIdStmt
-    });
-
-    const stateStoreAuth = createStateStoreAuth({
-        sessionTtlMs,
-        LOGIN_FAILURE_LOCK_THRESHOLD,
-        LOGIN_FAILURE_LOCK_MS,
         hashPassword,
         hashPasswordAsync,
         verifyPassword,
         verifyPasswordAsync,
+        safeParseJson,
         hashOpaqueToken,
         createOpaqueToken,
         normalizeUserRecord,
         normalizeCredentialRecord,
+        normalizePreferences,
+        normalizeTask,
+        normalizeAuditLog,
         normalizeAuthTokenRecord,
         buildAuthTokenSummary,
-        cleanupExpiredSessions: stateStoreSnapshots.cleanupExpiredSessions,
-        cleanupAuthTokens: stateStoreSnapshots.cleanupAuthTokens,
-        runInTransaction: stateStoreCore.runInTransaction,
-        appendAuditLogRecord: stateStoreCore.appendAuditLogRecord,
-        getUserByUsername: username => normalizeUserRecord(findUserByUsernameStmt.get(username)),
-        getUserById: userId => normalizeUserRecord(findUserByIdStmt.get(userId)),
+        normalizeConversation,
+        normalizeConversationMessage,
+        buildConversationTitle,
+        buildConversationTimeline,
+        buildDisplayedConversationMessages,
+        getUsageDate,
+        getEmptyUsage,
+        normalizeTemplateRow,
+        groupTemplates,
+        buildAuditLogQuery,
+        buildSystemTemplateSeed,
+        LOGIN_FAILURE_LOCK_THRESHOLD,
+        LOGIN_FAILURE_LOCK_MS,
+        deleteExpiredSessionsStmt,
+        deleteExpiredAuthTokensStmt,
+        cleanupExpiredRateLimitEventsStmt,
+        selectConversationByIdStmt,
+        listConversationMessagesStmt,
+        selectConversationMessageByIdStmt,
+        findUserByUsernameStmt,
+        findUserByIdStmt,
         insertUserStmt,
         upsertCredentialStmt,
-        findUserByUsernameStmt,
         getCredentialStmt,
         incrementFailedLoginStmt,
         resetFailedLoginStmt,
@@ -891,12 +860,7 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         findLatestAuthTokenByUserPurposeStmt,
         findActiveAuthTokenByUserPurposeStmt,
         markAuthTokenUsedStmt,
-        markUserPurposeTokensUsedStmt
-    });
-
-    const stateStoreMaintenance = createStateStoreMaintenance({
-        runInTransaction: stateStoreCore.runInTransaction,
-        cleanupExpiredRateLimitEvents: stateStoreSnapshots.cleanupExpiredRateLimitEvents,
+        markUserPurposeTokensUsedStmt,
         countUsersStmt,
         countSessionsStmt,
         countActiveSessionsStmt,
@@ -908,115 +872,49 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         countAuditLogsSummaryStmt,
         deleteAuditLogsBeforeStmt,
         selectRateLimitWindowStmt,
-        insertRateLimitEventStmt
-    });
-
-    const stateStoreQueries = createStateStoreQueries({
-        db,
-        normalizeAuditLog,
-        normalizeTemplateRow,
-        groupTemplates,
-        buildAuditLogQuery,
+        insertRateLimitEventStmt,
         listTemplateFavoritesStmt,
         selectSystemTemplatesStmt,
         selectUserTemplatesStmt,
-        listAuditLogsStmt
-    });
-
-    const stateStoreConversations = createStateStoreConversations({
-        normalizeConversation,
-        normalizeConversationMessage,
-        buildConversationTimeline,
-        buildDisplayedConversationMessages,
+        listAuditLogsStmt,
         listConversationsStmt,
         listArchivedConversationsStmt,
-        selectConversationByIdStmt,
         selectArchivedConversationByIdStmt,
-        listConversationMessagesStmt,
-        selectConversationMessageByIdStmt,
-        updateConversationMessageMetadataStmt
-    });
-
-    const stateStoreUsers = createStateStoreUsers({
-        normalizeUserRecord,
-        runInTransaction: stateStoreCore.runInTransaction,
-        appendAuditLogRecord: stateStoreCore.appendAuditLogRecord,
-        findUserByUsernameStmt,
-        findUserByIdStmt,
+        updateConversationMessageMetadataStmt,
         findUserByEmailStmt,
         listUsersStmt,
         countActiveAdminsStmt,
-        updateUserAdminStmt
-    });
-
-    const stateStoreMutations = createStateStoreMutations({
-        db,
-        maxHistoryItems,
-        buildConversationTitle,
-        normalizeConversationMessage,
-        safeParseJson,
-        normalizePreferences,
-        normalizeTask,
-        getUsageDate,
-        groupTemplates,
-        normalizeTemplateRow,
-        getConversation: (userId, conversationId) => normalizeConversation(selectConversationByIdStmt.get(conversationId, userId)),
-        getArchivedConversation: (userId, conversationId) => normalizeConversation(selectArchivedConversationByIdStmt.get(conversationId, userId)),
-        getConversationMessage: stateStoreSnapshots.getConversationMessageSnapshot,
-        getConversationTimeline: stateStoreSnapshots.getConversationTimelineSnapshot,
-        getConversationMessages: (userId, conversationId, limit = 200) => {
-            const timeline = stateStoreSnapshots.getConversationTimelineSnapshot(userId, conversationId, limit);
-            if (!timeline) return null;
-            return buildDisplayedConversationMessages(timeline);
-        },
-        getPreferences: userId => normalizePreferences(getPreferencesStmt.get(userId)),
-        getUsageDaily: (userId, usageDate = getUsageDate()) => getUsageDailyStmt.get(userId, usageDate) || getEmptyUsage(usageDate),
-        getTask: taskId => normalizeTask(getTaskStmt.get(taskId)),
-        listTemplates: (feature, userId) => stateStoreQueries.listTemplates(feature, userId),
-        insertConversationStmt,
-        updateConversationStmt,
+        updateUserAdminStmt,
+        insertAuditLogStmt,
+        countSystemTemplatesStmt,
+        insertSystemTemplateStmt,
+        markInterruptedTasksStmt,
         archiveConversationStmt,
         restoreConversationStmt,
         deleteArchivedConversationStmt,
+        insertConversationStmt,
+        updateConversationStmt,
         insertConversationMessageStmt,
-        listConversationMessagesStmt,
         insertHistoryStmt,
         pruneHistoryStmt,
         selectHistoryStmt,
+        normalizePreferences,
         getPreferencesStmt,
-        upsertPreferencesStmt,
+        getUsageDate,
         getUsageDailyStmt,
+        getEmptyUsage,
+        upsertPreferencesStmt,
         upsertUsageStmt,
         insertTaskStmt,
         updateTaskStmt,
         getTaskStmt,
-        listTemplateFavoritesStmt,
-        selectSystemTemplatesStmt,
-        selectUserTemplatesStmt,
         insertUserTemplateStmt,
         getTemplateFavoriteStmt,
         deleteTemplateFavoriteStmt,
         insertTemplateFavoriteStmt
     });
 
-    return createStateStoreFacade({
-        db,
-        stateStoreUsers,
-        stateStoreAuth,
-        stateStoreMaintenance,
-        stateStoreConversations,
-        stateStoreMutations,
-        stateStoreQueries,
-        normalizeCredentialRecord,
-        getCredentialStmt,
-        normalizePreferences,
-        getPreferencesStmt,
-        getUsageDate,
-        getUsageDailyStmt,
-        getEmptyUsage,
-        normalizeTask,
-        getTaskStmt
-    });
+    return facade;
 }
 
 module.exports = {

@@ -374,6 +374,32 @@
         showToast
       })
     : null;
+  const workspacePageInitTools = window.AigsWorkspacePageInitTools?.createTools
+    ? window.AigsWorkspacePageInitTools.createTools({
+        getElement: $,
+        apiFetch,
+        resolveApiAssetUrl,
+        getCurrentResult: () => currentResult,
+        recordFeatureHistory,
+        showToast,
+        showLoading,
+        hideLoading,
+        loadQuota,
+        refreshUsageToday,
+        getWindow: () => window,
+        handleProtectedSessionLoss,
+        handlePasswordResetRequired,
+        ensureFeatureExtensions,
+        renderTemplateLibraries,
+        bindEnhancementEvents,
+        initTabs,
+        initTheme,
+        captureInitialFieldValues,
+        bootstrapAuth,
+        bindWorkspaceInteractions: () => requireWorkspaceInitTools().bindWorkspaceInteractions(),
+        setTimeoutFn: (callback, delay) => window.setTimeout(callback, delay)
+      })
+    : null;
   const workspaceInitTools = window.AigsWorkspaceInitTools?.createTools
     ? window.AigsWorkspaceInitTools.createTools({
         getElement: $,
@@ -2100,6 +2126,13 @@
     return workspaceUiTools;
   }
 
+  function requireWorkspacePageInitTools() {
+    if (!workspacePageInitTools) {
+      throw new Error('AigsWorkspacePageInitTools 未加载');
+    }
+    return workspacePageInitTools;
+  }
+
   function requireWorkspaceInitTools() {
     if (!workspaceInitTools) {
       throw new Error('AigsWorkspaceInitTools 未加载');
@@ -3639,76 +3672,7 @@
   //  Speech TTS
   // ============================================
   function initSpeechTab() {
-    const textArea = $('speech-text');
-    const charCount = $('speech-char');
-    textArea?.addEventListener('input', () => { if (charCount) charCount.textContent = textArea.value.length; });
-
-    ['speech-speed', 'speech-pitch', 'speech-vol'].forEach(id => {
-      const slider = $(id);
-      const val = $(id.replace('speech-', 'speech-') + '-val') || $(id + '-val');
-      if (slider && val) {
-        const suffix = id === 'speech-vol' ? '%' : (id === 'speech-speed' ? 'x' : '');
-        slider.addEventListener('input', () => { val.textContent = slider.value + suffix; });
-      }
-    });
-
-    $('btn-speech-generate')?.addEventListener('click', async () => {
-      const text = $('speech-text')?.value?.trim();
-      if (!text) { showToast('请输入要转换的文本', 'error'); return; }
-
-      showLoading('正在生成语音...', 0);
-      const btn = $('btn-speech-generate');
-      if (btn) btn.disabled = true;
-
-      try {
-        const res = await apiFetch('/api/tts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text,
-            voice_id: $('speech-voice')?.value,
-            emotion: $('speech-emotion')?.value,
-            speed: parseFloat($('speech-speed')?.value || 1),
-            pitch: parseFloat($('speech-pitch')?.value || 0),
-            vol: parseInt($('speech-vol')?.value || 100),
-            output_format: $('speech-format')?.value,
-            model: 'speech-2.8-hd',
-          }),
-        });
-        const data = await res.json();
-
-        if (data.success) {
-          $('speech-result')?.removeAttribute('hidden');
-          const audio = $('speech-audio');
-          if (audio) audio.src = resolveApiAssetUrl(data.url);
-          const info = $('speech-info');
-          if (info) info.textContent = `音频时长: ${data.extra?.audio_length || '?'}s | 消耗字符: ${data.extra?.usage_characters || text.length}`;
-          currentResult.speech = { url: resolveApiAssetUrl(data.url), info: info?.textContent || '' };
-          recordFeatureHistory('speech', text, `${$('speech-voice')?.value || ''} · ${$('speech-emotion')?.value || ''}`, {
-            text,
-            voice_id: $('speech-voice')?.value,
-            emotion: $('speech-emotion')?.value,
-            speed: $('speech-speed')?.value,
-            pitch: $('speech-pitch')?.value,
-            vol: $('speech-vol')?.value,
-            output_format: $('speech-format')?.value
-          }, {
-            url: resolveApiAssetUrl(data.url),
-            info: info?.textContent || ''
-          });
-          showToast('语音生成成功！', 'success');
-          loadQuota();
-          refreshUsageToday();
-        } else {
-          showToast(data.error || '生成失败', 'error');
-        }
-      } catch (e) {
-        showToast('请求失败: ' + e.message, 'error');
-      } finally {
-        hideLoading();
-        if (btn) btn.disabled = false;
-      }
-    });
+    return requireWorkspacePageInitTools().initSpeechTab();
   }
 
   // ============================================
@@ -3726,27 +3690,7 @@
   //  Init
   // ============================================
   async function init() {
-    window.addEventListener('app-auth-expired', event => {
-      const message = event?.detail?.message || '登录状态已失效，请重新登录';
-      handleProtectedSessionLoss(message);
-    });
-    window.addEventListener('app-password-reset-required', event => {
-      handlePasswordResetRequired(event?.detail || {});
-    });
-    ensureFeatureExtensions();
-    renderTemplateLibraries();
-    bindEnhancementEvents();
-    initTabs();
-    initTheme();
-    const queuedWelcomeToast = window.SiteShell?.consumeQueuedWelcomeToast?.();
-    if (queuedWelcomeToast) {
-      window.setTimeout(() => {
-        window.SiteShell?.showWelcomeToast?.(queuedWelcomeToast);
-      }, 240);
-    }
-    captureInitialFieldValues();
-    bootstrapAuth();
-    requireWorkspaceInitTools().bindWorkspaceInteractions();
+    return requireWorkspacePageInitTools().init();
   }
 
   // ============================================
