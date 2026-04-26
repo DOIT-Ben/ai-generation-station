@@ -54,6 +54,69 @@ function findCookie(response, cookieName) {
   return getSetCookies(response).find(cookie => String(cookie).startsWith(`${cookieName}=`)) || null;
 }
 
+function mergeCookieHeaders(...cookieHeaders) {
+  const cookieMap = new Map();
+  cookieHeaders
+    .map(value => String(value || '').trim())
+    .filter(Boolean)
+    .forEach(headerValue => {
+      headerValue.split(';').map(part => part.trim()).filter(Boolean).forEach(part => {
+        const [name, ...rest] = part.split('=');
+        if (!name || rest.length === 0) return;
+        cookieMap.set(name.trim(), rest.join('=').trim());
+      });
+    });
+
+  return Array.from(cookieMap.entries())
+    .map(([name, value]) => `${name}=${value}`)
+    .join('; ');
+}
+
+async function bootstrapCsrf(server, headers = {}) {
+  const response = await request(server, '/api/auth/csrf', 'GET', null, headers);
+  const csrfCookie = findCookie(response, 'aigs_csrf');
+  return {
+    response,
+    csrfToken: response.data?.csrfToken || null,
+    csrfCookieHeader: getCookieHeader(csrfCookie)
+  };
+}
+
+async function loginWithCsrf(server, credentials, headers = {}) {
+  const csrf = await bootstrapCsrf(server, headers);
+  assert(csrf.response.status === 200, `Expected CSRF bootstrap before login to return 200, got ${csrf.response.status}`);
+  assert(Boolean(csrf.csrfToken), 'Expected CSRF bootstrap before login to include a token');
+  const response = await request(server, '/api/auth/login', 'POST', credentials, {
+    ...headers,
+    Cookie: mergeCookieHeaders(headers.Cookie, csrf.csrfCookieHeader),
+    'X-CSRF-Token': csrf.csrfToken
+  });
+  const sessionCookie = findCookie(response, 'aigs_session');
+  return {
+    response,
+    csrfToken: csrf.csrfToken,
+    csrfCookieHeader: csrf.csrfCookieHeader,
+    sessionCookieHeader: getCookieHeader(sessionCookie)
+  };
+}
+
+async function registerWithCsrf(server, payload, headers = {}) {
+  const csrf = await bootstrapCsrf(server, headers);
+  assert(csrf.response.status === 200, `Expected CSRF bootstrap before register to return 200, got ${csrf.response.status}`);
+  const response = await request(server, '/api/auth/register', 'POST', payload, {
+    ...headers,
+    Cookie: mergeCookieHeaders(headers.Cookie, csrf.csrfCookieHeader),
+    'X-CSRF-Token': csrf.csrfToken
+  });
+  const sessionCookie = findCookie(response, 'aigs_session');
+  return {
+    response,
+    csrfToken: csrf.csrfToken,
+    csrfCookieHeader: csrf.csrfCookieHeader,
+    sessionCookieHeader: getCookieHeader(sessionCookie)
+  };
+}
+
 async function testHealthAndSecurityHeaders() {
   await withServer(async server => {
     const health = await request(server, '/api/health', 'GET');
@@ -246,11 +309,146 @@ async function testMalformedCookieAndOutputPathHandling() {
   });
 }
 
+async function testAdminAccessBoundaries() {
+  await withServer(async server => {
+    const anonymousAdminUsers = await request(server, '/api/admin/users', 'GET');
+    assert(anonymousAdminUsers.status === 401, `Expected anonymous admin users request to return 401, got ${anonymousAdminUsers.status}`);
+    assert(anonymousAdminUsers.data.reason === 'anonymous', 'Expected anonymous admin users request to fail as anonymous');
+
+    const uniqueSuffix = `${Date.now()}${Math.random().toString(16).slice(2, 8)}`;
+    const regularUser = await registerWithCsrf(server, {
+      username: `member_${uniqueSuffix}`,
+      email: `member_${uniqueSuffix}@example.com`,
+      password: 'MemberPass123!',
+      displayName: 'Member User'
+    });
+    assert(regularUser.response.status === 200, `Expected public registration test user to succeed, got ${regularUser.response.status}`);
+    assert(Boolean(regularUser.sessionCookieHeader), 'Expected registered member to receive a session cookie');
+
+    const nonAdminUsers = await request(server, '/api/admin/users', 'GET', null, {
+      Cookie: regularUser.sessionCookieHeader
+    });
+    assert(nonAdminUsers.status === 403, `Expected non-admin users request to return 403, got ${nonAdminUsers.status}`);
+    assert(nonAdminUsers.data.error === '需要管理员权限', 'Expected non-admin users request to fail with admin-only message');
+
+    const adminLogin = await loginWithCsrf(server, {
+      username: 'studio',
+      password: 'AIGS2026!'
+    });
+    assert(adminLogin.response.status === 200, `Expected admin login to succeed, got ${adminLogin.response.status}`);
+    const adminCookies = mergeCookieHeaders(adminLogin.csrfCookieHeader, adminLogin.sessionCookieHeader);
+
+    const adminUsers = await request(server, '/api/admin/users', 'GET', null, {
+      Cookie: adminLogin.sessionCookieHeader
+    });
+    assert(adminUsers.status === 200, `Expected admin users request to succeed, got ${adminUsers.status}`);
+    const adminUser = Array.isArray(adminUsers.data?.users)
+      ? adminUsers.data.users.find(item => item.username === 'studio')
+      : null;
+    assert(Boolean(adminUser?.id), 'Expected admin users payload to include the default admin user');
+
+    const selfDemotion = await request(server, `/api/admin/users/${adminUser.id}`, 'POST', {
+      role: 'user'
+    }, {
+      Cookie: adminCookies,
+      'X-CSRF-Token': adminLogin.csrfToken
+    });
+    assert(selfDemotion.status === 400, `Expected self-demotion guard to return 400, got ${selfDemotion.status}`);
+    assert(selfDemotion.data.error === '不能降级当前登录管理员', 'Expected self-demotion guard to block downgrading the active admin');
+
+    const createUser = await request(server, '/api/admin/users', 'POST', {
+      username: `audit_${uniqueSuffix}`,
+      email: `audit_${uniqueSuffix}@example.com`,
+      password: 'AuditPass123!',
+      displayName: 'Audit Target',
+      role: 'user',
+      planCode: 'free'
+    }, {
+      Cookie: adminCookies,
+      'X-CSRF-Token': adminLogin.csrfToken
+    });
+    assert(createUser.status === 200, `Expected admin create-user request to succeed, got ${createUser.status}`);
+
+    const auditLogs = await request(
+      server,
+      `/api/admin/audit-logs?action=user_create&targetUsername=${encodeURIComponent(`audit_${uniqueSuffix}`)}`,
+      'GET',
+      null,
+      { Cookie: adminLogin.sessionCookieHeader }
+    );
+    assert(auditLogs.status === 200, `Expected admin audit-log query to succeed, got ${auditLogs.status}`);
+    const matchedAuditEntry = Array.isArray(auditLogs.data?.items)
+      ? auditLogs.data.items.find(item => item.action === 'user_create' && item.targetUsername === `audit_${uniqueSuffix}`)
+      : null;
+    assert(Boolean(matchedAuditEntry), 'Expected audit logs to contain the admin create-user record');
+  }, {
+    env: {
+      PORT: '18808',
+      PUBLIC_REGISTRATION_ENABLED: 'true'
+    }
+  });
+}
+
+async function testUploadInputGuards() {
+  await withServer(async server => {
+    const anonymousUpload = await request(server, '/api/upload', 'POST', {
+      filename: 'sample.mp3',
+      data: Buffer.from([0x49, 0x44, 0x33, 0x03, 0x00, 0x00, 0x00, 0x00]).toString('base64')
+    });
+    assert(anonymousUpload.status === 401, `Expected anonymous upload to return 401, got ${anonymousUpload.status}`);
+    assert(anonymousUpload.data.reason === 'anonymous', 'Expected anonymous upload to fail as anonymous');
+
+    const adminLogin = await loginWithCsrf(server, {
+      username: 'studio',
+      password: 'AIGS2026!'
+    });
+    assert(adminLogin.response.status === 200, `Expected admin login before upload tests to succeed, got ${adminLogin.response.status}`);
+    const uploadCookies = mergeCookieHeaders(adminLogin.csrfCookieHeader, adminLogin.sessionCookieHeader);
+
+    const unsupportedExtension = await request(server, '/api/upload', 'POST', {
+      filename: 'notes.txt',
+      data: Buffer.from('plain text').toString('base64')
+    }, {
+      Cookie: uploadCookies,
+      'X-CSRF-Token': adminLogin.csrfToken
+    });
+    assert(unsupportedExtension.status === 200, `Expected unsupported extension upload to return 200 payload error, got ${unsupportedExtension.status}`);
+    assert(unsupportedExtension.data.reason === 'unsupported_file_type', 'Expected unsupported extension upload to fail with unsupported_file_type');
+
+    const mismatchedContent = await request(server, '/api/upload', 'POST', {
+      filename: 'clip.mp3',
+      data: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).toString('base64')
+    }, {
+      Cookie: uploadCookies,
+      'X-CSRF-Token': adminLogin.csrfToken
+    });
+    assert(mismatchedContent.status === 200, `Expected mismatched upload content to return 200 payload error, got ${mismatchedContent.status}`);
+    assert(mismatchedContent.data.reason === 'invalid_file_content', 'Expected mismatched upload content to fail with invalid_file_content');
+
+    const oversizedUpload = await request(server, '/api/upload', 'POST', {
+      filename: 'clip.mp3',
+      data: 'A'.repeat(128)
+    }, {
+      Cookie: uploadCookies,
+      'X-CSRF-Token': adminLogin.csrfToken
+    });
+    assert(oversizedUpload.status === 413, `Expected oversized upload to return 413, got ${oversizedUpload.status}`);
+    assert(oversizedUpload.data.reason === 'upload_too_large', 'Expected oversized upload to fail with upload_too_large');
+  }, {
+    env: {
+      PORT: '18809',
+      MAX_UPLOAD_BYTES: '32'
+    }
+  });
+}
+
 async function main() {
   await testHealthAndSecurityHeaders();
   await testSameOriginAndAllowedCors();
   await testDisallowedOriginAndSecureCookie();
   await testMalformedCookieAndOutputPathHandling();
+  await testAdminAccessBoundaries();
+  await testUploadInputGuards();
   console.log('Security gateway tests passed');
 }
 
