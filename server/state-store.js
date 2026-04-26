@@ -34,6 +34,7 @@ const {
 } = require('./state-store-helpers');
 const { createStateStoreMutations } = require('./state-store-mutations');
 const { createStateStoreAuth } = require('./state-store-auth');
+const { createStateStoreMaintenance } = require('./state-store-maintenance');
 
 const LOGIN_FAILURE_LOCK_THRESHOLD = 5;
 const LOGIN_FAILURE_LOCK_MS = 15 * 60 * 1000;
@@ -954,43 +955,6 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         cleanupExpiredRateLimitEventsStmt.run(now);
     }
 
-    function getMaintenanceSummary(now = Date.now()) {
-        const auditLogs = countAuditLogsSummaryStmt.get() || {};
-        return {
-            users: Number(countUsersStmt.get()?.count || 0),
-            sessions: {
-                total: Number(countSessionsStmt.get()?.count || 0),
-                active: Number(countActiveSessionsStmt.get(now)?.count || 0)
-            },
-            authTokens: {
-                total: Number(countAuthTokensStmt.get()?.count || 0),
-                active: Number(countActiveAuthTokensStmt.get(now)?.count || 0)
-            },
-            rateLimitEvents: Number(countRateLimitEventsStmt.get()?.count || 0),
-            historyEntries: Number(countHistoryStmt.get()?.count || 0),
-            tasks: Number(countTasksStmt.get()?.count || 0),
-            auditLogs: {
-                total: Number(auditLogs.count || 0),
-                oldestCreatedAt: auditLogs.oldestCreatedAt || null,
-                newestCreatedAt: auditLogs.newestCreatedAt || null
-            }
-        };
-    }
-
-    function pruneAuditLogs({ olderThanDays, now = Date.now() } = {}) {
-        const retentionDays = Number(olderThanDays || 0);
-        if (!Number.isFinite(retentionDays) || retentionDays <= 0) {
-            throw new Error('olderThanDays must be a positive number');
-        }
-        const cutoff = now - (retentionDays * 24 * 60 * 60 * 1000);
-        const result = deleteAuditLogsBeforeStmt.run(cutoff);
-        return {
-            olderThanDays: retentionDays,
-            cutoff,
-            deletedCount: Number(result?.changes || 0)
-        };
-    }
-
     function getConversationTimelineSnapshot(userId, conversationId, limit = 400) {
         const conversation = normalizeConversation(selectConversationByIdStmt.get(conversationId, userId));
         if (!conversation) return null;
@@ -1053,6 +1017,23 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         findActiveAuthTokenByUserPurposeStmt,
         markAuthTokenUsedStmt,
         markUserPurposeTokensUsedStmt
+    });
+
+    const stateStoreMaintenance = createStateStoreMaintenance({
+        runInTransaction,
+        cleanupExpiredRateLimitEvents,
+        countUsersStmt,
+        countSessionsStmt,
+        countActiveSessionsStmt,
+        countAuthTokensStmt,
+        countActiveAuthTokensStmt,
+        countRateLimitEventsStmt,
+        countHistoryStmt,
+        countTasksStmt,
+        countAuditLogsSummaryStmt,
+        deleteAuditLogsBeforeStmt,
+        selectRateLimitWindowStmt,
+        insertRateLimitEventStmt
     });
 
     const stateStoreMutations = createStateStoreMutations({
@@ -1237,43 +1218,7 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
         },
 
         consumeRateLimit(ruleName, bucketKey, config = {}) {
-            const max = Math.max(0, Number(config.max || 0));
-            const windowMs = Math.max(0, Number(config.windowMs || 0));
-            if (!max || !windowMs) {
-                return { allowed: true, retryAfterSeconds: 0 };
-            }
-
-            const normalizedRuleName = String(ruleName || '').trim();
-            const normalizedBucketKey = String(bucketKey || '').trim() || 'anonymous';
-            return runInTransaction(() => {
-                const now = Date.now();
-                cleanupExpiredRateLimitEvents(now);
-                const currentWindow = selectRateLimitWindowStmt.get(
-                    normalizedRuleName,
-                    normalizedBucketKey,
-                    now - windowMs
-                ) || {};
-                const eventCount = Number(currentWindow.count || 0);
-                const oldestCreatedAt = Number(currentWindow.oldestCreatedAt || 0);
-
-                if (eventCount >= max) {
-                    return {
-                        allowed: false,
-                        retryAfterSeconds: Math.max(1, Math.ceil((windowMs - (now - oldestCreatedAt)) / 1000))
-                    };
-                }
-
-                insertRateLimitEventStmt.run(
-                    normalizedRuleName,
-                    normalizedBucketKey,
-                    now,
-                    now + windowMs
-                );
-                return {
-                    allowed: true,
-                    retryAfterSeconds: 0
-                };
-            });
+            return stateStoreMaintenance.consumeRateLimit(ruleName, bucketKey, config);
         },
 
         isPasswordResetRequired(userId) {
@@ -1534,11 +1479,11 @@ function createStateStore({ dbPath, legacyFilePath, sessionTtlMs, maxHistoryItem
 
         getMaintenanceSummary(options = {}) {
             const now = Number(options.now || Date.now());
-            return getMaintenanceSummary(now);
+            return stateStoreMaintenance.getMaintenanceSummary(now);
         },
 
         pruneAuditLogs(options = {}) {
-            return pruneAuditLogs(options);
+            return stateStoreMaintenance.pruneAuditLogs(options);
         },
 
         close() {

@@ -226,6 +226,40 @@
         buildTransientMessageId
       })
     : null;
+  const workspaceConversationTools = window.AigsWorkspaceConversationTools?.createTools
+    ? window.AigsWorkspaceConversationTools.createTools({
+        getCurrentUser: () => currentUser,
+        getPersistence: () => persistence,
+        getConversationState: () => conversationState,
+        getWorkspaceState: () => workspaceState,
+        setArchivedConversationList,
+        setConversationActiveId: value => {
+          conversationState.activeId = value;
+        },
+        setConversationMessages: value => {
+          conversationState.messages = Array.isArray(value) ? value.slice() : [];
+        },
+        setChatHistory: value => {
+          chatHistory = Array.isArray(value) ? value.slice() : [];
+        },
+        restoreChatMessages,
+        upsertConversationSummary,
+        renderConversationList,
+        renderChatExperienceState,
+        renderChatContextStrip,
+        renderChatExcerptShelf,
+        renderChatSuggestionStrip,
+        scheduleWorkspaceStateSave,
+        getActiveConversation,
+        getConversationTitlePreview,
+        getConversationPreview,
+        getActiveConversationLastActivityLabel,
+        getChatModel: () => $('chat-model')?.value || 'gpt-4.1-mini',
+        getIsChatGenerating: () => isChatGenerating,
+        showToast,
+        getElement: $
+      })
+    : null;
   let templates = appShell?.TEMPLATE_LIBRARY || {};
   const featureMeta = appShell?.FEATURE_META || {};
   const historyState = {};
@@ -1918,6 +1952,13 @@
     return workspaceGenerationTools;
   }
 
+  function requireWorkspaceConversationTools() {
+    if (!workspaceConversationTools) {
+      throw new Error('AigsWorkspaceConversationTools 未加载');
+    }
+    return workspaceConversationTools;
+  }
+
   function requireConversationListTools() {
     if (!conversationListTools) {
       throw new Error('AigsConversationListTools 未加载');
@@ -2134,25 +2175,7 @@
   }
 
   function applyConversationPayload(conversation, messages = [], options = {}) {
-    if (conversation?.id) {
-      conversationState.activeId = conversation.id;
-      workspaceState.lastConversationId = conversation.id;
-      upsertConversationSummary(conversation);
-      setArchivedConversationList(conversationState.archived.filter(item => item.id !== conversation.id));
-    }
-    conversationState.messages = Array.isArray(messages) ? messages.slice() : [];
-    chatHistory = conversationState.messages.map(item => ({
-      ...item
-    }));
-
-    if (options.restoreMessages !== false) {
-      restoreChatMessages(conversationState.messages, options.chatRestoreOptions || {});
-    }
-    renderConversationList();
-    renderChatExcerptShelf();
-        if (options.persist !== false) {
-      scheduleWorkspaceStateSave();
-    }
+    return requireWorkspaceConversationTools().applyConversationPayload(conversation, messages, options);
   }
 
   function _legacyRenderConversationMeta() {
@@ -2248,29 +2271,7 @@
   }
 
   function renderConversationMeta() {
-    const title = $('chat-conversation-title');
-    const subtitle = $('chat-conversation-subtitle');
-    if (!title || !subtitle) return;
-
-    const activeConversation = getActiveConversation();
-    if (!currentUser || !activeConversation) {
-      title.textContent = '暂无进行中的对话';
-      subtitle.textContent = '新建一个对话后即可开始聊天。';
-      renderChatExperienceState();
-      renderChatContextStrip();
-      renderChatExcerptShelf();
-      renderChatSuggestionStrip();
-      return;
-    }
-
-    title.textContent = getConversationTitlePreview(activeConversation);
-    subtitle.textContent = Number(activeConversation.messageCount || 0) <= 0
-      ? `${getActiveConversationLastActivityLabel(activeConversation)}`
-      : `${getActiveConversationLastActivityLabel(activeConversation)} · ${getConversationPreview(activeConversation)}`;
-    renderChatExperienceState();
-    renderChatContextStrip();
-    renderChatExcerptShelf();
-    renderChatSuggestionStrip();
+    return requireWorkspaceConversationTools().renderConversationMeta();
   }
 
   function renderConversationSidebarSummary() {
@@ -2306,32 +2307,15 @@
   }
 
   async function createConversationAndSelect() {
-    if (!currentUser || !persistence?.createConversation) return null;
-    try {
-      const result = await persistence.createConversation({
-        model: $('chat-model')?.value || 'gpt-4.1-mini'
-      });
-      if (!result?.conversation) return null;
-      applyConversationPayload(result.conversation, result.messages);
-      return result.conversation;
-    } catch (error) {
-      showToast(error.message || '会话创建失败', 'error', 1800);
-      return null;
-    }
+    return requireWorkspaceConversationTools().createConversationAndSelect();
   }
 
   async function startNewConversation() {
-    if (isChatGenerating) {
-      showToast('请等待当前回复完成后再新建对话。', 'info', 1800);
-      return null;
-    }
-    return createConversationAndSelect();
+    return requireWorkspaceConversationTools().startNewConversation();
   }
 
   async function ensureActiveConversation() {
-    if (conversationState.activeId) return conversationState.activeId;
-    const conversation = await createConversationAndSelect();
-    return conversation?.id || null;
+    return requireWorkspaceConversationTools().ensureActiveConversation();
   }
 
   async function renameActiveConversation() {
