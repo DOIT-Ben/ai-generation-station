@@ -21,6 +21,12 @@ function normalizeOrigin(value) {
         if (!['http:', 'https:'].includes(parsed.protocol)) {
             return null;
         }
+        const hostname = String(parsed.hostname || '');
+        if (hostname && !hostname.includes(':')) {
+            if (hostname.startsWith('.') || hostname.includes('..')) {
+                return null;
+            }
+        }
         if (parsed.username || parsed.password) {
             return null;
         }

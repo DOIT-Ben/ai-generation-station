@@ -848,6 +848,21 @@ async function testOriginAndProxyProtocolBoundaries() {
   });
 }
 
+async function testHostVariantBoundaries() {
+  await withServer(async server => {
+    const invalidHostSameOrigin = await request(server, '/api/health', 'GET', null, {
+      Host: 'localhost..:18822',
+      Origin: 'http://localhost..:18822'
+    });
+    assert(invalidHostSameOrigin.status === 403, `Expected invalid host same-origin request to return 403, got ${invalidHostSameOrigin.status}`);
+    assert(invalidHostSameOrigin.data?.reason === 'origin_not_allowed', 'Expected invalid host same-origin request to fail with origin_not_allowed');
+  }, {
+    env: {
+      PORT: '18822'
+    }
+  });
+}
+
 async function testPublicRegistrationRateLimitAndAudit() {
   await withServer(async server => {
     const uniqueSuffix = `${Date.now()}${Math.random().toString(16).slice(2, 8)}`;
@@ -1283,6 +1298,7 @@ async function main() {
   await testRateLimitsAndAuditTrails();
   await testProxyHeaderTrustBoundaries();
   await testOriginAndProxyProtocolBoundaries();
+  await testHostVariantBoundaries();
   await testPublicRegistrationRateLimitAndAudit();
   await testAuditActorIpBoundaries();
   await testNetworkRemoteAddressFallbackBoundaries();
