@@ -261,11 +261,16 @@ Total: 12, Passed: 10, Skipped: 2, Failed: 0
 - 已对 `ui-ux-pro-max-0.1.0` 做一轮安全盘点。
 - 当前未发现硬编码密钥、明显的前端注入链或已确认的高危远程执行路径。
 - 当前最值得继续跟踪的治理点：
-  - `ui-ux-pro-max-0.1.0\cli\src\utils\extract.ts` 使用 `child_process.exec` 执行 shell / PowerShell / xcopy / cp 回退命令
-  - 当前结论是“需要后续收敛”的中低风险点，而不是已确认高危漏洞
+  - `ui-ux-pro-max-0.1.0\cli\src\utils\extract.ts` 原先使用 `child_process.exec` 执行 shell / PowerShell / xcopy / cp 回退命令
+  - 当前已完成最小收敛，改为参数化进程调用
+  - 当前结论是“已完成一轮最小安全收敛，仍建议后续补完整子工程构建验证”
 
 ### 依赖层扫描
 - 已执行主仓库 `npm audit --json`
+- 当前结果：
+  - `total: 0`
+  - 未发现已知 `moderate` / `high` / `critical` 漏洞
+- 已执行 `ui-ux-pro-max-0.1.0\cli` 子工程 `npm audit --json`
 - 当前结果：
   - `total: 0`
   - 未发现已知 `moderate` / `high` / `critical` 漏洞
