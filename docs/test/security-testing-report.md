@@ -199,7 +199,7 @@ Total: 12, Passed: 10, Skipped: 2, Failed: 0
 2. **邮件通知服务**: Resend API 未配置
 3. **Node.js SQLite**: 为实验性功能
 4. **插件目录**: ui-ux-pro-max-0.1.0 已完成一轮盘点，但未做深度重构级审计
-5. **缓存策略未专项设计**: 当前已验证 CORS 与 `Vary` 一致性，但未形成完整缓存头策略设计
+5. **非 API 缓存策略未设计化**: 当前 API 已统一 `no-store`，但 HTML / 静态资源 / 404 仍保持现状策略
 
 ---
 
