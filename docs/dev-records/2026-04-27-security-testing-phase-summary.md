@@ -1,7 +1,7 @@
 # 2026-04-27 安全测试阶段总表
 
 ## 目标
-- 把 AI-Generation-Stations 当前安全测试主线整理成一份阶段总表，明确从主计划到第十七阶段分别做了什么、命中了哪些真实问题、哪些阶段只是补覆盖、还剩哪些缺口。
+- 把 AI-Generation-Stations 当前安全测试主线整理成一份阶段总表，明确从主计划到第三十阶段分别做了什么、命中了哪些真实问题、哪些阶段只是补覆盖、还剩哪些缺口。
 
 ## 范围
 - `docs\dev-records\2026-04-26-security-testing-plan.md`
@@ -21,6 +21,20 @@
 - `docs\dev-records\2026-04-27-security-testing-phase-15-plan.md`
 - `docs\dev-records\2026-04-27-security-testing-phase-16-plan.md`
 - `docs\dev-records\2026-04-27-security-testing-phase-17-plan.md`
+- `docs\dev-records\2026-04-27-security-testing-phase-18-plan.md`
+- `docs\dev-records\2026-04-27-security-testing-phase-19-plan.md`
+- `docs\dev-records\2026-04-27-security-testing-phase-20-plan.md`
+- `docs\dev-records\2026-04-27-security-testing-phase-21-plan.md`
+- `docs\dev-records\2026-04-27-security-testing-phase-22-plan.md`
+- `docs\dev-records\2026-04-27-security-testing-phase-23-plan.md`
+- `docs\dev-records\2026-04-27-security-testing-phase-24-plan.md`
+- `docs\dev-records\2026-04-27-security-testing-phase-25-plan.md`
+- `docs\dev-records\2026-04-27-security-testing-phase-26-plan.md`
+- `docs\dev-records\2026-04-27-security-testing-phase-27-plan.md`
+- `docs\dev-records\2026-04-27-security-testing-phase-28-plan.md`
+- `docs\dev-records\2026-04-27-security-testing-phase-29-plan.md`
+- `docs\dev-records\2026-04-27-security-testing-phase-30-plan.md`
+- `docs\dev-records\2026-04-27-security-testing-final-summary.md`
 - `docs\test\security-testing-report.md`
 
 ## 假设
@@ -32,15 +46,15 @@
 - 安全总报告统计口径停在 2026-04-26，不能直接代表 2026-04-27 后续阶段新增覆盖。
 
 ## 完成标准
-- 明确阶段 1 到阶段 17 的目标、结果与状态。
+- 明确阶段 1 到阶段 30 的目标、结果与状态。
 - 明确哪些阶段命中真实安全缺陷，哪些阶段主要是补测试覆盖。
 - 明确当前剩余安全测试缺口与下一步建议。
 
 ## 验证方式
-- 逐份核对安全测试主计划、phase 2 到 phase 17 文档，以及 `docs\test\security-testing-report.md`。
+- 逐份核对安全测试主计划、phase 2 到 phase 30 文档，以及 `docs\test\security-testing-report.md`。
 
 ## TODO
-1. 抽取主计划与 phase 2 到 phase 17 的关键信息。
+1. 抽取主计划与 phase 2 到 phase 30 的关键信息。
 2. 形成统一阶段总表。
 3. 汇总真实缺陷、覆盖面和剩余缺口。
 4. 回写执行记录、验证结果、复盘。
@@ -66,6 +80,19 @@
 | 阶段 15 | 2026-04-27 | punycode / Unicode 主机名边界 | 已完成 | 否 | 新增合法 Unicode、合法 punycode、异常 Unicode Host 回归 |
 | 阶段 16 | 2026-04-27 | CORS 与 `Vary` 一致性 | 已完成 | 否 | 新增无 Origin、允许 Origin、拒绝 Origin、预检请求头一致性回归 |
 | 阶段 17 | 2026-04-27 | 非 API 与静态资源路径头部行为 | 已完成 | 否 | 新增首页、静态资源、404 路径在不同 Origin 场景下的头部行为回归 |
+| 阶段 18 | 2026-04-27 | 报告与总表收口一 | 已完成 | 否 | 更新总安全报告和阶段总表口径 |
+| 阶段 19 | 2026-04-27 | `Host / Origin` 组合矩阵一 | 已完成 | 否 | 新增合法规范化组合与不一致组合回归 |
+| 阶段 20 | 2026-04-27 | 缓存头现状回归 | 已完成 | 否 | 新增认证接口、普通 API、HTML、静态资源、404 的缓存头现状回归 |
+| 阶段 21 | 2026-04-27 | 插件目录与依赖治理一 | 已完成 | 否 | 完成插件目录盘点、主仓库依赖扫描、SSE 缓存头回归 |
+| 阶段 22 | 2026-04-27 | 插件 CLI 命令执行收敛 | 已完成 | 是 | `extract.ts` 中 shell 字符串执行收敛为参数化调用 |
+| 阶段 23 | 2026-04-27 | 插件 CLI 构建验证 | 已完成 | 否 | 完成依赖安装与 `bun run build` 验证 |
+| 阶段 24 | 2026-04-27 | 插件 CLI 只读 smoke | 已完成 | 否 | `--help` 与 `versions` 通过 |
+| 阶段 25 | 2026-04-27 | 插件 CLI 写入型 smoke | 已完成 | 否 | `init --offline --ai codex` 通过 |
+| 阶段 26 | 2026-04-27 | 插件 CLI update / uninstall smoke | 已完成 | 否 | `update` 与 `uninstall` 在隔离目录通过 |
+| 阶段 27 | 2026-04-27 | 插件 CLI 多平台抽样一 | 已完成 | 否 | `claude`、`continue` 抽样安装通过 |
+| 阶段 28 | 2026-04-27 | 插件 CLI 多平台抽样二 | 已完成 | 否 | `copilot`、`droid` 抽样安装通过 |
+| 阶段 29 | 2026-04-27 | `Host / Origin` 组合矩阵二 | 已完成 | 否 | 新增默认端口与 punycode / Unicode 规范化组合矩阵回归 |
+| 阶段 30 | 2026-04-27 | API 默认缓存策略收口 | 已完成 | 是 | 所有 API 默认 `Cache-Control: no-store`，SSE 特例保留 |
 
 ## 分阶段摘要
 
@@ -108,6 +135,17 @@
   - CORS 与 `Vary` 一致性
   - 非 API HTML、静态资源、404 路径的当前头部行为
 
+### 阶段 18 到阶段 30
+- 这一段完成了报告收口、插件 CLI 治理第一轮，以及 API 默认缓存策略的最小设计化。
+- 命中的新增真实安全 / 治理问题有 2 类：
+  - 阶段 22：插件 CLI `extract.ts` 的字符串拼接 shell 命令执行风险
+  - 阶段 30：API 路径此前缺少统一默认缓存收口
+- 其余阶段主要用于把以下链路正式闭环：
+  - 更系统化的 `Host / Origin` 组合矩阵
+  - 缓存头现状与 API 默认 `no-store`
+  - 插件 CLI 依赖、构建、只读运行、写入型安装、update、uninstall
+  - 插件 CLI 多平台抽样安装
+
 ## 当前覆盖面
 - 认证、会话、密码重置、邀请、公开注册
 - CSRF、CORS、同源判定、安全响应头
@@ -117,6 +155,8 @@
 - punycode / Unicode Host 规范化行为
 - CORS 与 `Vary` 一致性
 - 非 API HTML、静态资源、404 路径头部行为
+- API 默认 `Cache-Control: no-store`
+- 插件 CLI 依赖扫描、构建、只读运行、写入型安装、update、uninstall、多平台抽样安装
 
 ## 当前已确认的真实缺陷
 1. 畸形 Cookie 解码会触发请求级异常。
@@ -127,10 +167,13 @@
 6. 空标签 Host 会被错误视为合法同源来源。
 7. 尾随点 Host 会被错误视为合法同源来源。
 8. 显式异常端口格式 Host 会被 URL 规范化后错误视为合法同源来源。
+9. 插件 CLI `extract.ts` 的字符串拼接 shell 命令执行路径存在可收敛风险。
+10. API 路径此前缺少统一默认缓存收口。
 
 ## 当前状态判断
 - 安全测试主线已经不是“补基础测试”，而是在做“来源判定、代理信任、输入归一化”这类更细的边界下钻。
 - 到 phase 17 为止，来源判定、代理头信任、Origin / Host 规范化、CORS 一致性和非 API 头部行为都已有正式回归覆盖。
+- 到 phase 30 为止，API 默认缓存策略收口和插件 CLI 第一轮治理闭环也已经完成。
 - 从主计划到第十一阶段看，测试推进方式是对的：
   - 先补测试
   - 命中真实缺陷后只做最小修复
@@ -138,21 +181,19 @@
 - 到目前为止，来源校验与代理头处理是命中真实问题最多的区域。
 
 ## 剩余缺口
-- 更细的 Host / IDNA 边界
-- 更多 Host / Origin 组合矩阵
-- 更细的缓存头策略验证
+- 更大规模的 Host / Origin 组合矩阵
+- 非 API 路径更细的缓存策略设计
 - 更系统化的异常 Header、Query、Cookie 组合矩阵
-- 插件目录专项安全审计
-- 依赖层专项漏洞扫描
+- 插件 CLI 其余平台的全量穷举验证
 
 ## 下一步建议
-1. 补一份更新后的总安全报告，把 2026-04-27 第 12 到第 17 阶段并入正式统计口径。
-2. 若还要继续主线，优先做更系统化的 Host / Origin 组合矩阵与缓存头策略验证。
-3. 若阶段目标改为收口，可整理一份当前安全测试完成面与残余风险总览。
+1. 若还要继续主线，优先做更大规模的 `Host / Origin` 组合矩阵。
+2. 若继续深入，再讨论是否需要对非 API 路径做更细缓存策略设计。
+3. 若阶段目标改为收口，当前已经可以视为本轮主线完成。
 
 ## 执行记录
 - 已完成 TODO 1：
-  - 已逐份提取主计划与 phase 2 到 phase 17 的目标、执行记录、验证结果、当前结果、下一步建议。
+  - 已逐份提取主计划与 phase 2 到 phase 30 的目标、执行记录、验证结果、当前结果、下一步建议。
 - 已完成 TODO 2：
   - 已形成统一阶段总表与分阶段摘要。
 - 已完成 TODO 3：
@@ -161,15 +202,15 @@
   - 已回写本次汇总文档。
 
 ## 验证结果
-- 已完成主计划、phase 2 到 phase 17 与安全总报告的交叉核对。
+- 已完成主计划、phase 2 到 phase 30 与安全总报告的交叉核对。
 - 当前可确认：
-  - 安全测试主线正式推进到第十七阶段
-  - 至少命中过 8 个真实安全相关实现问题
+  - 安全测试主线正式推进到第三十阶段
+  - 至少命中过 10 个真实安全相关实现 / 治理问题
   - 其余阶段主要用于补测试覆盖、验证修复闭环和压实边界
 
 ## 复盘
 - 新问题：
-  - 当前“阶段计划”和“总安全报告”之间已有统计口径脱节，总报告需要补更新。
+  - 当前阶段总表原先停在 phase 17，本轮已同步更新到 phase 30 收口口径。
 - 边界条件：
   - 本次是归档与汇总，不新增测试、不修改代码。
 - 遗漏点：
