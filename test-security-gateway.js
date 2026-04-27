@@ -346,6 +346,40 @@ async function testSameOriginAndAllowedCors() {
       'Expected configured external origin request to include Access-Control-Allow-Credentials'
     );
 
+    const allowedUnicodeOrigin = await request(server, '/api/health', 'GET', null, {
+      Host: 'localhost:18806',
+      Origin: 'http://例子:18806'
+    });
+    assert(allowedUnicodeOrigin.status === 200, `Expected allowed unicode origin request to return 200, got ${allowedUnicodeOrigin.status}`);
+    assert(
+      allowedUnicodeOrigin.headers['access-control-allow-origin'] === 'http://xn--fsqu00a:18806',
+      'Expected allowed unicode origin request to echo the normalized punycode origin'
+    );
+
+    const allowedDefaultPortOrigin = await request(server, '/api/health', 'GET', null, {
+      Host: 'localhost:18806',
+      Origin: 'http://localhost:80'
+    });
+    assert(allowedDefaultPortOrigin.status === 200, `Expected allowed default-port origin request to return 200, got ${allowedDefaultPortOrigin.status}`);
+    assert(
+      allowedDefaultPortOrigin.headers['access-control-allow-origin'] === 'http://localhost',
+      'Expected allowed default-port origin request to echo the normalized default-port origin'
+    );
+
+    const disallowedUnicodeMismatch = await request(server, '/api/health', 'GET', null, {
+      Host: 'localhost:18806',
+      Origin: 'http://bücher:18806'
+    });
+    assert(disallowedUnicodeMismatch.status === 403, `Expected disallowed unicode mismatch origin request to return 403, got ${disallowedUnicodeMismatch.status}`);
+    assert(disallowedUnicodeMismatch.data?.reason === 'origin_not_allowed', 'Expected disallowed unicode mismatch origin request to fail with origin_not_allowed');
+
+    const disallowedExplicitPortOrigin = await request(server, '/api/health', 'GET', null, {
+      Host: 'localhost:18806',
+      Origin: 'http://localhost:18807'
+    });
+    assert(disallowedExplicitPortOrigin.status === 403, `Expected disallowed explicit-port origin request to return 403, got ${disallowedExplicitPortOrigin.status}`);
+    assert(disallowedExplicitPortOrigin.data?.reason === 'origin_not_allowed', 'Expected disallowed explicit-port origin request to fail with origin_not_allowed');
+
     const preflight = await request(server, '/api/auth/login', 'OPTIONS', null, {
       Host: 'localhost:18806',
       Origin: 'https://studio.example.com',
@@ -369,7 +403,7 @@ async function testSameOriginAndAllowedCors() {
   }, {
     env: {
       PORT: '18806',
-      ALLOWED_ORIGINS: 'https://studio.example.com'
+      ALLOWED_ORIGINS: 'https://studio.example.com,http://xn--fsqu00a:18806,http://localhost'
     }
   });
 }
