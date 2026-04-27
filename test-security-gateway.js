@@ -376,6 +376,16 @@ async function testSameOriginAndAllowedCors() {
       'Expected allowed IPv6 origin request to echo the allowed IPv6 origin'
     );
 
+    const allowedIpv6DefaultPortOrigin = await request(server, '/api/health', 'GET', null, {
+      Host: 'localhost:18806',
+      Origin: 'http://[::1]:80'
+    });
+    assert(allowedIpv6DefaultPortOrigin.status === 200, `Expected allowed IPv6 default-port origin request to return 200, got ${allowedIpv6DefaultPortOrigin.status}`);
+    assert(
+      allowedIpv6DefaultPortOrigin.headers['access-control-allow-origin'] === 'http://[::1]',
+      'Expected allowed IPv6 default-port origin request to echo the normalized IPv6 default-port origin'
+    );
+
     const allowedExplicitDefaultPortOrigin = await request(server, '/api/health', 'GET', null, {
       Host: 'localhost:18806',
       Origin: 'http://localhost:80'
@@ -407,6 +417,13 @@ async function testSameOriginAndAllowedCors() {
     assert(disallowedIpv6Origin.status === 403, `Expected disallowed IPv6 origin request to return 403, got ${disallowedIpv6Origin.status}`);
     assert(disallowedIpv6Origin.data?.reason === 'origin_not_allowed', 'Expected disallowed IPv6 origin request to fail with origin_not_allowed');
 
+    const disallowedIpv6AppPortOrigin = await request(server, '/api/health', 'GET', null, {
+      Host: 'localhost:18806',
+      Origin: 'http://[::1]:18862'
+    });
+    assert(disallowedIpv6AppPortOrigin.status === 403, `Expected disallowed IPv6 app-port origin request to return 403, got ${disallowedIpv6AppPortOrigin.status}`);
+    assert(disallowedIpv6AppPortOrigin.data?.reason === 'origin_not_allowed', 'Expected disallowed IPv6 app-port origin request to fail with origin_not_allowed');
+
     const disallowedPunycodePortOrigin = await request(server, '/api/health', 'GET', null, {
       Host: 'localhost:18806',
       Origin: 'http://xn--fsqu00a:18807'
@@ -437,7 +454,7 @@ async function testSameOriginAndAllowedCors() {
   }, {
     env: {
       PORT: '18806',
-      ALLOWED_ORIGINS: 'https://studio.example.com,http://xn--fsqu00a:18806,http://localhost,http://[::1]:18860'
+      ALLOWED_ORIGINS: 'https://studio.example.com,http://xn--fsqu00a:18806,http://localhost,http://[::1]:18860,http://[::1]'
     }
   });
 }

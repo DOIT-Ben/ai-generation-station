@@ -27,7 +27,7 @@ function normalizeOrigin(value) {
         if (rawAuthority) {
             const ipv6PortMatch = rawAuthority.match(/^\[[^\]]+\](?::(.*))?$/);
             const portCandidate = ipv6PortMatch
-                ? ipv6PortMatch[1]
+                ? (ipv6PortMatch[1] ?? null)
                 : rawAuthority.includes(':')
                     ? rawAuthority.slice(rawAuthority.lastIndexOf(':') + 1)
                     : null;
