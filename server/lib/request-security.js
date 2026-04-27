@@ -21,6 +21,15 @@ function normalizeOrigin(value) {
         if (!['http:', 'https:'].includes(parsed.protocol)) {
             return null;
         }
+        if (parsed.username || parsed.password) {
+            return null;
+        }
+        if (parsed.search || parsed.hash) {
+            return null;
+        }
+        if (parsed.pathname && parsed.pathname !== '/') {
+            return null;
+        }
         return parsed.origin;
     } catch {
         return null;

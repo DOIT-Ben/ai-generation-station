@@ -784,6 +784,27 @@ async function testOriginAndProxyProtocolBoundaries() {
     assert(malformedOrigin.status === 403, `Expected malformed origin request to return 403, got ${malformedOrigin.status}`);
     assert(malformedOrigin.data?.reason === 'origin_not_allowed', 'Expected malformed origin request to fail with origin_not_allowed');
     assert(String(malformedOrigin.headers['vary'] || '').includes('Origin'), 'Expected malformed origin request to include Vary: Origin');
+
+    const originWithPath = await request(server, '/api/health', 'GET', null, {
+      Host: 'localhost:18818',
+      Origin: 'http://localhost:18818/path'
+    });
+    assert(originWithPath.status === 403, `Expected path-bearing origin request to return 403, got ${originWithPath.status}`);
+    assert(originWithPath.data?.reason === 'origin_not_allowed', 'Expected path-bearing origin request to fail with origin_not_allowed');
+
+    const originWithFragment = await request(server, '/api/health', 'GET', null, {
+      Host: 'localhost:18818',
+      Origin: 'http://localhost:18818#frag'
+    });
+    assert(originWithFragment.status === 403, `Expected fragment-bearing origin request to return 403, got ${originWithFragment.status}`);
+    assert(originWithFragment.data?.reason === 'origin_not_allowed', 'Expected fragment-bearing origin request to fail with origin_not_allowed');
+
+    const originWithUserInfo = await request(server, '/api/health', 'GET', null, {
+      Host: 'localhost:18818',
+      Origin: 'http://user@localhost:18818'
+    });
+    assert(originWithUserInfo.status === 403, `Expected userinfo-bearing origin request to return 403, got ${originWithUserInfo.status}`);
+    assert(originWithUserInfo.data?.reason === 'origin_not_allowed', 'Expected userinfo-bearing origin request to fail with origin_not_allowed');
   }, {
     env: {
       PORT: '18818'
