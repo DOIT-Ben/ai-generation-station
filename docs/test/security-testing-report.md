@@ -267,6 +267,7 @@ Total: 12, Passed: 10, Skipped: 2, Failed: 0
   - 当前已完成 CLI 只读运行时 smoke（`--help`、`versions`）
   - 当前已完成隔离目录下的写入型 smoke（`init --offline --ai codex`）
   - 当前已完成隔离目录下的 `update` 与 `uninstall` smoke
+  - 当前已完成 `claude` 与 `continue` 的抽样模板安装 smoke
 
 ### 依赖层扫描
 - 已执行主仓库 `npm audit --json`
