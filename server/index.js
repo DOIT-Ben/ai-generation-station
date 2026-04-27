@@ -149,6 +149,9 @@ function createServer(options = {}) {
             requestProtocol,
             contentSecurityPolicy: CONTENT_SECURITY_POLICY
         });
+        if (parsedUrl.pathname.startsWith('/api/') && !res.getHeader('Cache-Control')) {
+            res.setHeader('Cache-Control', 'no-store');
+        }
         const corsDecision = applyCorsHeaders(req, res, {
             trustProxy: TRUST_PROXY,
             allowedOrigins: ALLOWED_ORIGINS

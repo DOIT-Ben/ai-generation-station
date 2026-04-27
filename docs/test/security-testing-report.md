@@ -144,6 +144,7 @@
 | Content-Security-Policy | ✅ | default-src 'self'; frame-ancestors 'self'; ... |
 | Strict-Transport-Security | ✅ | max-age=31536000; includeSubDomains |
 | Vary: Origin | ✅ | 按存在 Origin 头的请求路径一致返回 |
+| Cache-Control (API) | ✅ | API 默认 `no-store`，SSE 保持 `no-cache, no-transform` |
 
 ### Cookie 安全属性
 | 属性 | 状态 | 说明 |

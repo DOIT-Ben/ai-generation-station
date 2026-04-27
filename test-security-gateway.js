@@ -543,7 +543,7 @@ async function testCacheHeaderBehavior() {
 
     const apiHealth = await request(server, '/api/health', 'GET');
     assert(apiHealth.status === 200, `Expected api health request to return 200, got ${apiHealth.status}`);
-    assert(apiHealth.headers['cache-control'] === undefined, 'Expected api health response to have no explicit Cache-Control');
+    assert(apiHealth.headers['cache-control'] === 'no-store', 'Expected api health response to set Cache-Control: no-store');
 
     const home = await request(server, '/', 'GET');
     assert(home.status === 200, `Expected homepage cache test to return 200, got ${home.status}`);
