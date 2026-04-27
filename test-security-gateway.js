@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const http = require('http');
 const { createServer } = require('./server/index');
 const { createConfig } = require('./server/config');
 const { dispatchRequest } = require('./test-live-utils');
@@ -32,6 +33,25 @@ async function withServer(fn, options = {}) {
     if (fs.existsSync(`${stateDb}-shm`)) fs.unlinkSync(`${stateDb}-shm`);
     if (fs.existsSync(`${stateDb}-wal`)) fs.unlinkSync(`${stateDb}-wal`);
   }
+}
+
+async function withListeningServer(fn, options = {}) {
+  await withServer(async server => {
+    const port = Number((options.env && options.env.PORT) || 18820);
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(port, '127.0.0.1', () => {
+        server.off('error', reject);
+        resolve();
+      });
+    });
+
+    try {
+      return await fn(server, port);
+    } finally {
+      await new Promise(resolve => server.close(() => resolve()));
+    }
+  }, options);
 }
 
 function assert(condition, message) {
@@ -77,12 +97,78 @@ function mergeCookieHeaders(...cookieHeaders) {
     .join('; ');
 }
 
+function requestOverNetwork(port, requestPath, method, body, headers = {}, options = {}) {
+  return new Promise((resolve, reject) => {
+    const payload = options.raw
+      ? String(body || '')
+      : body == null
+        ? null
+        : JSON.stringify(body);
+    const normalizedHeaders = Object.entries(headers).reduce((acc, [name, value]) => {
+      acc[String(name)] = value;
+      return acc;
+    }, {});
+
+    if (payload && !normalizedHeaders['Content-Type']) {
+      normalizedHeaders['Content-Type'] = 'application/json';
+    }
+    if (payload && !normalizedHeaders['Content-Length']) {
+      normalizedHeaders['Content-Length'] = String(Buffer.byteLength(payload));
+    }
+
+    const req = http.request({
+      hostname: '127.0.0.1',
+      port,
+      path: requestPath,
+      method,
+      headers: normalizedHeaders
+    }, res => {
+      let raw = '';
+      res.on('data', chunk => raw += chunk);
+      res.on('end', () => {
+        let data = raw;
+        try {
+          data = JSON.parse(raw);
+        } catch {}
+        resolve({
+          status: res.statusCode,
+          data,
+          headers: Object.fromEntries(Object.entries(res.headers).map(([name, value]) => [String(name).toLowerCase(), value])),
+          rawBody: raw
+        });
+      });
+    });
+
+    req.on('error', reject);
+    if (payload) {
+      req.write(payload);
+    }
+    req.end();
+  });
+}
+
 async function bootstrapCsrf(server, headers = {}) {
   const response = await request(server, '/api/auth/csrf', 'GET', null, headers);
   const csrfCookie = findCookie(response, 'aigs_csrf');
   return {
     response,
     csrfToken: response.data?.csrfToken || null,
+    csrfCookieHeader: getCookieHeader(csrfCookie)
+  };
+}
+
+async function registerWithCsrfOverNetwork(port, payload, headers = {}) {
+  const csrf = await requestOverNetwork(port, '/api/auth/csrf', 'GET', null, headers);
+  assert(csrf.status === 200, `Expected network CSRF bootstrap before register to return 200, got ${csrf.status}`);
+  const csrfCookie = findCookie(csrf, 'aigs_csrf');
+  const response = await requestOverNetwork(port, '/api/auth/register', 'POST', payload, {
+    ...headers,
+    Cookie: mergeCookieHeaders(headers.Cookie, getCookieHeader(csrfCookie)),
+    'X-CSRF-Token': csrf.data?.csrfToken
+  });
+  return {
+    response,
+    csrfToken: csrf.data?.csrfToken || null,
     csrfCookieHeader: getCookieHeader(csrfCookie)
   };
 }
@@ -881,6 +967,91 @@ async function testAuditActorIpBoundaries() {
   });
 }
 
+async function testNetworkRemoteAddressFallbackBoundaries() {
+  await withListeningServer(async (server, port) => {
+    const uniqueSuffix = `${Date.now()}${Math.random().toString(16).slice(2, 8)}`;
+    const username = `nra_${uniqueSuffix}`;
+
+    const registration = await registerWithCsrfOverNetwork(port, {
+      username,
+      email: `${username}@example.com`,
+      password: 'NetAuditPass123!',
+      displayName: 'Network Fallback'
+    }, {
+      'X-Real-IP': 'garbage-real-ip'
+    });
+    assert(registration.response.status === 200, `Expected network invalid real-ip registration to succeed, got ${registration.response.status}`);
+
+    const adminLogin = await loginWithCsrf(server, {
+      username: 'studio',
+      password: 'AIGS2026!'
+    });
+    assert(adminLogin.response.status === 200, `Expected admin login before network invalid real-ip audit lookup to succeed, got ${adminLogin.response.status}`);
+
+    const auditLogs = await request(
+      server,
+      `/api/admin/audit-logs?action=user_public_register&targetUsername=${encodeURIComponent(username)}`,
+      'GET',
+      null,
+      { Cookie: adminLogin.sessionCookieHeader }
+    );
+    assert(auditLogs.status === 200, `Expected network invalid real-ip audit-log query to succeed, got ${auditLogs.status}`);
+    const entry = Array.isArray(auditLogs.data?.items)
+      ? auditLogs.data.items.find(item => item.action === 'user_public_register' && item.targetUsername === username)
+      : null;
+    assert(Boolean(entry), 'Expected network invalid real-ip audit entry to exist');
+    assert(entry.actorIp === '127.0.0.1', `Expected network invalid real-ip audit actorIp to fall back to 127.0.0.1, got ${entry.actorIp}`);
+  }, {
+    env: {
+      PORT: '18820',
+      TRUST_PROXY: 'true',
+      PUBLIC_REGISTRATION_ENABLED: 'true'
+    }
+  });
+
+  await withListeningServer(async (server, port) => {
+    const uniqueSuffix = `${Date.now()}${Math.random().toString(16).slice(2, 8)}`;
+    const username = `nrb_${uniqueSuffix}`;
+
+    const registration = await registerWithCsrfOverNetwork(port, {
+      username,
+      email: `${username}@example.com`,
+      password: 'NetAuditPass456!',
+      displayName: 'Network Ignore Proxy'
+    }, {
+      'X-Forwarded-For': '198.51.100.30',
+      'X-Real-IP': '198.51.100.31'
+    });
+    assert(registration.response.status === 200, `Expected network spoofed proxy registration to succeed, got ${registration.response.status}`);
+
+    const adminLogin = await loginWithCsrf(server, {
+      username: 'studio',
+      password: 'AIGS2026!'
+    });
+    assert(adminLogin.response.status === 200, `Expected admin login before network spoofed proxy audit lookup to succeed, got ${adminLogin.response.status}`);
+
+    const auditLogs = await request(
+      server,
+      `/api/admin/audit-logs?action=user_public_register&targetUsername=${encodeURIComponent(username)}`,
+      'GET',
+      null,
+      { Cookie: adminLogin.sessionCookieHeader }
+    );
+    assert(auditLogs.status === 200, `Expected network spoofed proxy audit-log query to succeed, got ${auditLogs.status}`);
+    const entry = Array.isArray(auditLogs.data?.items)
+      ? auditLogs.data.items.find(item => item.action === 'user_public_register' && item.targetUsername === username)
+      : null;
+    assert(Boolean(entry), 'Expected network spoofed proxy audit entry to exist');
+    assert(entry.actorIp === '127.0.0.1', `Expected network spoofed proxy audit actorIp to ignore proxy headers and stay 127.0.0.1, got ${entry.actorIp}`);
+  }, {
+    env: {
+      PORT: '18821',
+      TRUST_PROXY: 'false',
+      PUBLIC_REGISTRATION_ENABLED: 'true'
+    }
+  });
+}
+
 async function testTokenLifecycleBoundaries() {
   await withServer(async server => {
     const uniqueSuffix = `${Date.now()}${Math.random().toString(16).slice(2, 8)}`;
@@ -1093,6 +1264,7 @@ async function main() {
   await testOriginAndProxyProtocolBoundaries();
   await testPublicRegistrationRateLimitAndAudit();
   await testAuditActorIpBoundaries();
+  await testNetworkRemoteAddressFallbackBoundaries();
   await testTokenLifecycleBoundaries();
   console.log('Security gateway tests passed');
 }
