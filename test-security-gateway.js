@@ -386,6 +386,16 @@ async function testSameOriginAndAllowedCors() {
       'Expected allowed IPv6 default-port origin request to echo the normalized IPv6 default-port origin'
     );
 
+    const allowedBareIpv6Origin = await request(server, '/api/health', 'GET', null, {
+      Host: 'localhost:18806',
+      Origin: 'http://[::1]'
+    });
+    assert(allowedBareIpv6Origin.status === 200, `Expected allowed bare IPv6 origin request to return 200, got ${allowedBareIpv6Origin.status}`);
+    assert(
+      allowedBareIpv6Origin.headers['access-control-allow-origin'] === 'http://[::1]',
+      'Expected allowed bare IPv6 origin request to echo the allowed bare IPv6 origin'
+    );
+
     const allowedExplicitDefaultPortOrigin = await request(server, '/api/health', 'GET', null, {
       Host: 'localhost:18806',
       Origin: 'http://localhost:80'
@@ -416,6 +426,13 @@ async function testSameOriginAndAllowedCors() {
     });
     assert(disallowedIpv6Origin.status === 403, `Expected disallowed IPv6 origin request to return 403, got ${disallowedIpv6Origin.status}`);
     assert(disallowedIpv6Origin.data?.reason === 'origin_not_allowed', 'Expected disallowed IPv6 origin request to fail with origin_not_allowed');
+
+    const disallowedBareIpv6Origin = await request(server, '/api/health', 'GET', null, {
+      Host: 'localhost:18806',
+      Origin: 'http://[::2]'
+    });
+    assert(disallowedBareIpv6Origin.status === 403, `Expected disallowed bare IPv6 origin request to return 403, got ${disallowedBareIpv6Origin.status}`);
+    assert(disallowedBareIpv6Origin.data?.reason === 'origin_not_allowed', 'Expected disallowed bare IPv6 origin request to fail with origin_not_allowed');
 
     const disallowedIpv6AppPortOrigin = await request(server, '/api/health', 'GET', null, {
       Host: 'localhost:18806',

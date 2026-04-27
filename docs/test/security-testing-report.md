@@ -254,6 +254,7 @@ Total: 12, Passed: 10, Skipped: 2, Failed: 0
    - 更系统化的 `Host / Origin` 规范化组合矩阵
    - `ALLOWED_ORIGINS` 的 punycode / Unicode / 默认端口规范化组合矩阵
    - `ALLOWED_ORIGINS` 中的 IPv6 与端口差异组合矩阵
+   - 裸 IPv6 允许 / 拒绝组合矩阵
 
 3. **本轮新增确认的真实缺陷**
    - 尾随点 Host 会被错误视为合法同源来源
