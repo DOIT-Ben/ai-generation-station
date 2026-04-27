@@ -264,6 +264,7 @@ Total: 12, Passed: 10, Skipped: 2, Failed: 0
   - `ui-ux-pro-max-0.1.0\cli\src\utils\extract.ts` 原先使用 `child_process.exec` 执行 shell / PowerShell / xcopy / cp 回退命令
   - 当前已完成最小收敛，改为参数化进程调用
   - 当前已完成真实子工程构建验证
+  - 当前已完成 CLI 只读运行时 smoke（`--help`、`versions`）
 
 ### 依赖层扫描
 - 已执行主仓库 `npm audit --json`
