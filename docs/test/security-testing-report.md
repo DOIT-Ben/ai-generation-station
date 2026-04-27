@@ -1,7 +1,7 @@
 # 安全测试报告
 
 **项目**: AI 内容生成站
-**测试日期**: 2026-04-26
+**测试日期**: 2026-04-27
 **测试类型**: 全面安全测试
 
 ---
@@ -43,6 +43,7 @@
 |--------|------|------|
 | HTTP 安全头 | ✅ | X-Frame-Options, X-Content-Type-Options 等 |
 | CORS 配置 | ✅ | allowedOrigins 验证 |
+| 来源校验边界 | ✅ | Origin / Host / `X-Forwarded-Proto` / `TRUST_PROXY` 回归 |
 | CSP 内容安全策略 | ✅ | buildDefaultContentSecurityPolicy() |
 | HSTS | ✅ | HTTPS 时启用 Strict-Transport-Security |
 | 生产环境检查 | ✅ | 测试生产配置安全性 |
@@ -109,6 +110,8 @@
 | 错误信息泄露 | ✅ | test-error-disclosure.js |
 | CSRF 中间件 | ✅ | server/lib/csrf.js |
 | CORS 策略 | ✅ | server/lib/request-security.js |
+| Host / Origin 来源边界 | ✅ | test-security-gateway.js |
+| 非 API 路径头部行为 | ✅ | test-security-gateway.js |
 
 ### 2.4 数据安全
 | 测试项 | 状态 | 测试脚本 |
@@ -140,6 +143,7 @@
 | Cross-Origin-Resource-Policy | ✅ | same-origin |
 | Content-Security-Policy | ✅ | default-src 'self'; frame-ancestors 'self'; ... |
 | Strict-Transport-Security | ✅ | max-age=31536000; includeSubDomains |
+| Vary: Origin | ✅ | 按存在 Origin 头的请求路径一致返回 |
 
 ### Cookie 安全属性
 | 属性 | 状态 | 说明 |
@@ -165,10 +169,10 @@
 | OWASP Top 10 | 10 | 0 | 10 | 100% |
 | 认证授权 | 5 | 0 | 5 | 100% |
 | 输入验证 | 5 | 0 | 5 | 100% |
-| 安全配置 | 4 | 0 | 4 | 100% |
+| 安全配置 | 6 | 0 | 6 | 100% |
 | 数据安全 | 4 | 0 | 4 | 100% |
 | 业务逻辑 | 3 | 0 | 3 | 100% |
-| **总计** | **31** | **0** | **31** | **100%** |
+| **总计** | **33** | **0** | **33** | **100%** |
 
 ### 回归测试结果
 ```
@@ -194,6 +198,7 @@ Total: 12, Passed: 10, Skipped: 2, Failed: 0
 2. **邮件通知服务**: Resend API 未配置
 3. **Node.js SQLite**: 为实验性功能
 4. **插件目录**: ui-ux-pro-max-0.1.0 未进行安全审计
+5. **缓存策略未专项设计**: 当前已验证 CORS 与 `Vary` 一致性，但未形成完整缓存头策略设计
 
 ---
 
@@ -206,8 +211,8 @@ Total: 12, Passed: 10, Skipped: 2, Failed: 0
 
 ### 中优先级
 1. 为 ui-ux-pro-max-0.1.0 插件进行安全审计
-2. 添加 Rate Limiting 测试
-3. 添加 API 限流熔断测试
+2. 补更系统化的 Host / Origin 组合矩阵
+3. 补更细的缓存头策略验证
 
 ### 低优先级
 1. 添加 WebSocket 安全测试
@@ -217,7 +222,7 @@ Total: 12, Passed: 10, Skipped: 2, Failed: 0
 
 ## 七、结论
 
-**所有 31 项安全测试全部通过。项目安全状况良好，符合 OWASP Top 10 标准。**
+**所有 33 项安全测试全部通过。项目安全状况良好，符合当前项目范围内的 OWASP Top 10 目标。**
 
 主要安全措施:
 - ✅ CSRF 防护 (双重提交 cookie)
@@ -228,3 +233,24 @@ Total: 12, Passed: 10, Skipped: 2, Failed: 0
 - ✅ 密码安全 (scrypt + timingSafeEqual)
 - ✅ 错误信息不外泄
 - ✅ 认证授权中间件完整
+- ✅ Origin / Host 来源校验边界回归
+- ✅ 非 API / 静态资源路径头部行为回归
+
+## 八、2026-04-27 新增覆盖摘要
+
+本轮新增覆盖主要来自 phase 12 到 phase 17：
+
+1. **Host 语法边界收口**
+   - 尾随点 Host
+   - 显式异常端口格式 Host
+   - 尾随冒号 Host
+   - 合法 / 非法 IPv6 authority
+   - punycode / Unicode Host 规范化行为
+
+2. **来源判定一致性收口**
+   - 无 Origin、允许 Origin、拒绝 Origin、预检请求的 `Vary` / CORS 头一致性
+   - 非 API HTML、静态资源、404 路径在不同 Origin 场景下的头部行为
+
+3. **本轮新增确认的真实缺陷**
+   - 尾随点 Host 会被错误视为合法同源来源
+   - 显式异常端口格式 Host 会被 URL 规范化后错误视为合法同源来源

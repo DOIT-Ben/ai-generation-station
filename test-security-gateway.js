@@ -234,6 +234,12 @@ async function testHealthAndSecurityHeaders() {
 
 async function testSameOriginAndAllowedCors() {
   await withServer(async server => {
+    const noOrigin = await request(server, '/api/health', 'GET');
+    assert(noOrigin.status === 200, `Expected no-origin API request to return 200, got ${noOrigin.status}`);
+    assert(noOrigin.headers['vary'] === undefined, 'Expected no-origin API request to not include Vary: Origin');
+    assert(noOrigin.headers['access-control-allow-origin'] === undefined, 'Expected no-origin API request to not include Access-Control-Allow-Origin');
+    assert(noOrigin.headers['access-control-allow-credentials'] === undefined, 'Expected no-origin API request to not include Access-Control-Allow-Credentials');
+
     const sameOriginHeaders = {
       Host: 'localhost:18805',
       Origin: 'http://localhost:18805'
@@ -248,6 +254,27 @@ async function testSameOriginAndAllowedCors() {
       sameOrigin.headers['access-control-allow-credentials'] === 'true',
       'Expected credential-safe CORS headers on same-origin API request'
     );
+    assert(String(sameOrigin.headers['vary'] || '').includes('Origin'), 'Expected same-origin API request to include Vary: Origin');
+
+    const normalizedDefaultPort = await request(server, '/api/health', 'GET', null, {
+      Host: 'localhost',
+      Origin: 'http://localhost:80'
+    });
+    assert(normalizedDefaultPort.status === 200, `Expected normalized default-port same-origin request to return 200, got ${normalizedDefaultPort.status}`);
+    assert(
+      normalizedDefaultPort.headers['access-control-allow-origin'] === 'http://localhost',
+      'Expected normalized default-port same-origin request to echo the normalized origin'
+    );
+
+    const punycodeUnicodeSameOrigin = await request(server, '/api/health', 'GET', null, {
+      Host: 'xn--fsqu00a:18805',
+      Origin: 'http://例子:18805'
+    });
+    assert(punycodeUnicodeSameOrigin.status === 200, `Expected punycode/unicode normalized same-origin request to return 200, got ${punycodeUnicodeSameOrigin.status}`);
+    assert(
+      punycodeUnicodeSameOrigin.headers['access-control-allow-origin'] === 'http://xn--fsqu00a:18805',
+      'Expected punycode/unicode normalized same-origin request to echo the normalized punycode origin'
+    );
 
     const preflight = await request(server, '/api/health', 'OPTIONS', null, {
       Host: 'localhost:18805',
@@ -255,6 +282,8 @@ async function testSameOriginAndAllowedCors() {
       'Access-Control-Request-Method': 'GET'
     });
     assert(preflight.status === 403, `Expected disallowed OPTIONS request to return 403, got ${preflight.status}`);
+    assert(String(preflight.headers['vary'] || '').includes('Origin'), 'Expected disallowed preflight to include Vary: Origin');
+    assert(preflight.headers['access-control-allow-origin'] === undefined, 'Expected disallowed preflight to not include Access-Control-Allow-Origin');
   }, {
     env: {
       PORT: '18805'
@@ -272,6 +301,10 @@ async function testSameOriginAndAllowedCors() {
       'Expected configured external origin to be allowed explicitly'
     );
     assert(String(allowedOrigin.headers['vary'] || '').includes('Origin'), 'Expected Vary: Origin when CORS is evaluated');
+    assert(
+      allowedOrigin.headers['access-control-allow-credentials'] === 'true',
+      'Expected configured external origin request to include Access-Control-Allow-Credentials'
+    );
 
     const preflight = await request(server, '/api/auth/login', 'OPTIONS', null, {
       Host: 'localhost:18806',
@@ -283,6 +316,11 @@ async function testSameOriginAndAllowedCors() {
     assert(
       preflight.headers['access-control-allow-origin'] === 'https://studio.example.com',
       'Expected allowed preflight to return explicit Access-Control-Allow-Origin'
+    );
+    assert(String(preflight.headers['vary'] || '').includes('Origin'), 'Expected allowed preflight to include Vary: Origin');
+    assert(
+      preflight.headers['access-control-allow-credentials'] === 'true',
+      'Expected allowed preflight to include Access-Control-Allow-Credentials'
     );
     assert(
       String(preflight.headers['access-control-allow-headers'] || '').includes('X-CSRF-Token'),
@@ -304,6 +342,9 @@ async function testDisallowedOriginAndSecureCookie() {
     });
     assert(disallowed.status === 403, `Expected disallowed API origin to return 403, got ${disallowed.status}`);
     assert(disallowed.data.reason === 'origin_not_allowed', 'Expected explicit origin_not_allowed reason');
+    assert(String(disallowed.headers['vary'] || '').includes('Origin'), 'Expected disallowed API origin to include Vary: Origin');
+    assert(disallowed.headers['access-control-allow-origin'] === undefined, 'Expected disallowed API origin to not include Access-Control-Allow-Origin');
+    assert(disallowed.headers['access-control-allow-credentials'] === undefined, 'Expected disallowed API origin to not include Access-Control-Allow-Credentials');
 
     const baseHeaders = {
       Host: 'studio.example.com',
@@ -366,6 +407,115 @@ async function testDisallowedOriginAndSecureCookie() {
       SESSION_COOKIE_SECURE: 'true',
       SESSION_COOKIE_SAME_SITE: 'None'
     }
+  });
+}
+
+async function testNonApiOriginHeaderBehavior() {
+  await withServer(async server => {
+    const homeNoOrigin = await request(server, '/', 'GET');
+    assert(homeNoOrigin.status === 200, `Expected homepage without origin to return 200, got ${homeNoOrigin.status}`);
+    assert(homeNoOrigin.headers['vary'] === undefined, 'Expected homepage without origin to not include Vary: Origin');
+    assert(homeNoOrigin.headers['access-control-allow-origin'] === undefined, 'Expected homepage without origin to not include Access-Control-Allow-Origin');
+
+    const homeSameOrigin = await request(server, '/', 'GET', null, {
+      Host: 'localhost:18809',
+      Origin: 'http://localhost:18809'
+    });
+    assert(homeSameOrigin.status === 200, `Expected homepage same-origin request to return 200, got ${homeSameOrigin.status}`);
+    assert(String(homeSameOrigin.headers['vary'] || '').includes('Origin'), 'Expected homepage same-origin request to include Vary: Origin');
+    assert(homeSameOrigin.headers['access-control-allow-origin'] === 'http://localhost:18809', 'Expected homepage same-origin request to echo Access-Control-Allow-Origin');
+    assert(homeSameOrigin.headers['access-control-allow-credentials'] === 'true', 'Expected homepage same-origin request to include Access-Control-Allow-Credentials');
+
+    const homeDisallowedOrigin = await request(server, '/', 'GET', null, {
+      Host: 'localhost:18809',
+      Origin: 'https://evil.example.com'
+    });
+    assert(homeDisallowedOrigin.status === 200, `Expected homepage disallowed-origin request to return 200, got ${homeDisallowedOrigin.status}`);
+    assert(String(homeDisallowedOrigin.headers['vary'] || '').includes('Origin'), 'Expected homepage disallowed-origin request to include Vary: Origin');
+    assert(homeDisallowedOrigin.headers['access-control-allow-origin'] === undefined, 'Expected homepage disallowed-origin request to not include Access-Control-Allow-Origin');
+
+    const cssNoOrigin = await request(server, '/css/account.css', 'GET');
+    assert(cssNoOrigin.status === 200, `Expected CSS without origin to return 200, got ${cssNoOrigin.status}`);
+    assert(cssNoOrigin.headers['vary'] === undefined, 'Expected CSS without origin to not include Vary: Origin');
+    assert(cssNoOrigin.headers['access-control-allow-origin'] === undefined, 'Expected CSS without origin to not include Access-Control-Allow-Origin');
+
+    const cssSameOrigin = await request(server, '/css/account.css', 'GET', null, {
+      Host: 'localhost:18809',
+      Origin: 'http://localhost:18809'
+    });
+    assert(cssSameOrigin.status === 200, `Expected CSS same-origin request to return 200, got ${cssSameOrigin.status}`);
+    assert(String(cssSameOrigin.headers['vary'] || '').includes('Origin'), 'Expected CSS same-origin request to include Vary: Origin');
+    assert(cssSameOrigin.headers['access-control-allow-origin'] === 'http://localhost:18809', 'Expected CSS same-origin request to echo Access-Control-Allow-Origin');
+    assert(cssSameOrigin.headers['access-control-allow-credentials'] === 'true', 'Expected CSS same-origin request to include Access-Control-Allow-Credentials');
+
+    const cssDisallowedOrigin = await request(server, '/css/account.css', 'GET', null, {
+      Host: 'localhost:18809',
+      Origin: 'https://evil.example.com'
+    });
+    assert(cssDisallowedOrigin.status === 200, `Expected CSS disallowed-origin request to return 200, got ${cssDisallowedOrigin.status}`);
+    assert(String(cssDisallowedOrigin.headers['vary'] || '').includes('Origin'), 'Expected CSS disallowed-origin request to include Vary: Origin');
+    assert(cssDisallowedOrigin.headers['access-control-allow-origin'] === undefined, 'Expected CSS disallowed-origin request to not include Access-Control-Allow-Origin');
+
+    const missingSameOrigin = await request(server, '/missing.txt', 'GET', null, {
+      Host: 'localhost:18809',
+      Origin: 'http://localhost:18809'
+    });
+    assert(missingSameOrigin.status === 404, `Expected missing static path same-origin request to return 404, got ${missingSameOrigin.status}`);
+    assert(String(missingSameOrigin.headers['vary'] || '').includes('Origin'), 'Expected missing static path same-origin request to include Vary: Origin');
+    assert(missingSameOrigin.headers['access-control-allow-origin'] === 'http://localhost:18809', 'Expected missing static path same-origin request to echo Access-Control-Allow-Origin');
+  }, {
+    env: {
+      PORT: '18809'
+    }
+  });
+}
+
+async function testCacheHeaderBehavior() {
+  await withServer(async server => {
+    const csrfNoOrigin = await request(server, '/api/auth/csrf', 'GET');
+    assert(csrfNoOrigin.status === 200, `Expected CSRF bootstrap without origin to return 200, got ${csrfNoOrigin.status}`);
+    assert(csrfNoOrigin.headers['cache-control'] === 'no-store', 'Expected CSRF bootstrap to set Cache-Control: no-store');
+    assert(csrfNoOrigin.headers['pragma'] === undefined, 'Expected CSRF bootstrap to not set Pragma by default');
+    assert(csrfNoOrigin.headers['expires'] === undefined, 'Expected CSRF bootstrap to not set Expires by default');
+
+    const sessionAnonymous = await request(server, '/api/auth/session', 'GET');
+    assert(sessionAnonymous.status === 401, `Expected anonymous session request to return 401, got ${sessionAnonymous.status}`);
+    assert(sessionAnonymous.headers['cache-control'] === 'no-store', 'Expected anonymous session response to set Cache-Control: no-store');
+
+    const logoutCsrf = await request(server, '/api/auth/csrf', 'GET');
+    assert(logoutCsrf.status === 200, `Expected logout CSRF bootstrap to return 200, got ${logoutCsrf.status}`);
+    const logoutCookie = findCookie(logoutCsrf, 'aigs_csrf');
+    const login = await request(server, '/api/auth/login', 'POST', {
+      username: 'studio',
+      password: 'AIGS2026!'
+    }, {
+      Cookie: getCookieHeader(logoutCookie),
+      'X-CSRF-Token': logoutCsrf.data?.csrfToken
+    });
+    assert(login.status === 200, `Expected login before logout cache test to succeed, got ${login.status}`);
+    const sessionCookie = findCookie(login, 'aigs_session');
+    const logout = await request(server, '/api/auth/logout', 'POST', {}, {
+      Cookie: mergeCookieHeaders(getCookieHeader(logoutCookie), getCookieHeader(sessionCookie)),
+      'X-CSRF-Token': logoutCsrf.data?.csrfToken
+    });
+    assert(logout.status === 200, `Expected logout cache test to return 200, got ${logout.status}`);
+    assert(logout.headers['cache-control'] === 'no-store', 'Expected logout response to set Cache-Control: no-store');
+
+    const apiHealth = await request(server, '/api/health', 'GET');
+    assert(apiHealth.status === 200, `Expected api health request to return 200, got ${apiHealth.status}`);
+    assert(apiHealth.headers['cache-control'] === undefined, 'Expected api health response to have no explicit Cache-Control');
+
+    const home = await request(server, '/', 'GET');
+    assert(home.status === 200, `Expected homepage cache test to return 200, got ${home.status}`);
+    assert(home.headers['cache-control'] === undefined, 'Expected homepage response to have no explicit Cache-Control');
+
+    const css = await request(server, '/css/account.css', 'GET');
+    assert(css.status === 200, `Expected CSS cache test to return 200, got ${css.status}`);
+    assert(css.headers['cache-control'] === undefined, 'Expected CSS response to have no explicit Cache-Control');
+
+    const missing = await request(server, '/missing.txt', 'GET');
+    assert(missing.status === 404, `Expected missing path cache test to return 404, got ${missing.status}`);
+    assert(missing.headers['cache-control'] === undefined, 'Expected missing path response to have no explicit Cache-Control');
   });
 }
 
@@ -777,6 +927,20 @@ async function testOriginAndProxyProtocolBoundaries() {
     assert(hostMismatch.data?.reason === 'origin_not_allowed', 'Expected host/origin mismatch request to fail with origin_not_allowed');
     assert(hostMismatch.headers['access-control-allow-origin'] === undefined, 'Expected host/origin mismatch request to not echo Access-Control-Allow-Origin');
 
+    const punycodeUnicodeMismatch = await request(server, '/api/health', 'GET', null, {
+      Host: 'xn--bcher-kva:18818',
+      Origin: 'http://例子:18818'
+    });
+    assert(punycodeUnicodeMismatch.status === 403, `Expected punycode/unicode mismatch request to return 403, got ${punycodeUnicodeMismatch.status}`);
+    assert(punycodeUnicodeMismatch.data?.reason === 'origin_not_allowed', 'Expected punycode/unicode mismatch request to fail with origin_not_allowed');
+
+    const explicitPortMismatch = await request(server, '/api/health', 'GET', null, {
+      Host: 'localhost:18818',
+      Origin: 'http://localhost'
+    });
+    assert(explicitPortMismatch.status === 403, `Expected explicit-port mismatch request to return 403, got ${explicitPortMismatch.status}`);
+    assert(explicitPortMismatch.data?.reason === 'origin_not_allowed', 'Expected explicit-port mismatch request to fail with origin_not_allowed');
+
     const malformedOrigin = await request(server, '/api/health', 'GET', null, {
       Host: 'localhost:18818',
       Origin: 'https://studio.example.com, https://evil.example.com'
@@ -856,6 +1020,76 @@ async function testHostVariantBoundaries() {
     });
     assert(invalidHostSameOrigin.status === 403, `Expected invalid host same-origin request to return 403, got ${invalidHostSameOrigin.status}`);
     assert(invalidHostSameOrigin.data?.reason === 'origin_not_allowed', 'Expected invalid host same-origin request to fail with origin_not_allowed');
+
+    const trailingDotHostSameOrigin = await request(server, '/api/health', 'GET', null, {
+      Host: 'localhost.:18822',
+      Origin: 'http://localhost.:18822'
+    });
+    assert(trailingDotHostSameOrigin.status === 403, `Expected trailing-dot host same-origin request to return 403, got ${trailingDotHostSameOrigin.status}`);
+    assert(trailingDotHostSameOrigin.data?.reason === 'origin_not_allowed', 'Expected trailing-dot host same-origin request to fail with origin_not_allowed');
+
+    const normalizedPortSameOrigin = await request(server, '/api/health', 'GET', null, {
+      Host: 'localhost:00080',
+      Origin: 'http://localhost:00080'
+    });
+    assert(normalizedPortSameOrigin.status === 403, `Expected normalized-port host same-origin request to return 403, got ${normalizedPortSameOrigin.status}`);
+    assert(normalizedPortSameOrigin.data?.reason === 'origin_not_allowed', 'Expected normalized-port host same-origin request to fail with origin_not_allowed');
+
+    const trailingColonHostSameOrigin = await request(server, '/api/health', 'GET', null, {
+      Host: 'localhost:',
+      Origin: 'http://localhost:'
+    });
+    assert(trailingColonHostSameOrigin.status === 403, `Expected trailing-colon host same-origin request to return 403, got ${trailingColonHostSameOrigin.status}`);
+    assert(trailingColonHostSameOrigin.data?.reason === 'origin_not_allowed', 'Expected trailing-colon host same-origin request to fail with origin_not_allowed');
+
+    const validIpv6SameOrigin = await request(server, '/api/health', 'GET', null, {
+      Host: '[::1]:18822',
+      Origin: 'http://[::1]:18822'
+    });
+    assert(validIpv6SameOrigin.status === 200, `Expected valid IPv6 same-origin request to return 200, got ${validIpv6SameOrigin.status}`);
+    assert(validIpv6SameOrigin.headers['access-control-allow-origin'] === 'http://[::1]:18822', 'Expected valid IPv6 same-origin request to echo the allowed origin');
+
+    const invalidIpv6PortSameOrigin = await request(server, '/api/health', 'GET', null, {
+      Host: '[::1]:00080',
+      Origin: 'http://[::1]:00080'
+    });
+    assert(invalidIpv6PortSameOrigin.status === 403, `Expected invalid IPv6-port host same-origin request to return 403, got ${invalidIpv6PortSameOrigin.status}`);
+    assert(invalidIpv6PortSameOrigin.data?.reason === 'origin_not_allowed', 'Expected invalid IPv6-port host same-origin request to fail with origin_not_allowed');
+
+    const normalizedIpv6PortSameOrigin = await request(server, '/api/health', 'GET', null, {
+      Host: '[::1]:018822',
+      Origin: 'http://[::1]:018822'
+    });
+    assert(normalizedIpv6PortSameOrigin.status === 403, `Expected normalized IPv6-port host same-origin request to return 403, got ${normalizedIpv6PortSameOrigin.status}`);
+    assert(normalizedIpv6PortSameOrigin.data?.reason === 'origin_not_allowed', 'Expected normalized IPv6-port host same-origin request to fail with origin_not_allowed');
+
+    const zeroPaddedZeroIpv6PortSameOrigin = await request(server, '/api/health', 'GET', null, {
+      Host: '[::1]:00000',
+      Origin: 'http://[::1]:00000'
+    });
+    assert(zeroPaddedZeroIpv6PortSameOrigin.status === 403, `Expected zero-padded zero IPv6-port host same-origin request to return 403, got ${zeroPaddedZeroIpv6PortSameOrigin.status}`);
+    assert(zeroPaddedZeroIpv6PortSameOrigin.data?.reason === 'origin_not_allowed', 'Expected zero-padded zero IPv6-port host same-origin request to fail with origin_not_allowed');
+
+    const unicodeHostSameOrigin = await request(server, '/api/health', 'GET', null, {
+      Host: '例子:18822',
+      Origin: 'http://例子:18822'
+    });
+    assert(unicodeHostSameOrigin.status === 200, `Expected Unicode host same-origin request to return 200, got ${unicodeHostSameOrigin.status}`);
+    assert(unicodeHostSameOrigin.headers['access-control-allow-origin'] === 'http://xn--fsqu00a:18822', 'Expected Unicode host same-origin request to echo the normalized punycode origin');
+
+    const punycodeHostSameOrigin = await request(server, '/api/health', 'GET', null, {
+      Host: 'xn--bcher-kva:18822',
+      Origin: 'http://xn--bcher-kva:18822'
+    });
+    assert(punycodeHostSameOrigin.status === 200, `Expected punycode host same-origin request to return 200, got ${punycodeHostSameOrigin.status}`);
+    assert(punycodeHostSameOrigin.headers['access-control-allow-origin'] === 'http://xn--bcher-kva:18822', 'Expected punycode host same-origin request to echo the allowed origin');
+
+    const invalidUnicodeHostSameOrigin = await request(server, '/api/health', 'GET', null, {
+      Host: '例子..com:18822',
+      Origin: 'http://例子..com:18822'
+    });
+    assert(invalidUnicodeHostSameOrigin.status === 403, `Expected invalid Unicode host same-origin request to return 403, got ${invalidUnicodeHostSameOrigin.status}`);
+    assert(invalidUnicodeHostSameOrigin.data?.reason === 'origin_not_allowed', 'Expected invalid Unicode host same-origin request to fail with origin_not_allowed');
   }, {
     env: {
       PORT: '18822'
@@ -1292,6 +1526,8 @@ async function main() {
   await testHealthAndSecurityHeaders();
   await testSameOriginAndAllowedCors();
   await testDisallowedOriginAndSecureCookie();
+  await testNonApiOriginHeaderBehavior();
+  await testCacheHeaderBehavior();
   await testMalformedCookieAndOutputPathHandling();
   await testAdminAccessBoundaries();
   await testUploadInputGuards();

@@ -17,13 +17,29 @@ function parseBooleanFlag(value, fallback = false) {
 function normalizeOrigin(value) {
     if (!value) return null;
     try {
-        const parsed = new URL(String(value).trim());
+        const rawValue = String(value).trim();
+        const authorityMatch = rawValue.match(/^[a-z]+:\/\/([^/?#]+)/i);
+        const rawAuthority = authorityMatch ? authorityMatch[1] : '';
+        const parsed = new URL(rawValue);
         if (!['http:', 'https:'].includes(parsed.protocol)) {
             return null;
         }
+        if (rawAuthority) {
+            const ipv6PortMatch = rawAuthority.match(/^\[[^\]]+\](?::(.*))?$/);
+            const portCandidate = ipv6PortMatch
+                ? ipv6PortMatch[1]
+                : rawAuthority.includes(':')
+                    ? rawAuthority.slice(rawAuthority.lastIndexOf(':') + 1)
+                    : null;
+            if (portCandidate !== null) {
+                if (!portCandidate || !/^(0|[1-9]\d*)$/.test(portCandidate)) {
+                    return null;
+                }
+            }
+        }
         const hostname = String(parsed.hostname || '');
         if (hostname && !hostname.includes(':')) {
-            if (hostname.startsWith('.') || hostname.includes('..')) {
+            if (hostname.startsWith('.') || hostname.endsWith('.') || hostname.includes('..')) {
                 return null;
             }
         }
