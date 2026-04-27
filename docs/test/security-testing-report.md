@@ -197,7 +197,7 @@ Total: 12, Passed: 10, Skipped: 2, Failed: 0
 1. **外部 API 密钥未配置**: MINIMAX_API_KEY 和 CHAT_API_KEY 未设置
 2. **邮件通知服务**: Resend API 未配置
 3. **Node.js SQLite**: 为实验性功能
-4. **插件目录**: ui-ux-pro-max-0.1.0 未进行安全审计
+4. **插件目录**: ui-ux-pro-max-0.1.0 已完成一轮盘点，但未做深度重构级审计
 5. **缓存策略未专项设计**: 当前已验证 CORS 与 `Vary` 一致性，但未形成完整缓存头策略设计
 
 ---
@@ -254,3 +254,18 @@ Total: 12, Passed: 10, Skipped: 2, Failed: 0
 3. **本轮新增确认的真实缺陷**
    - 尾随点 Host 会被错误视为合法同源来源
    - 显式异常端口格式 Host 会被 URL 规范化后错误视为合法同源来源
+
+## 九、插件与依赖补充结论
+
+### 插件目录专项盘点
+- 已对 `ui-ux-pro-max-0.1.0` 做一轮安全盘点。
+- 当前未发现硬编码密钥、明显的前端注入链或已确认的高危远程执行路径。
+- 当前最值得继续跟踪的治理点：
+  - `ui-ux-pro-max-0.1.0\cli\src\utils\extract.ts` 使用 `child_process.exec` 执行 shell / PowerShell / xcopy / cp 回退命令
+  - 当前结论是“需要后续收敛”的中低风险点，而不是已确认高危漏洞
+
+### 依赖层扫描
+- 已执行主仓库 `npm audit --json`
+- 当前结果：
+  - `total: 0`
+  - 未发现已知 `moderate` / `high` / `critical` 漏洞

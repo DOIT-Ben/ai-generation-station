@@ -276,6 +276,26 @@ async function testSameOriginAndAllowedCors() {
       'Expected punycode/unicode normalized same-origin request to echo the normalized punycode origin'
     );
 
+    const unicodePunycodeSameOrigin = await request(server, '/api/health', 'GET', null, {
+      Host: '例子:18805',
+      Origin: 'http://xn--fsqu00a:18805'
+    });
+    assert(unicodePunycodeSameOrigin.status === 200, `Expected unicode/punycode normalized same-origin request to return 200, got ${unicodePunycodeSameOrigin.status}`);
+    assert(
+      unicodePunycodeSameOrigin.headers['access-control-allow-origin'] === 'http://xn--fsqu00a:18805',
+      'Expected unicode/punycode normalized same-origin request to echo the normalized punycode origin'
+    );
+
+    const explicitDefaultPortSymmetric = await request(server, '/api/health', 'GET', null, {
+      Host: 'localhost:80',
+      Origin: 'http://localhost'
+    });
+    assert(explicitDefaultPortSymmetric.status === 200, `Expected explicit default-port symmetric same-origin request to return 200, got ${explicitDefaultPortSymmetric.status}`);
+    assert(
+      explicitDefaultPortSymmetric.headers['access-control-allow-origin'] === 'http://localhost',
+      'Expected explicit default-port symmetric same-origin request to echo the normalized origin'
+    );
+
     const preflight = await request(server, '/api/health', 'OPTIONS', null, {
       Host: 'localhost:18805',
       Origin: 'https://studio.example.com',
@@ -517,6 +537,76 @@ async function testCacheHeaderBehavior() {
     assert(missing.status === 404, `Expected missing path cache test to return 404, got ${missing.status}`);
     assert(missing.headers['cache-control'] === undefined, 'Expected missing path response to have no explicit Cache-Control');
   });
+}
+
+async function testSseCacheHeaderBehavior() {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'aigs-sse-cache-'));
+  const stateDb = path.join(tempRoot, 'state.sqlite');
+  const outputDir = path.join(tempRoot, 'output');
+  fs.mkdirSync(outputDir, { recursive: true });
+
+  const streamFetch = async () => ({
+    ok: true,
+    body: {
+      setEncoding() {},
+      on(event, handler) {
+        if (event === 'data') {
+          setImmediate(() => handler('data: {"choices":[{"delta":{"content":"hi"}}]}\n\n'));
+          setImmediate(() => handler('data: [DONE]\n\n'));
+        }
+        if (event === 'end') {
+          setImmediate(handler);
+        }
+      }
+    }
+  });
+
+  const server = createServer({
+    config: createConfig({
+      env: {
+        ...process.env,
+        PORT: '18841',
+        APP_STATE_DB: stateDb,
+        OUTPUT_DIR: outputDir,
+        APP_USERNAME: 'studio',
+        APP_PASSWORD: 'AIGS2026!',
+        CHAT_API_KEY: 'test-chat-key'
+      }
+    }),
+    chatFetch: streamFetch
+  });
+
+  try {
+    const csrf = await request(server, '/api/auth/csrf', 'GET');
+    assert(csrf.status === 200, `Expected CSRF bootstrap before SSE cache test to return 200, got ${csrf.status}`);
+    const csrfCookie = findCookie(csrf, 'aigs_csrf');
+    const login = await request(server, '/api/auth/login', 'POST', {
+      username: 'studio',
+      password: 'AIGS2026!'
+    }, {
+      Cookie: getCookieHeader(csrfCookie),
+      'X-CSRF-Token': csrf.data?.csrfToken
+    });
+    assert(login.status === 200, `Expected login before SSE cache test to succeed, got ${login.status}`);
+    const sessionCookie = findCookie(login, 'aigs_session');
+
+    const streamResponse = await request(server, '/api/chat', 'POST', {
+      messages: [{ role: 'user', content: 'hi' }],
+      stream: true
+    }, {
+      Cookie: mergeCookieHeaders(getCookieHeader(csrfCookie), getCookieHeader(sessionCookie)),
+      'X-CSRF-Token': csrf.data?.csrfToken
+    });
+    assert(streamResponse.status === 200, `Expected SSE chat response to return 200, got ${streamResponse.status}`);
+    assert(streamResponse.headers['content-type'] === 'text/event-stream; charset=utf-8', 'Expected SSE chat response to use text/event-stream');
+    assert(streamResponse.headers['cache-control'] === 'no-cache, no-transform', 'Expected SSE chat response to set Cache-Control: no-cache, no-transform');
+  } finally {
+    server.appStateStore?.close?.();
+    if (fs.existsSync(stateDb)) fs.unlinkSync(stateDb);
+    if (fs.existsSync(`${stateDb}-shm`)) fs.unlinkSync(`${stateDb}-shm`);
+    if (fs.existsSync(`${stateDb}-wal`)) fs.unlinkSync(`${stateDb}-wal`);
+    if (fs.existsSync(tempRoot)) fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 }
 
 async function testMalformedCookieAndOutputPathHandling() {
@@ -940,6 +1030,20 @@ async function testOriginAndProxyProtocolBoundaries() {
     });
     assert(explicitPortMismatch.status === 403, `Expected explicit-port mismatch request to return 403, got ${explicitPortMismatch.status}`);
     assert(explicitPortMismatch.data?.reason === 'origin_not_allowed', 'Expected explicit-port mismatch request to fail with origin_not_allowed');
+
+    const ipv6DefaultPortMismatch = await request(server, '/api/health', 'GET', null, {
+      Host: '[::1]:18818',
+      Origin: 'http://[::1]:80'
+    });
+    assert(ipv6DefaultPortMismatch.status === 403, `Expected IPv6 default-port mismatch request to return 403, got ${ipv6DefaultPortMismatch.status}`);
+    assert(ipv6DefaultPortMismatch.data?.reason === 'origin_not_allowed', 'Expected IPv6 default-port mismatch request to fail with origin_not_allowed');
+
+    const unicodePunycodeMismatch = await request(server, '/api/health', 'GET', null, {
+      Host: '例子:18818',
+      Origin: 'http://xn--bcher-kva:18818'
+    });
+    assert(unicodePunycodeMismatch.status === 403, `Expected unicode/punycode mismatch request to return 403, got ${unicodePunycodeMismatch.status}`);
+    assert(unicodePunycodeMismatch.data?.reason === 'origin_not_allowed', 'Expected unicode/punycode mismatch request to fail with origin_not_allowed');
 
     const malformedOrigin = await request(server, '/api/health', 'GET', null, {
       Host: 'localhost:18818',
@@ -1528,6 +1632,7 @@ async function main() {
   await testDisallowedOriginAndSecureCookie();
   await testNonApiOriginHeaderBehavior();
   await testCacheHeaderBehavior();
+  await testSseCacheHeaderBehavior();
   await testMalformedCookieAndOutputPathHandling();
   await testAdminAccessBoundaries();
   await testUploadInputGuards();
