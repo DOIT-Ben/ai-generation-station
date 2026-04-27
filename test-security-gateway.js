@@ -681,6 +681,66 @@ async function testProxyHeaderTrustBoundaries() {
   });
 }
 
+async function testOriginAndProxyProtocolBoundaries() {
+  await withServer(async server => {
+    const hostMismatch = await request(server, '/api/health', 'GET', null, {
+      Host: 'localhost:18818',
+      Origin: 'http://localhost:29999'
+    });
+    assert(hostMismatch.status === 403, `Expected host/origin mismatch request to return 403, got ${hostMismatch.status}`);
+    assert(hostMismatch.data?.reason === 'origin_not_allowed', 'Expected host/origin mismatch request to fail with origin_not_allowed');
+    assert(hostMismatch.headers['access-control-allow-origin'] === undefined, 'Expected host/origin mismatch request to not echo Access-Control-Allow-Origin');
+
+    const malformedOrigin = await request(server, '/api/health', 'GET', null, {
+      Host: 'localhost:18818',
+      Origin: 'https://studio.example.com, https://evil.example.com'
+    });
+    assert(malformedOrigin.status === 403, `Expected malformed origin request to return 403, got ${malformedOrigin.status}`);
+    assert(malformedOrigin.data?.reason === 'origin_not_allowed', 'Expected malformed origin request to fail with origin_not_allowed');
+    assert(String(malformedOrigin.headers['vary'] || '').includes('Origin'), 'Expected malformed origin request to include Vary: Origin');
+  }, {
+    env: {
+      PORT: '18818'
+    }
+  });
+
+  await withServer(async server => {
+    const proxiedHttpBootstrap = await request(server, '/api/auth/csrf', 'GET', null, {
+      Host: 'studio.example.com',
+      Origin: 'https://studio.example.com',
+      'X-Forwarded-Proto': 'garbage, http, https'
+    });
+    assert(proxiedHttpBootstrap.status === 200, `Expected proxied http-first CSRF bootstrap to return 200, got ${proxiedHttpBootstrap.status}`);
+    assert(
+      proxiedHttpBootstrap.headers['strict-transport-security'] === undefined,
+      'Expected http-first forwarded proto chain to not enable Strict-Transport-Security'
+    );
+    const proxiedHttpCookie = findCookie(proxiedHttpBootstrap, 'aigs_csrf');
+    assert(Boolean(proxiedHttpCookie), 'Expected http-first forwarded proto chain to set the CSRF cookie');
+    assert(!String(proxiedHttpCookie).includes('Secure'), 'Expected http-first forwarded proto chain to keep CSRF cookie non-secure');
+
+    const proxiedHttpsBootstrap = await request(server, '/api/auth/csrf', 'GET', null, {
+      Host: 'studio.example.com',
+      Origin: 'https://studio.example.com',
+      'X-Forwarded-Proto': 'garbage, https, http'
+    });
+    assert(proxiedHttpsBootstrap.status === 200, `Expected proxied https-first CSRF bootstrap to return 200, got ${proxiedHttpsBootstrap.status}`);
+    assert(
+      proxiedHttpsBootstrap.headers['strict-transport-security'] === 'max-age=31536000; includeSubDomains',
+      'Expected https-first forwarded proto chain to enable Strict-Transport-Security'
+    );
+    const proxiedHttpsCookie = findCookie(proxiedHttpsBootstrap, 'aigs_csrf');
+    assert(Boolean(proxiedHttpsCookie), 'Expected https-first forwarded proto chain to set the CSRF cookie');
+    assert(String(proxiedHttpsCookie).includes('Secure'), 'Expected https-first forwarded proto chain to mark the CSRF cookie as Secure');
+  }, {
+    env: {
+      PORT: '18819',
+      TRUST_PROXY: 'true',
+      ALLOWED_ORIGINS: 'https://studio.example.com'
+    }
+  });
+}
+
 async function testPublicRegistrationRateLimitAndAudit() {
   await withServer(async server => {
     const uniqueSuffix = `${Date.now()}${Math.random().toString(16).slice(2, 8)}`;
@@ -1030,6 +1090,7 @@ async function main() {
   await testUploadInputGuards();
   await testRateLimitsAndAuditTrails();
   await testProxyHeaderTrustBoundaries();
+  await testOriginAndProxyProtocolBoundaries();
   await testPublicRegistrationRateLimitAndAudit();
   await testAuditActorIpBoundaries();
   await testTokenLifecycleBoundaries();

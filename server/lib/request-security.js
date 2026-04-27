@@ -164,12 +164,17 @@ function applySecurityHeaders(res, options = {}) {
 }
 
 function applyCorsHeaders(req, res, options = {}) {
-    const origin = normalizeOrigin(req.headers.origin);
-    if (!origin) {
+    const rawOrigin = String(req.headers.origin || '').trim();
+    if (!rawOrigin) {
         return { allowed: true, origin: null };
     }
 
     appendVaryHeader(res, 'Origin');
+    const origin = normalizeOrigin(rawOrigin);
+    if (!origin) {
+        return { allowed: false, origin: null };
+    }
+
     if (!isOriginAllowed(req, origin, options)) {
         return { allowed: false, origin };
     }
