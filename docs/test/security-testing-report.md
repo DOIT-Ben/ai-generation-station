@@ -265,6 +265,7 @@ Total: 12, Passed: 10, Skipped: 2, Failed: 0
   - 当前已完成最小收敛，改为参数化进程调用
   - 当前已完成真实子工程构建验证
   - 当前已完成 CLI 只读运行时 smoke（`--help`、`versions`）
+  - 当前已完成隔离目录下的写入型 smoke（`init --offline --ai codex`）
 
 ### 依赖层扫描
 - 已执行主仓库 `npm audit --json`
