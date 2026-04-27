@@ -253,6 +253,7 @@ Total: 12, Passed: 10, Skipped: 2, Failed: 0
    - 非 API HTML、静态资源、404 路径在不同 Origin 场景下的头部行为
    - 更系统化的 `Host / Origin` 规范化组合矩阵
    - `ALLOWED_ORIGINS` 的 punycode / Unicode / 默认端口规范化组合矩阵
+   - `ALLOWED_ORIGINS` 中的 IPv6 与端口差异组合矩阵
 
 3. **本轮新增确认的真实缺陷**
    - 尾随点 Host 会被错误视为合法同源来源
