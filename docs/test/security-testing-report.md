@@ -250,6 +250,7 @@ Total: 12, Passed: 10, Skipped: 2, Failed: 0
 2. **来源判定一致性收口**
    - 无 Origin、允许 Origin、拒绝 Origin、预检请求的 `Vary` / CORS 头一致性
    - 非 API HTML、静态资源、404 路径在不同 Origin 场景下的头部行为
+   - 更系统化的 `Host / Origin` 规范化组合矩阵
 
 3. **本轮新增确认的真实缺陷**
    - 尾随点 Host 会被错误视为合法同源来源

@@ -296,6 +296,26 @@ async function testSameOriginAndAllowedCors() {
       'Expected explicit default-port symmetric same-origin request to echo the normalized origin'
     );
 
+    const punycodeDefaultPortSameOrigin = await request(server, '/api/health', 'GET', null, {
+      Host: 'xn--fsqu00a',
+      Origin: 'http://例子:80'
+    });
+    assert(punycodeDefaultPortSameOrigin.status === 200, `Expected punycode default-port normalized same-origin request to return 200, got ${punycodeDefaultPortSameOrigin.status}`);
+    assert(
+      punycodeDefaultPortSameOrigin.headers['access-control-allow-origin'] === 'http://xn--fsqu00a',
+      'Expected punycode default-port normalized same-origin request to echo the normalized punycode origin'
+    );
+
+    const unicodeExplicitDefaultPortSameOrigin = await request(server, '/api/health', 'GET', null, {
+      Host: '例子:80',
+      Origin: 'http://xn--fsqu00a'
+    });
+    assert(unicodeExplicitDefaultPortSameOrigin.status === 200, `Expected unicode explicit-default-port normalized same-origin request to return 200, got ${unicodeExplicitDefaultPortSameOrigin.status}`);
+    assert(
+      unicodeExplicitDefaultPortSameOrigin.headers['access-control-allow-origin'] === 'http://xn--fsqu00a',
+      'Expected unicode explicit-default-port normalized same-origin request to echo the normalized punycode origin'
+    );
+
     const preflight = await request(server, '/api/health', 'OPTIONS', null, {
       Host: 'localhost:18805',
       Origin: 'https://studio.example.com',
@@ -1044,6 +1064,20 @@ async function testOriginAndProxyProtocolBoundaries() {
     });
     assert(unicodePunycodeMismatch.status === 403, `Expected unicode/punycode mismatch request to return 403, got ${unicodePunycodeMismatch.status}`);
     assert(unicodePunycodeMismatch.data?.reason === 'origin_not_allowed', 'Expected unicode/punycode mismatch request to fail with origin_not_allowed');
+
+    const punycodeDefaultPortMismatch = await request(server, '/api/health', 'GET', null, {
+      Host: 'xn--bcher-kva',
+      Origin: 'http://例子:80'
+    });
+    assert(punycodeDefaultPortMismatch.status === 403, `Expected punycode default-port mismatch request to return 403, got ${punycodeDefaultPortMismatch.status}`);
+    assert(punycodeDefaultPortMismatch.data?.reason === 'origin_not_allowed', 'Expected punycode default-port mismatch request to fail with origin_not_allowed');
+
+    const defaultPortAppPortMismatch = await request(server, '/api/health', 'GET', null, {
+      Host: 'localhost',
+      Origin: 'http://localhost:18818'
+    });
+    assert(defaultPortAppPortMismatch.status === 403, `Expected default-port vs app-port mismatch request to return 403, got ${defaultPortAppPortMismatch.status}`);
+    assert(defaultPortAppPortMismatch.data?.reason === 'origin_not_allowed', 'Expected default-port vs app-port mismatch request to fail with origin_not_allowed');
 
     const malformedOrigin = await request(server, '/api/health', 'GET', null, {
       Host: 'localhost:18818',
