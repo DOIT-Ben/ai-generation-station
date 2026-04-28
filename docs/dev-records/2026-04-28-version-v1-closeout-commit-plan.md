@@ -72,6 +72,15 @@
   - 视觉回归中出现 Node.js SQLite experimental warning，属于既有环境提示，不影响命令成功。
   - 已执行 `git fetch origin main`，本地 `main` 相对 `origin\main` 为 ahead 46、behind 0。
   - 已复核暂存区文件仍为 8 个，未纳入无关目录或子项目指针。
+- TODO 5：已创建版本收口提交。
+  - 提交：`0e26e1f chore: close out chat composer split`。
+  - 提交包含 8 个文件，750 insertions、234 deletions。
+- TODO 6：已推送当前分支到远端。
+  - 命令：`git push origin main`。
+  - 输出：`1d7f9eb..0e26e1f main -> main`。
+  - 推送后 `git status --short --branch` 显示 `main...origin\main` 无 ahead 或 behind。
+- TODO 7：已回写执行记录、验证结果和复盘。
+  - 本记录将在最终记录提交中同步推送，保证收口记录闭环。
 
 ## 验证结果
 - 提交前验证通过：
@@ -82,9 +91,16 @@
   - `npm run test:frontend`
   - `npm run check`
   - `node test-ui-visual.js --launch-server`
+- Git 收口验证：
+  - `git log -1 --oneline`：`0e26e1f chore: close out chat composer split`。
+  - `git push origin main`：通过，`main -> main`。
+  - 推送后 `git status --short --branch`：当前分支不再 ahead 或 behind；仍保留未纳入本次提交的既有未跟踪项和 `ui-ux-pro-max-0.1.0` 子项目指针变化。
 
 ## 复盘
 - TODO 1 复盘：本轮目标限定为提交和推送当前已完成版本，不进入 v2.0 开发。新问题：当前工作区有未跟踪目录和疑似临时产物，归类为当前必修分类问题，下一步先复核再暂存。
 - TODO 2 复盘：已形成最小提交范围，避免 `git add -A` 误纳入大产物和子项目指针。新问题：仍有早前未跟踪文档留在工作区，归类为可延后整理，不阻塞本次版本提交。边界条件：提交后这些未纳入文件仍会留在工作区。
 - TODO 3 复盘：暂存范围符合本次版本收口目标。新问题：记录文件在暂存后继续追加执行记录，需要在提交前重新暂存本记录；归类为当前必修。边界条件：提交前必须复核暂存区包含最新记录内容。
 - TODO 4 复盘：提交前验证覆盖了模块语法、页面契约、前端状态、服务端入口语法和视觉回归。新问题：无。边界条件：提交前需要重新暂存本记录最新内容并复核暂存区。
+- TODO 5 复盘：版本收口提交已创建，提交范围符合预期。新问题：最终推送结果发生在提交之后，需要追加记录提交保证文档闭环；归类为当前必修。
+- TODO 6 复盘：主提交已推送到 `origin\main`，远端已收到当前版本更新。新问题：无。边界条件：未处理 `ui-ux-pro-max-0.1.0` 和早前未跟踪产物。
+- TODO 7 复盘：本轮提交推送任务完成，已把未纳入项明确留作后续整理。下一阶段 v2.0 开始前，建议先明确 v2.0 目标、限制范围、权限边界和验收清单。
