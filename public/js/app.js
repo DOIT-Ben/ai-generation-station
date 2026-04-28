@@ -185,6 +185,27 @@
         setTimeoutFn: (callback, delay) => window.setTimeout(callback, delay)
       })
     : null;
+  const chatComposerTools = window.AigsChatComposerTools?.createTools
+    ? window.AigsChatComposerTools.createTools({
+        getElement: $,
+        queryOne: selector => document.querySelector(selector),
+        escapeHtml,
+        getCurrentUser: () => currentUser,
+        getIsChatGenerating: () => isChatGenerating,
+        getChatQueue: () => chatQueue,
+        getConversationState: () => conversationState,
+        getActiveConversation,
+        getConversationTimestamp,
+        formatChatRelativeTime,
+        isConversationPinned,
+        isConversationParked,
+        queueChatViewportSync,
+        scheduleWorkspaceStateSave,
+        getStarterPrompts: () => CHAT_STARTER_PROMPTS,
+        getQuickstartPrompts: () => CHAT_QUICKSTART_PROMPTS,
+        getFollowUpPrompts: () => CHAT_FOLLOW_UP_PROMPTS
+      })
+    : null;
   const chatExcerptTools = window.AigsChatExcerptTools?.createTools
     ? window.AigsChatExcerptTools.createTools({
         getCurrentUser: () => currentUser,
@@ -742,6 +763,13 @@
     return chatMessageActionTools;
   }
 
+  function requireChatComposerTools() {
+    if (!chatComposerTools) {
+      throw new Error('AigsChatComposerTools 未加载');
+    }
+    return chatComposerTools;
+  }
+
   function requireChatExcerptTools() {
     if (!chatExcerptTools) {
       throw new Error('AigsChatExcerptTools 未加载');
@@ -1059,279 +1087,67 @@
   }
 
   function autoResizeChatInput() {
-    const input = $('chat-input');
-    if (!input) return;
-    input.style.height = 'auto';
-    const nextHeight = Math.min(Math.max(input.scrollHeight, 56), 176);
-    input.style.height = `${nextHeight}px`;
-    input.style.overflowY = input.scrollHeight > 176 ? 'auto' : 'hidden';
+    return requireChatComposerTools().autoResizeChatInput();
   }
 
   function updateChatComposerState() {
-    const input = $('chat-input');
-    const sendButton = $('btn-chat-send');
-    const clearButton = $('btn-chat-clear');
-    if (!input) return;
-
-    autoResizeChatInput();
-    const rawValue = String(input.value || '');
-    const trimmedValue = rawValue.trim();
-
-    if (sendButton) {
-      sendButton.disabled = !trimmedValue;
-      sendButton.setAttribute('aria-disabled', trimmedValue ? 'false' : 'true');
-    }
-    if (clearButton) {
-      clearButton.disabled = rawValue.length <= 0;
-    }
-    renderChatExperienceState();
-    renderChatSuggestionStrip();
-    renderChatContextStrip();
-    queueChatViewportSync();
+    return requireChatComposerTools().updateChatComposerState();
   }
 
   function getChatDraftLength() {
-    const input = $('chat-input');
-    return String(input?.value || '').trim().length;
+    return requireChatComposerTools().getChatDraftLength();
   }
 
   function getConversationMessageCount(conversation = getActiveConversation()) {
-    if (!conversation) return Array.isArray(conversationState.messages) ? conversationState.messages.length : 0;
-    return Number(conversation.messageCount || conversationState.messages.length || 0);
+    return requireChatComposerTools().getConversationMessageCount(conversation);
   }
 
   function getAssistantMessageCount(messages = conversationState.messages) {
-    return (Array.isArray(messages) ? messages : []).filter(item => item?.role === 'assistant').length;
+    return requireChatComposerTools().getAssistantMessageCount(messages);
   }
 
   function getChatExperienceStage() {
-    const draftLength = getChatDraftLength();
-    const activeConversation = getActiveConversation();
-    const messageCount = getConversationMessageCount(activeConversation);
-    const assistantCount = getAssistantMessageCount();
-    const hasConversation = Boolean(currentUser && activeConversation);
-
-    if (isChatGenerating) {
-      if (chatQueue.length > 0) {
-        return {
-          key: 'queued',
-          tone: 'live',
-          indicator: `队列中还有 ${chatQueue.length} 条待发送消息`,
-          hint: '当前回复完成后会自动继续发送，你也可以继续输入下一条。'
-        };
-      }
-      if (draftLength > 0) {
-        return {
-          key: 'live-draft',
-          tone: 'live',
-          indicator: `已输入 ${draftLength} 字，发送后会加入队列`,
-          hint: '当前回复仍在继续，Enter 会把这条消息加入队列。'
-        };
-      }
-      return {
-        key: 'live',
-        tone: 'live',
-        indicator: '正在生成回复',
-        hint: '可以提前组织下一条消息，回复结束后会更顺。'
-      };
-    }
-
-    if (!hasConversation || messageCount <= 0) {
-      if (draftLength > 0) {
-        return {
-          key: 'first-draft',
-          tone: 'quickstart',
-          indicator: `第一条消息已准备 ${draftLength} 字`,
-          hint: '发出后我会开始记录上下文，并自动切到继续追问节奏。'
-        };
-      }
-      return {
-        key: 'quickstart',
-        tone: 'quickstart',
-        indicator: '先写下这轮目标或问题',
-        hint: '没想好第一句也可以先点建议，再补限制条件后发送。'
-      };
-    }
-
-    if (draftLength > 0) {
-      return {
-        key: 'followup-draft',
-        tone: 'followup',
-        indicator: `这条会接在当前上下文后面 · ${draftLength} 字`,
-        hint: assistantCount <= 1
-          ? '第一轮刚展开，继续补充目标、风格或限制会最省力。'
-          : '继续补约束、偏好或风险点，我会沿当前主题往下接。'
-      };
-    }
-
-    return {
-      key: assistantCount <= 1 ? 'followup-early' : 'followup',
-      tone: 'followup',
-      indicator: assistantCount <= 1 ? '第一轮已展开，继续把需求压实' : '当前上下文已就绪，可以继续追问',
-      hint: assistantCount <= 1
-        ? '再给一句限制条件、目标结果或风格偏好，我会继续顺着这轮往下拆。'
-        : '可以让我换角度、补风险、整理步骤，或直接给执行方案。'
-    };
+    return requireChatComposerTools().getChatExperienceStage();
   }
 
   function renderChatExperienceState() {
-    const draftIndicator = $('chat-draft-indicator');
-    const shortcutHint = $('chat-shortcut-hint');
-    const inputArea = document.querySelector('.chat-input-area');
-    const stage = getChatExperienceStage();
-    if (draftIndicator) draftIndicator.textContent = stage.indicator;
-    if (shortcutHint) shortcutHint.textContent = stage.hint;
-    if (inputArea) inputArea.dataset.chatStage = stage.tone || 'neutral';
+    return requireChatComposerTools().renderChatExperienceState();
   }
 
   function getActiveConversationLastActivityLabel(conversation) {
-    if (!conversation) return '暂无活跃记录';
-    const timestamp = getConversationTimestamp(conversation);
-    return timestamp ? formatChatRelativeTime(timestamp) : '暂无活跃记录';
+    return requireChatComposerTools().getActiveConversationLastActivityLabel(conversation);
   }
 
   function getChatContextPills(conversation = getActiveConversation()) {
-    const pills = [];
-    const draftLength = getChatDraftLength();
-    if (!conversation) {
-      if (draftLength > 0) {
-        pills.push({ tone: 'draft', label: `未发送草稿 ${draftLength} 字` });
-      }
-      return pills;
-    }
-
-    pills.push({ tone: 'model', label: conversation.model || 'gpt-4.1-mini' });
-    pills.push({ tone: 'count', label: `${conversation.messageCount || 0} 条消息` });
-    if (isConversationPinned(conversation.id)) {
-      pills.push({ tone: 'priority', label: '重点会话' });
-    }
-    if (isConversationParked(conversation.id)) {
-      pills.push({ tone: 'parked', label: '稍后处理' });
-    }
-    if (Number(conversation.messageCount || 0) <= 0) {
-      pills.push({ tone: 'empty', label: '空白会话，可直接开始新主题' });
-    }
-    if (draftLength > 0) {
-      pills.push({ tone: 'draft', label: `未发送草稿 ${draftLength} 字` });
-    }
-    if (isChatGenerating) {
-      pills.push({ tone: 'live', label: chatQueue.length > 0 ? `正在回复中，队列 ${chatQueue.length} 条` : '正在回复中' });
-    }
-    return pills;
+    return requireChatComposerTools().getChatContextPills(conversation);
   }
 
   function renderChatContextStrip() {
-    const strip = $('chat-context-strip');
-    const pillsContainer = $('chat-context-pills');
-    if (!strip || !pillsContainer) return;
-
-    const pills = getChatContextPills();
-    if (!pills.length) {
-      strip.setAttribute('hidden', '');
-      pillsContainer.innerHTML = '';
-      return;
-    }
-
-    pillsContainer.innerHTML = pills.map(pill => `
-      <span class="chat-context-pill tone-${escapeHtml(pill.tone || 'neutral')}">${escapeHtml(pill.label)}</span>
-    `).join('');
-    strip.removeAttribute('hidden');
+    return requireChatComposerTools().renderChatContextStrip();
   }
 
   function getChatQuickstartPrompts() {
-    const activeConversation = getActiveConversation();
-    const draftLength = getChatDraftLength();
-    const conversationMessageCount = Number(activeConversation?.messageCount || conversationState.messages.length || 0);
-    if (!currentUser || isChatGenerating || draftLength > 0 || conversationMessageCount > 0) return [];
-    return CHAT_QUICKSTART_PROMPTS.slice();
+    return requireChatComposerTools().getChatQuickstartPrompts();
   }
 
   function getChatFollowUpPrompts() {
-    const activeConversation = getActiveConversation();
-    const draftLength = getChatDraftLength();
-    if (!activeConversation || draftLength > 0) return [];
-    if (!Array.isArray(conversationState.messages) || conversationState.messages.length === 0) return [];
-    return CHAT_FOLLOW_UP_PROMPTS.slice();
+    return requireChatComposerTools().getChatFollowUpPrompts();
   }
 
   function getChatSuggestionConfig() {
-    const activeConversation = getActiveConversation();
-    const draftLength = getChatDraftLength();
-    const conversationMessageCount = getConversationMessageCount(activeConversation);
-    if (!currentUser || isChatGenerating || draftLength > 0) return null;
-    if (conversationMessageCount > 0) return null;
-
-    const prompts = getChatQuickstartPrompts();
-    if (!prompts.length) return null;
-    return {
-      tone: 'quickstart',
-      title: '还没想好第一句？',
-      description: '先插入一个常见开头，再继续改成你自己的问题。',
-      prompts
-    };
+    return requireChatComposerTools().getChatSuggestionConfig();
   }
 
   function renderChatSuggestionStrip() {
-    const strip = $('chat-suggestion-strip');
-    const title = $('chat-suggestion-title');
-    const description = $('chat-suggestion-description');
-    const actions = $('chat-suggestion-actions');
-    if (!strip || !title || !description || !actions) return;
-
-    const config = getChatSuggestionConfig();
-    if (!config) {
-      strip.setAttribute('hidden', '');
-      strip.dataset.tone = '';
-      actions.innerHTML = '';
-      return;
-    }
-
-    strip.dataset.tone = config.tone || 'quickstart';
-    title.textContent = config.title || '';
-    description.textContent = config.description || '';
-    actions.innerHTML = config.prompts.map(item => `
-      <button
-        type="button"
-        class="chat-suggestion-chip"
-        data-chat-suggestion-prompt="${escapeHtml(item.prompt)}">
-        ${escapeHtml(item.label)}
-      </button>
-    `).join('');
-    strip.removeAttribute('hidden');
+    return requireChatComposerTools().renderChatSuggestionStrip();
   }
 
   function createChatStarterPanelMarkup() {
-    return `
-      <div class="chat-starter-shell">
-        <div class="chat-starter-copy">
-          <h3>开始一段新对话</h3>
-          <p>选一个开头，或直接输入你的问题。</p>
-        </div>
-        <div class="chat-starter-grid">
-          ${CHAT_STARTER_PROMPTS.map(item => `
-            <button
-              type="button"
-              class="chat-starter-card"
-              data-chat-starter-prompt="${escapeHtml(item.prompt)}">
-              <strong>${escapeHtml(item.label)}</strong>
-            </button>
-          `).join('')}
-        </div>
-      </div>
-    `;
+    return requireChatComposerTools().createChatStarterPanelMarkup();
   }
 
   function applyChatStarterPrompt(promptText) {
-    const input = $('chat-input');
-    if (!input) return;
-    input.value = String(promptText || '');
-        updateChatComposerState();
-    scheduleWorkspaceStateSave();
-    input.focus();
-    const caretPosition = input.value.length;
-    if (typeof input.setSelectionRange === 'function') {
-      input.setSelectionRange(caretPosition, caretPosition);
-    }
+    return requireChatComposerTools().applyChatStarterPrompt(promptText);
   }
 
   function restoreWorkspaceDrafts() {

@@ -130,7 +130,7 @@ async function waitForWorkspace(page) {
 }
 
 async function gotoAuthPage(page, baseUrl) {
-  await page.goto(`${baseUrl}/auth/`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`${baseUrl}/login/`, { waitUntil: 'domcontentloaded' });
   await waitForAuthPage(page);
   await stabilizePage(page);
 }
@@ -145,9 +145,9 @@ async function gotoPortalPage(page, baseUrl, pathname, selector) {
 }
 
 async function loginAsBootstrapAdmin(page, baseUrl) {
-  await page.goto(`${baseUrl}/auth/`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`${baseUrl}/login/`, { waitUntil: 'domcontentloaded' });
   const currentPath = await page.evaluate(() => window.location.pathname);
-  if (currentPath !== '/auth/') {
+  if (currentPath !== '/login/') {
     await waitForWorkspace(page);
     await stabilizePage(page);
     return;
@@ -175,6 +175,7 @@ async function stabilizePage(page) {
         caret-color: transparent !important;
       }
       .toast-container,
+      .welcome-toast-host,
       .loading-overlay {
         opacity: 0 !important;
         visibility: hidden !important;
@@ -326,7 +327,7 @@ function getCapturePlan(baseUrl) {
   return [
     {
       name: 'auth-portal-card',
-      selector: '.portal-layout > .portal-surface-card',
+      selector: '.auth-simple-card',
       showFixedUtility: false,
       stableBackdrop: false,
       prepare: async page => {
