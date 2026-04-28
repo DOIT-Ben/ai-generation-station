@@ -49,8 +49,13 @@ const MIME_TYPES = {
     '.json': 'application/json',
     '.png': 'image/png',
     '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp',
     '.mp3': 'audio/mpeg',
-    '.wav': 'audio/wav'
+    '.wav': 'audio/wav',
+    '.m4a': 'audio/mp4',
+    '.aac': 'audio/aac',
+    '.ogg': 'audio/ogg'
 };
 
 function getConfigValue(env, localConfig, key, fallback) {
@@ -74,6 +79,27 @@ function getPositiveNumberConfig(env, localConfig, key, fallback) {
     const raw = getConfigValue(env, localConfig, key, fallback);
     const value = Number(raw);
     return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function isExternallyReachableBindHost(bindHost) {
+    const normalized = String(bindHost || '').trim().toLowerCase();
+    return normalized === '0.0.0.0'
+        || normalized === '::'
+        || normalized === '[::]'
+        || (!['', 'localhost', '127.0.0.1', '::1', '[::1]'].includes(normalized));
+}
+
+function enforceCredentialSafety({ env, localConfig, nodeEnv, bindHost, appPassword }) {
+    const requiresStrictSecrets = nodeEnv === 'production' || isExternallyReachableBindHost(bindHost);
+    if (!requiresStrictSecrets) return;
+
+    const context = nodeEnv === 'production' ? 'production' : 'external bind host';
+    if (!hasExplicitConfigValue(env, localConfig, 'APP_PASSWORD') || appPassword === 'AIGS2026!') {
+        throw new Error(`APP_PASSWORD must be explicitly configured to a non-default value for ${context}.`);
+    }
+    if (!hasExplicitConfigValue(env, localConfig, 'CSRF_SECRET')) {
+        throw new Error(`CSRF_SECRET must be explicitly configured for ${context}.`);
+    }
 }
 
 function normalizeNotificationFailoverMode(value) {
@@ -156,14 +182,13 @@ function createConfig(options = {}) {
     const MAX_UPLOAD_BYTES = getPositiveNumberConfig(env, localConfig, 'MAX_UPLOAD_BYTES', 10 * 1024 * 1024);
     const NODE_ENV = String(getConfigValue(env, localConfig, 'NODE_ENV', 'development') || 'development').trim().toLowerCase();
 
-    if (NODE_ENV === 'production') {
-        if (!hasExplicitConfigValue(env, localConfig, 'APP_PASSWORD') || APP_PASSWORD === 'AIGS2026!') {
-            throw new Error('APP_PASSWORD must be explicitly configured to a non-default value in production.');
-        }
-        if (!hasExplicitConfigValue(env, localConfig, 'CSRF_SECRET')) {
-            throw new Error('CSRF_SECRET must be explicitly configured in production.');
-        }
-    }
+    enforceCredentialSafety({
+        env,
+        localConfig,
+        nodeEnv: NODE_ENV,
+        bindHost: BIND_HOST,
+        appPassword: APP_PASSWORD
+    });
 
     if (!fs.existsSync(DATA_DIR)) {
         fs.mkdirSync(DATA_DIR, { recursive: true });

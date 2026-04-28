@@ -126,7 +126,7 @@ async function waitForWorkspace(page) {
   await page.waitForURL(url => new URL(String(url)).pathname === '/');
   await page.locator('#sidebar').waitFor({ state: 'visible' });
   await page.locator('#theme-toggle-fixed').waitFor({ state: 'visible' });
-  await page.locator('#btn-logout').waitFor({ state: 'visible' });
+  await page.locator('#sidebar-account-link').waitFor({ state: 'visible' });
 }
 
 async function gotoAuthPage(page, baseUrl) {

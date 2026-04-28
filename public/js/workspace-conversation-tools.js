@@ -21,9 +21,6 @@
     const upsertConversationSummary = settings.upsertConversationSummary || function () {};
     const renderConversationList = settings.renderConversationList || function () {};
     const renderChatExperienceState = settings.renderChatExperienceState || function () {};
-    const renderChatContextStrip = settings.renderChatContextStrip || function () {};
-    const renderChatExcerptShelf = settings.renderChatExcerptShelf || function () {};
-    const renderChatSuggestionStrip = settings.renderChatSuggestionStrip || function () {};
     const scheduleWorkspaceStateSave = settings.scheduleWorkspaceStateSave || function () {};
     const getActiveConversation = settings.getActiveConversation || function () { return null; };
     const getConversationTitlePreview = settings.getConversationTitlePreview || function () { return '新对话'; };
@@ -57,7 +54,6 @@
         restoreChatMessages(safeMessages, nextOptions.chatRestoreOptions || {});
       }
       renderConversationList();
-      renderChatExcerptShelf();
       if (nextOptions.persist !== false) {
         scheduleWorkspaceStateSave();
       }
@@ -73,9 +69,6 @@
         title.textContent = '暂无进行中的对话';
         subtitle.textContent = '新建一个对话后即可开始聊天。';
         renderChatExperienceState();
-        renderChatContextStrip();
-        renderChatExcerptShelf();
-        renderChatSuggestionStrip();
         return;
       }
 
@@ -84,9 +77,6 @@
         ? String(getActiveConversationLastActivityLabel(activeConversation) || '')
         : String(getActiveConversationLastActivityLabel(activeConversation) || '') + ' · ' + getConversationPreview(activeConversation);
       renderChatExperienceState();
-      renderChatContextStrip();
-      renderChatExcerptShelf();
-      renderChatSuggestionStrip();
     }
 
     async function createConversationAndSelect() {

@@ -41,8 +41,8 @@
         <div class="account-hero-grid">
           <div class="portal-copy-stack account-hero-copy">
             <div class="portal-eyebrow">Profile Hub</div>
-            <h1>把身份、权限和安全操作收进一个更清晰的个人中心。</h1>
-            <p class="portal-lead">这里不再堆一排解释卡，而是先告诉你“当前是谁、状态如何、下一步能做什么”，再进入改密和跳转动作。</p>
+            <h1>个人中心</h1>
+            <p class="portal-lead">查看当前账号信息，管理密码安全，并快速返回工作台或管理后台。</p>
             <div id="account-reset-banner" class="portal-banner" hidden></div>
           </div>
 
@@ -83,7 +83,7 @@
             <div class="account-section-heading">
               <span class="account-section-kicker">Overview</span>
               <h2>账户概览</h2>
-              <p>把最常看的身份信息放成结构化概览，而不是散在不同说明块里。</p>
+              <p>集中查看账号、权限、邮箱和套餐信息。</p>
             </div>
             <div class="account-overview-grid">
               <article class="account-overview-card">
@@ -113,13 +113,14 @@
             <div class="account-section-heading">
               <span class="account-section-kicker">Quick Access</span>
               <h2>常用入口</h2>
-              <p>高频跳转保持简短，避免让账户页再次长成一个说明文档。</p>
+              <p>快速进入常用页面或退出当前登录。</p>
             </div>
             <div class="account-action-list">
               <a class="btn btn-secondary" href="/">返回工作台</a>
               <a class="btn btn-secondary" id="account-admin-link" href="/admin/" hidden>进入管理后台</a>
+              <button class="btn btn-secondary account-logout-button" id="account-logout-button" type="button">退出登录</button>
             </div>
-            <p class="account-inline-copy">创作、对话、图片、音乐和翻唱继续回工作台完成；管理员批量操作继续放在后台。</p>
+            <p class="account-inline-copy">创作、对话、图片、音乐和翻唱可返回工作台继续使用；管理员操作可进入管理后台。</p>
           </article>
         </aside>
 
@@ -127,7 +128,7 @@
           <div class="account-section-heading">
             <span class="account-section-kicker">Security</span>
             <h2>密码与登录安全</h2>
-            <p>真正需要你操作的高风险动作只保留在这一块，避免页面上到处都是安全相关的碎信息。</p>
+            <p>修改密码后，请使用新密码继续登录和保护账号。</p>
           </div>
 
           <form id="account-password-form" class="admin-form account-security-form">
@@ -152,7 +153,7 @@
     </main>
   </div>
 
-  <div id="toast-container" class="toast-container"></div>
+  <div id="toast-container" class="toast-container" role="status" aria-live="polite" aria-atomic="true"></div>
 
   <script src="/js/app-shell.js"></script>
   <script src="/js/site-shell.js"></script>

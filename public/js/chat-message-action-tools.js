@@ -160,11 +160,6 @@
         pending: true,
         disabled: true
       });
-      setChatMessageUiState(messageId, {
-        label: '正在切换版本…',
-        tone: 'info',
-        renderNow: true
-      });
 
       try {
         await activateAssistantVersion(nextVersion.id);

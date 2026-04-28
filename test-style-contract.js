@@ -30,6 +30,10 @@ function main() {
   assert.ok(!/box-shadow\s*:/.test(chatCardBlock), '.chat-card should not replace the shared card shadow');
   assert.ok(chatCardBlock.includes('padding: 0;'), '.chat-card should delegate spacing to the dedicated chat layout');
   assert.ok(getBlock(css, '.chat-messages').includes('padding: 24px clamp(16px, 4vw, 44px) 28px;'), 'chat message area should keep its own responsive spacing');
+  assert.ok(css.includes('.chat-composer-count {'), 'chat composer should expose a visible draft character counter');
+  assert.ok(css.includes('#chat-draft-count[data-state="near-limit"]'), 'chat composer should style near-limit draft counts');
+  assert.ok(css.includes('.chat-input-area:focus-within {'), 'chat composer should expose a clear focused input area state');
+  assert.ok(getBlock(css, '.progress-fill').includes('width: 0;'), 'progress fill should keep its initial width in CSS instead of inline HTML');
 
   const utilityActionBlock = getBlock(css, '.topbar-account-action');
   const sharedTopbarActionBlockMatch = css.match(/(^|\n)\.topbar-account-action,\s*\n\.topbar-login-button\s*\{([\s\S]*?)\}/m);

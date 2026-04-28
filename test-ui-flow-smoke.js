@@ -168,7 +168,7 @@ async function assertWorkspaceAuthenticated(page, username, options = {}) {
   await waitForPath(page, '/');
   await page.locator('#sidebar').waitFor({ state: 'visible' });
   await page.locator('#theme-toggle').waitFor({ state: 'visible' });
-  await page.locator('#btn-logout').waitFor({ state: 'visible' });
+  await page.locator('#sidebar-account-link').waitFor({ state: 'visible' });
   const userPanelText = await page.locator('#user-panel').innerText();
   assert.ok(userPanelText.includes(username), `workspace user panel should render ${username}`);
   if (options.isAdmin === true) {
@@ -277,26 +277,37 @@ async function assertWorkspaceResumePersistence(page, uniqueSeed) {
 }
 
 async function logoutFromWorkspace(page) {
+  await page.click('#sidebar-account-link');
+  await assertPortalPageLoaded(page, '/account/', { expectLogoutButton: false });
+  await page.waitForFunction(() => {
+    const usernameLine = document.getElementById('account-username-line');
+    return Boolean(usernameLine && !String(usernameLine.textContent || '').includes('账号：-'));
+  });
+  await page.locator('#account-logout-button').waitFor({ state: 'visible' });
+
   const [response] = await Promise.all([
     page.waitForResponse(item => item.url().includes('/api/auth/logout') && item.request().method() === 'POST'),
-    page.click('#btn-logout')
+    page.click('#account-logout-button')
   ]);
 
-  assert.equal(response.status(), 200, 'workspace logout should succeed');
+  assert.equal(response.status(), 200, 'account page logout should succeed');
   await assertAuthPage(page);
 }
 
-async function assertPortalPageLoaded(page, pathname) {
+async function assertPortalPageLoaded(page, pathname, options = {}) {
   await waitForPath(page, pathname);
   await page.locator('#theme-toggle').waitFor({ state: 'visible' });
   await page.locator('#portal-user-nav').waitFor({ state: 'visible' });
-  await page.locator('#portal-logout-button').waitFor({ state: 'visible' });
+  if (options.expectLogoutButton !== false) {
+    await page.locator('#portal-logout-button').waitFor({ state: 'visible' });
+  }
 }
 
 async function assertAccountPage(page, { username, roleLabel, adminLinkVisible }) {
-  await assertPortalPageLoaded(page, '/account/');
+  await assertPortalPageLoaded(page, '/account/', { expectLogoutButton: false });
   await page.locator('#account-password-form').waitFor({ state: 'visible' });
   await page.locator('#account-password-status-heading').waitFor({ state: 'visible' });
+  await page.locator('#account-logout-button').waitFor({ state: 'visible' });
   const usernameLine = await page.locator('#account-username-line').innerText();
   const roleText = await page.locator('#account-role-pill').innerText();
   assert.ok(usernameLine.includes(username), `account page should render username ${username}`);
@@ -309,10 +320,24 @@ async function assertAccountPage(page, { username, roleLabel, adminLinkVisible }
 }
 
 async function changePasswordFromAccount(page, { currentPassword, newPassword }) {
-  await assertPortalPageLoaded(page, '/account/');
+  await assertPortalPageLoaded(page, '/account/', { expectLogoutButton: false });
+  await page.waitForFunction(() => {
+    const usernameLine = document.getElementById('account-username-line');
+    const submitButton = document.getElementById('account-password-submit');
+    return Boolean(
+      usernameLine &&
+      !String(usernameLine.textContent || '').includes('账号：-') &&
+      submitButton &&
+      submitButton.disabled === true
+    );
+  });
   await page.fill('#account-current-password', currentPassword);
   await page.fill('#account-new-password', newPassword);
   await page.fill('#account-confirm-password', newPassword);
+  await page.waitForFunction(() => {
+    const submitButton = document.getElementById('account-password-submit');
+    return Boolean(submitButton && submitButton.disabled === false);
+  });
 
   const [response] = await Promise.all([
     page.waitForResponse(item => item.url().includes('/api/auth/change-password') && item.request().method() === 'POST'),
@@ -331,9 +356,17 @@ async function changePasswordFromAccount(page, { currentPassword, newPassword })
 }
 
 async function logoutFromPortalPage(page, expectedPath = '/login/') {
+  const logoutSelector = await page.evaluate(() => {
+    if (document.getElementById('portal-logout-button')) return '#portal-logout-button';
+    if (document.getElementById('account-logout-button')) return '#account-logout-button';
+    return '';
+  });
+
+  assert.ok(logoutSelector, 'logout action should be available on the current page');
+
   const [response] = await Promise.all([
     page.waitForResponse(item => item.url().includes('/api/auth/logout') && item.request().method() === 'POST'),
-    page.click('#portal-logout-button')
+    page.click(logoutSelector)
   ]);
 
   assert.equal(response.status(), 200, 'portal logout should succeed');

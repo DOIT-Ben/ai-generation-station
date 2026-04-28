@@ -161,6 +161,18 @@
   justify-content: center;
 }
 
+.account-logout-button {
+  border-color: rgba(255, 168, 194, 0.24);
+  background: linear-gradient(180deg, rgba(255, 168, 194, 0.18), rgba(255, 168, 194, 0.08));
+  color: #ffd2e0;
+  box-shadow: inset 0 1px 0 rgba(255, 235, 242, 0.18);
+}
+
+.account-logout-button:hover {
+  border-color: rgba(255, 168, 194, 0.34);
+  color: #fff1f6;
+}
+
 .account-overview-grid {
   display: grid;
   gap: 12px;

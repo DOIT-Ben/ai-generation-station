@@ -38,6 +38,7 @@ function main() {
     'node test-secret-scan.js',
     'npm run check',
     'node test-security-gateway.js',
+    'npm run test:security-boundaries',
     'node test-state-foreign-keys.js',
     'npm run test:release-core'
   ].forEach(requiredText => {

@@ -399,46 +399,6 @@
     padding: 14px 16px;
   }
 
-  .chat-context-strip {
-    padding: 0 16px 12px;
-  }
-
-  .chat-reading-outline {
-    gap: 8px;
-    padding: 12px 16px 14px;
-  }
-
-  .chat-excerpt-shelf {
-    gap: 8px;
-    padding: 12px 16px 14px;
-  }
-
-  .chat-excerpt-toolbar,
-  .chat-excerpt-search-row {
-    grid-template-columns: 1fr;
-  }
-
-  .chat-excerpt-toolbar {
-    display: grid;
-    align-items: stretch;
-  }
-
-  .chat-excerpt-toolbar-actions,
-  .chat-excerpt-presets,
-  .chat-excerpt-manager-actions,
-  .chat-excerpt-item-actions,
-  .chat-excerpt-empty-actions {
-    width: 100%;
-  }
-
-  .chat-excerpt-preset,
-  .chat-excerpt-toolbar-btn,
-  .chat-excerpt-item-btn,
-  .chat-excerpt-search-clear {
-    flex: 1 1 calc(50% - 8px);
-    justify-content: center;
-  }
-
   .chat-main-actions {
     width: 100%;
     gap: 8px;
@@ -455,10 +415,7 @@
 
   .chat-followup-actions,
   .chat-quickstart-actions,
-  .chat-suggestion-actions,
-  .chat-context-pills,
   .chat-filter-bar,
-  .chat-reading-outline-actions,
   .template-recent-actions,
   .chat-search-feedback {
     gap: 8px;

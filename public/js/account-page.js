@@ -147,6 +147,16 @@
     }
   }
 
+  async function handleLogout() {
+    try {
+      await persistence?.logout?.();
+      SiteShell.showToast('已退出登录', 'success', 1200);
+      window.setTimeout(() => SiteShell.redirect('/login/'), 120);
+    } catch (error) {
+      SiteShell.showToast(error?.message || '退出失败，请稍后重试', 'error', 2200);
+    }
+  }
+
   async function init() {
     SiteShell.bindThemeToggle(theme => SiteShell.syncThemePreference(persistence, theme));
     session = await persistence?.loadSession?.().catch(() => null);
@@ -158,9 +168,10 @@
     await SiteShell.applyThemeFromPreferences(persistence);
     SiteShell.renderPortalUserNav('portal-user-nav', session, {
       currentPage: 'account',
-      nextPath: '/account/'
+      nextPath: '/account/',
+      showLogout: false
     });
-    $('portal-logout-button')?.addEventListener('click', () => SiteShell.logoutAndRedirect(persistence, '/login/'));
+    $('account-logout-button')?.addEventListener('click', handleLogout);
     $('account-password-form')?.addEventListener('submit', handlePasswordSubmit);
     ['account-current-password', 'account-new-password', 'account-confirm-password'].forEach(id => {
       $(id)?.addEventListener('input', renderPasswordChecklist);

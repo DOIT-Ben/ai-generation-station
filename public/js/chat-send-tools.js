@@ -101,7 +101,7 @@
 
       const thinkingMessage = createThinkingMessage(rewriteMessageId ? { afterMessageId: rewriteMessageId } : {});
       setChatLoading(true);
-      setChatRequestStatus(rewriteMessageId ? '正在重写回复，可随时停止。' : '正在流式回复，可继续输入下一条或点击停止。', 'info');
+      setChatRequestStatus(rewriteMessageId ? '正在重写这条回复，点击“停止”可中断。' : '正在生成回复。你可以继续输入下一条，发送后会自动排队。', 'info');
       const abortController = createAbortController();
       setActiveChatAbortController(abortController);
       setActiveChatRequestContext({

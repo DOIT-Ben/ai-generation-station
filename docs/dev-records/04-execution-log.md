@@ -1,0 +1,41 @@
+# 执行记录
+
+- 2026-04-28：已定位工作台品牌区在 `public/index.html` + `public/css/common.css`。
+- 2026-04-28：已定位登录/注册品牌区在 `public/login/index.html`、`public/register/index.html` 与 `public/css/auth.css`。
+- 2026-04-28：已定位顶部通用品牌导航在 `public/js/site-shell.js` 与 `public/css/portal-components.css`。
+- 2026-04-28：已确认 `resources/images/AG-logo.png` 与 `public/images/AG-logo.png` 为同一发布资源版本。
+- 2026-04-28：已将工作台左侧品牌区替换为 AG logo + 三段品牌字样，并把字体颜色改为跟随现有主题变量。
+- 2026-04-28：已同步更新登录页、注册页和顶部通用导航的品牌结构，统一为同一套 logo 与字样层级。
+- 2026-04-28：品牌测试首次失败，原因是断言仍指向旧结构；已改为匹配新 logo 结构与主题语义色。
+- 2026-04-28：已验证 `node test-brand-title-typography.js` 与 `node test-page-markup.js` 通过；首页访问状态码仍为 `200`。
+- 2026-04-28：根据登录页视觉反馈，已上调 `auth-simple-brand` 的层级间距、AI 字号、Generation 字号与 Station 字号/字距，修正品牌文字过扁的问题。
+- 2026-04-28：已检查 `/login/` 页面可访问，状态码为 `200`；`auth.css` 未出现新增诊断问题。
+- 2026-04-28：按“做成品牌”的要求，进一步放大登录/注册页品牌头部的 logo、标题字号、字重与字距，并增强纵向节奏与光感，让它更像品牌签名而不是普通表单标签。
+- 2026-04-28：已在工作台左侧导航加入独立“个人中心”入口，并把顶部用户面板收敛为账号摘要 + 管理后台入口，不再承载个人中心/退出主操作。
+- 2026-04-28：已在 `/account/` 页面补齐页内“退出登录”按钮，并关闭账户页顶部通用导航里的重复退出入口，避免双入口冲突。
+- 2026-04-28：已同步修正 `test-ui-flow-smoke.js` 与 `test-ui-visual.js` 的入口断言，兼容左侧个人中心入口与账户页页内退出链路。
+- 2026-04-28：已验证 `node test-page-markup.js` 与 `node test-ui-flow-smoke.js --launch-server --port 18792 --base-url http://127.0.0.1:18792` 通过。
+- 2026-04-28：已定位 AI 回复版本切换体验问题：`message-content` 仅有 `max-width` 会随不同版本内容自适应宽度；`switchAssistantVersion` 在调用接口前还会触发一次整列表渲染；版本切换点击未显式阻断默认行为和事件传播。
+- 2026-04-28：已在 `public/css/chat-message.css` 为 AI 回复气泡补充稳定 `width` 与 `box-sizing`；在 `public/js/chat-message-action-tools.js` 移除切换前的即时整列表重渲染；在 `public/js/app.js` 为版本切换点击补充 `preventDefault` 和 `stopPropagation`；在 `public/js/chat-render-runtime-tools.js` 将锚点滚动改为即时定位。
+- 2026-04-28：已验证 `node test-style-contract.js`、`node test-chat-formula-rendering.js` 通过；`public/css/chat-message.css` 仅有既有 `text-wrap: pretty` 兼容警告。`node test-chat-scroll-latest-button.js` 失败于测试仍检查 `app.js` 旧内联滚动按钮实现，与本次版本切换修复无直接关系。
+- 2026-04-28：已将“个人摘录”入口挂载到聊天页会话标题下方，补齐 `chat-excerpt-shelf` 管理容器、筛选按钮、展开管理、复制可见、归档可见、搜索、清空归档和摘录列表区域。
+- 2026-04-28：已调整 `chat-excerpt-tools.js`，登录后即使暂无摘录也显示“个人摘录”空状态，引导用户从 AI 回复下方点击“加入摘录”；保留已有复制、跳回原文、继续聊、归档、移除逻辑。
+- 2026-04-28：已补齐 `chat-workspace.css` 中个人摘录外层、标题、统计、工具按钮和搜索输入样式；已同步更新 `test-page-markup.js` 断言，要求首页包含个人摘录入口。
+- 2026-04-28：已验证 `node test-page-markup.js`、`node test-style-contract.js`、`node test-chat-formula-rendering.js` 通过；`public/index.html` 仍有既有可访问性/按钮类型诊断，本次新增的摘录按钮均已设置 `type="button"` 和可访问标签。
+- 2026-04-28：已删除聊天页“个人摘录”功能入口、摘录脚本加载、AI 回复“加入摘录/取消摘录”按钮、摘录状态与事件依赖，并清理相关样式和废弃脚本文件。
+- 2026-04-28：已同步更新 `test-page-markup.js`，改为断言摘录脚本、DOM 入口和前端摘录动作不存在；已验证 `node test-page-markup.js` 通过，且 `test-page-markup.js` 无新增诊断。
+- 2026-04-28：已完成项目问题审查。验证结果：`npm run check`、`node test-secret-scan.js`、`npm audit --audit-level=high`、`npm run test:release-core`、`node test-ci-gate.js`、以及未纳入 CI 的 5 个安全边界脚本均通过。
+- 2026-04-28：已全面修复审查发现的 6 类问题：`downloadFromUrl` 增加 HTTPS/可信主机/重定向次数/大小上限与失败清理；外部监听或 production 强制显式非默认凭据；`/output/*` 缺失文件正确返回 404；上传、文件列表与 MIME 类型扩展保持一致；安全边界脚本纳入 `package.json` 与 CI；退役聊天上下文条、阅读大纲、建议条和摘录链路的入口、脚本、事件、样式、测试断言已清理。
+- 2026-04-28：修复验证中发现的回归测试漂移：音乐与翻唱路由测试的模拟下载 URL 改为符合新可信主机白名单；`test-page-markup.js` 改为断言退役建议条/大纲/摘录模块不得加载或渲染。
+- 2026-04-28：已验证 `node test-page-markup.js && node test-style-contract.js && npm run test:security-boundaries`、`npm run check`、`node test-secret-scan.js`、`node test-ci-gate.js`、`node test-music-route.js`、`node test-voice-cover-route.js`、`npm run test:release-core` 通过。`public/css/chat-workspace.css` 仍有既有浏览器兼容诊断：`color-mix`、`text-wrap: pretty`、`backdrop-filter` Safari 前缀提示。
+- 2026-04-28：最终核对退役关键词 `chat-suggestion|chat-context|chat-reading|chat-outline|chat-excerpt|个人摘录|摘录` 在 `public/**/*` 无命中；复跑 `node test-page-markup.js && node test-style-contract.js` 通过。
+- 2026-04-28：已完成聊天输入区 UX 小批次优化：补齐 `chat-composer-meta`、输入阶段提示、快捷键提示、4000 字计数、`aria-describedby` 与发送中 `role="status" aria-live="polite"`；发送中状态文案改为明确说明可继续输入并排队；样式补齐字数胶囊、接近上限提示和输入区聚焦状态。已验证 `node test-page-markup.js && node test-style-contract.js` 通过；`public/index.html` 仍有既有按钮类型、表单 label/select 可访问性和 inline style 诊断。
+- 2026-04-28：已完成主工作台可访问性小批次优化：为导航、示例、生成/重置/下载、语音停止、弹窗关闭等静态按钮补齐 `type="button"`；为歌词、封面、翻唱、语音格式 select 与语速/音调/音量 range 补齐 `aria-label`；同步增加 `test-page-markup.js` 结构断言。已验证 `node test-page-markup.js` 通过，重复 `type="button"` 搜索无命中；`public/index.html` 诊断已收敛为 4 个既有 inline style 警告。
+- 2026-04-28：已完成剩余 inline style 收敛：移除 4 个生成进度条的 `style="width:0%"`，改由 `.progress-fill { width: 0; }` 控制初始状态，并补充页面/样式测试断言。已验证 `node test-page-markup.js && node test-style-contract.js` 通过；`style="width:0%"` 搜索无命中；`public/index.html` 当前无诊断返回。
+- 2026-04-28：已完成生成进度可访问性优化：4 个生成中卡片补齐 `role="status" aria-live="polite" aria-atomic="false"`，4 个进度轨道补齐 `role="progressbar"`、`aria-valuemin/max/now` 与文本标签关联；`startInlineProgress` / `stopInlineProgress` 现在同步更新视觉宽度、可见百分比和 `aria-valuenow`。已验证 `node test-page-markup.js && node test-style-contract.js` 通过；最近编辑文件无新增诊断。
+- 2026-04-28：已完成全局 toast 可访问性优化：6 个静态页面的 `toast-container` 统一补齐 `role="status" aria-live="polite" aria-atomic="true"`；`public/js/app.js` 与 `public/js/site-shell.js` 的动态 toast 节点按类型设置 `role="alert/status"` 和 `aria-live="assertive/polite"`，并在容器缺失时安全返回。已验证 `node test-page-markup.js` 通过；6 个静态页面 toast live region 搜索命中完整；最近编辑文件无新增诊断。
+- 2026-04-28：已完成图片预览弹窗可访问性优化：`image-modal` 补齐 `role="dialog" aria-modal="true"` 与标题/描述关联，新增 `sr-only` 辅助类承载弹窗标题和说明；关闭按钮补齐 `aria-label="关闭图片预览"`，预览图片 alt 改为“生成图片预览”；`openImageModal` 打开后聚焦关闭按钮，`closeImageModal` 关闭时清理图片 `src`。已验证 `node test-page-markup.js` 通过；弹窗语义搜索命中完整；最近编辑文件无新增诊断。
+- 2026-04-28：已完成图片预览弹窗退出体验补强：`openImageModal` 记录打开前焦点元素，`closeImageModal` 关闭后在元素仍存在时恢复焦点并清空引用；保留并断言已有 Esc 关闭与点击遮罩关闭交互。已验证 `node test-page-markup.js` 通过；焦点回退与关闭事件搜索命中完整；最近编辑文件无新增诊断。
+- 2026-04-28：已完成图片预览弹窗焦点循环优化：新增 `IMAGE_MODAL_FOCUSABLE_SELECTOR`、`getImageModalFocusableElements` 与 `trapImageModalFocus`，弹窗打开时 Tab / Shift+Tab 会在弹窗内首尾循环，关闭状态不拦截键盘；`workspace-init-tools` 已在全局 keydown 中先调用焦点循环再处理 Esc。已验证 `node test-page-markup.js` 通过；最近编辑文件无新增诊断。
+- 2026-04-28：已完成主工作台生成表单输入引导与字段级错误反馈优化：音乐、歌词、封面、语音合成、歌声翻唱关键输入补齐 hint/count/error 的 `aria-describedby` 关联和必填语义；空提交时写入字段错误、设置 `aria-invalid` 并聚焦首个问题字段；输入修正、示例填充、重置和来源切换会清理错误状态。已补充 `test-page-markup.js` 结构与校验辅助断言，并验证 `node test-page-markup.js`、`node test-style-contract.js` 通过。
+- 2026-04-28：已完成顶部通用品牌导航字体调整：`portal-brand-copy` 增加正常字体拉伸和几何渲染，放大 `AI / Generation / Station` 字号，提高字重、行高与字距，缓解 logo 旁文字过扁和层级拥挤的问题；同时为 `portal-user-nav` 补齐 `-webkit-backdrop-filter`。已验证 `node test-style-contract.js` 通过，`public/css/portal-components.css` 无具体诊断返回。

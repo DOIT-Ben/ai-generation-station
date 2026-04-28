@@ -30,7 +30,7 @@
 <div class="app">
 
   <!-- Mobile Sidebar Toggle -->
-  <button class="sidebar-toggle" id="sidebar-toggle" aria-label="打开菜单" aria-expanded="false" aria-controls="sidebar">
+  <button type="button" class="sidebar-toggle" id="sidebar-toggle" aria-label="打开菜单" aria-expanded="false" aria-controls="sidebar">
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <line x1="3" y1="6" x2="21" y2="6"></line>
       <line x1="3" y1="12" x2="21" y2="12"></line>
@@ -44,43 +44,46 @@
   <!-- Sidebar -->
   <aside class="sidebar" id="sidebar" role="navigation" aria-label="主导航">
     <div class="logo">
-      <strong class="logo-ai-mark" aria-label="AI">AI</strong>
+      <span class="logo-icon" aria-hidden="true">
+        <img src="/images/AG-logo.png" alt="" />
+      </span>
       <span class="logo-text">
+        <strong class="logo-ai-mark logo-text-line logo-text-line--ai">AI</strong>
         <span class="logo-text-line logo-text-line--primary">Generation</span>
-        <em class="logo-text-line logo-text-line--station">STATION</em>
+        <em class="logo-text-line logo-text-line--station">Station</em>
       </span>
     </div>
 
     <nav class="nav-list" aria-label="工作台功能">
-      <button class="nav-item active" data-tab="chat" data-tooltip="AI 对话" aria-current="page">
+      <button type="button" class="nav-item active" data-tab="chat" data-tooltip="AI 对话" aria-current="page">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
         </svg>
         <span class="nav-label">AI 对话</span>
       </button>
 
-      <button class="nav-item" data-tab="lyrics" data-tooltip="歌词创作">
+      <button type="button" class="nav-item" data-tab="lyrics" data-tooltip="歌词创作">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
         </svg>
         <span class="nav-label">歌词创作</span>
       </button>
 
-      <button class="nav-item" data-tab="cover" data-tooltip="图片生成">
+      <button type="button" class="nav-item" data-tab="cover" data-tooltip="图片生成">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
         </svg>
         <span class="nav-label">图片生成</span>
       </button>
 
-      <button class="nav-item" data-tab="speech" data-tooltip="语音合成">
+      <button type="button" class="nav-item" data-tab="speech" data-tooltip="语音合成">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
         </svg>
         <span class="nav-label">语音合成</span>
       </button>
 
-      <button class="nav-item" data-tab="transcription" data-tooltip="语音转文字" data-feature-state="experimental" aria-label="语音转文字（实验）">
+      <button type="button" class="nav-item" data-tab="transcription" data-tooltip="语音转文字" data-feature-state="experimental" aria-label="语音转文字（实验）">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 3v12"></path><path d="M8 7v4"></path><path d="M16 5v8"></path><path d="M5 10v2"></path><path d="M19 8v6"></path><path d="M8 21h8"></path>
         </svg>
@@ -88,19 +91,25 @@
         <span class="nav-badge">实验</span>
       </button>
 
-      <button class="nav-item" data-tab="music" data-tooltip="音乐生成">
+      <button type="button" class="nav-item" data-tab="music" data-tooltip="音乐生成">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
         </svg>
         <span class="nav-label">音乐生成</span>
       </button>
 
-      <button class="nav-item" data-tab="covervoice" data-tooltip="歌声翻唱">
+      <button type="button" class="nav-item" data-tab="covervoice" data-tooltip="歌声翻唱">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>
         </svg>
         <span class="nav-label">歌声翻唱</span>
       </button>
+      <a class="nav-item nav-item--link" id="sidebar-account-link" href="/account/" data-tooltip="个人中心">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>
+        </svg>
+        <span class="nav-label">个人中心</span>
+      </a>
     </nav>
 
     <div class="sidebar-footer">
@@ -138,15 +147,16 @@
         <div class="input-group">
           <label>
             歌词 / 描述
-            <span class="hint">支持中英文，可输入完整歌词或仅描述风格</span>
+            <span class="hint" id="music-hint">支持中英文，可输入完整歌词或仅描述风格</span>
           </label>
-          <textarea id="music-prompt" rows="8" maxlength="2000" placeholder="例如：一首关于追逐梦想的励志歌曲，节奏明快，充满力量感" aria-required="true" aria-describedby="music-hint music-count"></textarea>
-          <div class="char-count"><span id="music-char">0</span> / 2000</div>
+          <textarea id="music-prompt" rows="8" maxlength="2000" placeholder="例如：一首关于追逐梦想的励志歌曲，节奏明快，充满力量感" required aria-required="true" aria-describedby="music-hint music-count music-prompt-error"></textarea>
+          <div class="char-count" id="music-count"><span id="music-char">0</span> / 2000</div>
+          <p class="field-error" id="music-prompt-error" role="alert" hidden></p>
           <div class="prompt-examples">
             <span class="examples-label">示例:</span>
-            <button class="example-chip" data-target="music-prompt" data-text="一首关于追逐梦想的励志歌曲，节奏明快，充满力量感，适合运动场景">励志运动</button>
-            <button class="example-chip" data-target="music-prompt" data-text="深夜独处时的Lo-fi背景音乐，带有雨声和钢琴，宁静治愈">深夜Lo-fi</button>
-            <button class="example-chip" data-target="music-prompt" data-text="中国传统风格的古风音乐，古筝与笛子，适合武侠游戏场景">古风武侠</button>
+            <button type="button" class="example-chip" data-target="music-prompt" data-text="一首关于追逐梦想的励志歌曲，节奏明快，充满力量感，适合运动场景">励志运动</button>
+            <button type="button" class="example-chip" data-target="music-prompt" data-text="深夜独处时的Lo-fi背景音乐，带有雨声和钢琴，宁静治愈">深夜Lo-fi</button>
+            <button type="button" class="example-chip" data-target="music-prompt" data-text="中国传统风格的古风音乐，古筝与笛子，适合武侠游戏场景">古风武侠</button>
           </div>
         </div>
 
@@ -203,23 +213,23 @@
         </div>
 
         <div class="action-row">
-          <button class="btn btn-primary" id="btn-generate-music">
+          <button type="button" class="btn btn-primary" id="btn-generate-music">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polygon points="5 3 19 12 5 21 5 3"/>
             </svg>
             <span>生成音乐</span>
           </button>
-          <button class="btn btn-reset" id="btn-reset-music">重置</button>
+          <button type="button" class="btn btn-reset" id="btn-reset-music">重置</button>
         </div>
 
-        <div id="music-generating" class="generating-card" hidden>
+        <div id="music-generating" class="generating-card" role="status" aria-live="polite" aria-atomic="false" hidden>
           <div class="generating-header">
             <span class="generating-icon">🎵</span>
-            <span class="generating-text">正在生成音乐...</span>
+            <span class="generating-text" id="music-generating-text">正在生成音乐...</span>
           </div>
           <div class="generating-progress">
-            <div class="progress-track">
-              <div class="progress-fill" id="music-progress-fill" style="width:0%"></div>
+            <div class="progress-track" role="progressbar" aria-labelledby="music-generating-text" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <div class="progress-fill" id="music-progress-fill"></div>
             </div>
             <span class="progress-text" id="music-progress-text">0%</span>
           </div>
@@ -235,7 +245,7 @@
           </div>
           <audio id="music-audio" controls></audio>
           <div class="result-actions">
-            <button class="btn btn-secondary" id="btn-download-music">
+            <button type="button" class="btn btn-secondary" id="btn-download-music">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
               </svg>
@@ -257,22 +267,23 @@
         <div class="input-group">
           <label>
             主题 / 描述
-            <span class="hint">描述歌曲想要表达的情感或故事</span>
+            <span class="hint" id="lyrics-hint">描述歌曲想要表达的情感或故事</span>
           </label>
-<textarea id="lyrics-prompt" rows="8" maxlength="1000" placeholder="例如：一首关于夏日分手的抒情歌曲，带有遗憾和释然的情感" aria-required="true" aria-describedby="lyrics-hint lyrics-count"></textarea>
-          <div class="char-count"><span id="lyrics-char">0</span> / 1000</div>
+          <textarea id="lyrics-prompt" rows="8" maxlength="1000" placeholder="例如：一首关于夏日分手的抒情歌曲，带有遗憾和释然的情感" required aria-required="true" aria-describedby="lyrics-hint lyrics-count lyrics-prompt-error"></textarea>
+          <div class="char-count" id="lyrics-count"><span id="lyrics-char">0</span> / 1000</div>
+          <p class="field-error" id="lyrics-prompt-error" role="alert" hidden></p>
           <div class="prompt-examples">
             <span class="examples-label">示例:</span>
-            <button class="example-chip" data-target="lyrics-prompt" data-text="一首关于夏日分手的抒情歌曲，带有遗憾和释然的情感">夏日分手</button>
-            <button class="example-chip" data-target="lyrics-prompt" data-text="写给远方挚友的歌，回忆青春岁月，温暖又略带感伤">挚友回忆</button>
-            <button class="example-chip" data-target="lyrics-prompt" data-text="为梦想奋斗的励志歌词，适合毕业季，充满希望">毕业励志</button>
+            <button type="button" class="example-chip" data-target="lyrics-prompt" data-text="一首关于夏日分手的抒情歌曲，带有遗憾和释然的情感">夏日分手</button>
+            <button type="button" class="example-chip" data-target="lyrics-prompt" data-text="写给远方挚友的歌，回忆青春岁月，温暖又略带感伤">挚友回忆</button>
+            <button type="button" class="example-chip" data-target="lyrics-prompt" data-text="为梦想奋斗的励志歌词，适合毕业季，充满希望">毕业励志</button>
           </div>
         </div>
 
         <div class="config-grid">
           <div class="config-item">
             <label>歌词风格</label>
-            <select id="lyrics-style">
+            <select id="lyrics-style" aria-label="选择歌词风格">
               <option value="">默认风格</option>
               <option value="pop">流行 Pop</option>
               <option value="rock">摇滚 Rock</option>
@@ -284,7 +295,7 @@
 
           <div class="config-item">
             <label>段落结构</label>
-            <select id="lyrics-structure">
+            <select id="lyrics-structure" aria-label="选择歌词段落结构">
               <option value="">自动</option>
               <option value="主歌1-副歌-主歌2-副歌-桥段-副歌">标准结构</option>
               <option value="主歌-副歌-主歌-副歌">简单结构</option>
@@ -294,23 +305,23 @@
         </div>
 
         <div class="action-row">
-          <button class="btn btn-primary" id="btn-generate-lyrics">
+          <button type="button" class="btn btn-primary" id="btn-generate-lyrics">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
             </svg>
             <span>生成歌词</span>
           </button>
-          <button class="btn btn-reset" id="btn-reset-lyrics">重置</button>
+          <button type="button" class="btn btn-reset" id="btn-reset-lyrics">重置</button>
         </div>
 
-        <div id="lyrics-generating" class="generating-card" hidden>
+        <div id="lyrics-generating" class="generating-card" role="status" aria-live="polite" aria-atomic="false" hidden>
           <div class="generating-header">
             <span class="generating-icon">✍️</span>
-            <span class="generating-text">正在创作歌词...</span>
+            <span class="generating-text" id="lyrics-generating-text">正在创作歌词...</span>
           </div>
           <div class="generating-progress">
-            <div class="progress-track">
-              <div class="progress-fill" id="lyrics-progress-fill" style="width:0%"></div>
+            <div class="progress-track" role="progressbar" aria-labelledby="lyrics-generating-text" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <div class="progress-fill" id="lyrics-progress-fill"></div>
             </div>
             <span class="progress-text" id="lyrics-progress-text">0%</span>
           </div>
@@ -323,13 +334,13 @@
           </div>
           <div id="lyrics-content"></div>
           <div class="result-actions">
-            <button class="btn btn-secondary" id="btn-copy-lyrics">
+            <button type="button" class="btn btn-secondary" id="btn-copy-lyrics">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
               </svg>
               复制歌词
             </button>
-            <button class="btn btn-secondary" id="btn-use-lyrics">
+            <button type="button" class="btn btn-secondary" id="btn-use-lyrics">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <polygon points="5 3 19 12 5 21 5 3"/>
               </svg>
@@ -351,22 +362,23 @@
         <div class="input-group">
           <label>
             封面描述
-            <span class="hint">描述想要的封面风格、颜色、元素等</span>
+            <span class="hint" id="cover-hint">描述想要的封面风格、颜色、元素等</span>
           </label>
-          <textarea id="cover-prompt" rows="8" maxlength="500" placeholder="例如：一幅梦幻风格的音乐专辑封面，粉紫色渐变天空，未来感城市剪影" aria-required="true" aria-describedby="cover-hint cover-count"></textarea>
-          <div class="char-count"><span id="cover-char">0</span> / 500</div>
+          <textarea id="cover-prompt" rows="8" maxlength="500" placeholder="例如：一幅梦幻风格的音乐专辑封面，粉紫色渐变天空，未来感城市剪影" required aria-required="true" aria-describedby="cover-hint cover-count cover-prompt-error"></textarea>
+          <div class="char-count" id="cover-count"><span id="cover-char">0</span> / 500</div>
+          <p class="field-error" id="cover-prompt-error" role="alert" hidden></p>
           <div class="prompt-examples">
             <span class="examples-label">示例:</span>
-            <button class="example-chip" data-target="cover-prompt" data-text="一幅梦幻风格的音乐专辑封面，粉紫色渐变天空，未来感城市剪影">梦幻城市</button>
-            <button class="example-chip" data-target="cover-prompt" data-text="极简几何风格封面，黑白对比，金色线条点缀，现代艺术感">极简几何</button>
-            <button class="example-chip" data-target="cover-prompt" data-text="赛博朋克风格，霓虹灯管，雨中街道，电子音乐氛围">赛博朋克</button>
+            <button type="button" class="example-chip" data-target="cover-prompt" data-text="一幅梦幻风格的音乐专辑封面，粉紫色渐变天空，未来感城市剪影">梦幻城市</button>
+            <button type="button" class="example-chip" data-target="cover-prompt" data-text="极简几何风格封面，黑白对比，金色线条点缀，现代艺术感">极简几何</button>
+            <button type="button" class="example-chip" data-target="cover-prompt" data-text="赛博朋克风格，霓虹灯管，雨中街道，电子音乐氛围">赛博朋克</button>
           </div>
         </div>
 
         <div class="config-grid">
           <div class="config-item">
             <label>封面比例</label>
-            <select id="cover-ratio">
+            <select id="cover-ratio" aria-label="选择封面比例">
               <option value="1:1">1:1 (方形)</option>
               <option value="3:4">3:4 (竖版)</option>
               <option value="16:9">16:9 (横版)</option>
@@ -375,7 +387,7 @@
 
           <div class="config-item">
             <label>画面风格</label>
-            <select id="cover-style">
+            <select id="cover-style" aria-label="选择画面风格">
               <option value="">自动</option>
               <option value="写实摄影">写实摄影</option>
               <option value="赛博朋克">赛博朋克</option>
@@ -388,23 +400,23 @@
         </div>
 
         <div class="action-row">
-          <button class="btn btn-primary" id="btn-generate-cover">
+          <button type="button" class="btn btn-primary" id="btn-generate-cover">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
             </svg>
             <span>生成封面</span>
           </button>
-          <button class="btn btn-reset" id="btn-reset-cover">重置</button>
+          <button type="button" class="btn btn-reset" id="btn-reset-cover">重置</button>
         </div>
 
-        <div id="cover-generating" class="generating-card" hidden>
+        <div id="cover-generating" class="generating-card" role="status" aria-live="polite" aria-atomic="false" hidden>
           <div class="generating-header">
             <span class="generating-icon">🖼️</span>
-            <span class="generating-text">正在生成封面...</span>
+            <span class="generating-text" id="cover-generating-text">正在生成封面...</span>
           </div>
           <div class="generating-progress">
-            <div class="progress-track">
-              <div class="progress-fill" id="cover-progress-fill" style="width:0%"></div>
+            <div class="progress-track" role="progressbar" aria-labelledby="cover-generating-text" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <div class="progress-fill" id="cover-progress-fill"></div>
             </div>
             <span class="progress-text" id="cover-progress-text">0%</span>
           </div>
@@ -417,7 +429,7 @@
           </div>
           <img id="cover-image" src="" alt="生成的封面" />
           <div class="result-actions">
-            <button class="btn btn-secondary" id="btn-download-cover">
+            <button type="button" class="btn btn-secondary" id="btn-download-cover">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
               </svg>
@@ -439,14 +451,14 @@
         <div class="input-group">
           <label>
             歌曲来源
-            <span class="hint">上传本地音频或粘贴链接</span>
+            <span class="hint" id="voice-source-hint">上传本地音频或粘贴链接</span>
           </label>
           <div class="voice-source-tabs">
             <button class="source-tab active" data-source="file" type="button">上传文件</button>
             <button class="source-tab" data-source="url" type="button">粘贴链接</button>
           </div>
           <div id="voice-source-file" class="source-panel">
-            <div class="drop-zone" id="voice-drop-zone">
+            <div class="drop-zone" id="voice-drop-zone" tabindex="-1" aria-describedby="voice-source-hint voice-source-error">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
               </svg>
@@ -457,29 +469,31 @@
             </div>
           </div>
           <div id="voice-source-url" class="source-panel" hidden>
-            <input type="url" id="voice-audio-url" placeholder="https://... 音频直链或网易云等平台链接" aria-label="音频链接" />
+            <input type="url" id="voice-audio-url" placeholder="https://... 音频直链或网易云等平台链接" aria-label="音频链接" aria-describedby="voice-source-hint voice-source-error" />
           </div>
+          <p class="field-error" id="voice-source-error" role="alert" hidden></p>
         </div>
 
         <div class="input-group">
           <label>
             翻唱描述
-            <span class="hint">描述想要的目标音色和风格</span>
+            <span class="hint" id="voice-hint">描述想要的目标音色和风格</span>
           </label>
-          <textarea id="voice-prompt" rows="6" maxlength="500" placeholder="例如：磁性低沉的女声，温柔抒情风格，略带沙哑" aria-describedby="voice-hint voice-count"></textarea>
-          <div class="char-count"><span id="voice-char">0</span> / 500</div>
+          <textarea id="voice-prompt" rows="6" maxlength="500" placeholder="例如：磁性低沉的女声，温柔抒情风格，略带沙哑" required aria-required="true" aria-describedby="voice-hint voice-count voice-prompt-error"></textarea>
+          <div class="char-count" id="voice-count"><span id="voice-char">0</span> / 500</div>
+          <p class="field-error" id="voice-prompt-error" role="alert" hidden></p>
           <div class="prompt-examples">
             <span class="examples-label">示例:</span>
-            <button class="example-chip" data-target="voice-prompt" data-text="磁性低沉的女声，温柔抒情风格，略带沙哑，适合情歌翻唱">沙哑女声</button>
-            <button class="example-chip" data-target="voice-prompt" data-text="清亮少年音，活泼俏皮，带点日系动漫风格">少年音</button>
-            <button class="example-chip" data-target="voice-prompt" data-text="成熟稳重男声，欧美流行风格，富有磁性魅力">欧美男声</button>
+            <button type="button" class="example-chip" data-target="voice-prompt" data-text="磁性低沉的女声，温柔抒情风格，略带沙哑，适合情歌翻唱">沙哑女声</button>
+            <button type="button" class="example-chip" data-target="voice-prompt" data-text="清亮少年音，活泼俏皮，带点日系动漫风格">少年音</button>
+            <button type="button" class="example-chip" data-target="voice-prompt" data-text="成熟稳重男声，欧美流行风格，富有磁性魅力">欧美男声</button>
           </div>
         </div>
 
         <div class="config-grid">
           <div class="config-item">
             <label>目标音色</label>
-            <select id="voice-timbre">
+            <select id="voice-timbre" aria-label="选择目标音色">
               <option value="">自动匹配</option>
               <option value="清澈女声">清澈女声</option>
               <option value="磁性男声">磁性男声</option>
@@ -491,7 +505,7 @@
 
           <div class="config-item">
             <label>变调</label>
-            <select id="voice-pitch">
+            <select id="voice-pitch" aria-label="选择翻唱变调">
               <option value="">原调</option>
               <option value="-5">-5 半音</option>
               <option value="-3">-3 半音</option>
@@ -502,23 +516,23 @@
         </div>
 
         <div class="action-row">
-          <button class="btn btn-primary" id="btn-generate-voice">
+          <button type="button" class="btn btn-primary" id="btn-generate-voice">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
             </svg>
             <span>开始翻唱</span>
           </button>
-          <button class="btn btn-reset" id="btn-reset-voice">重置</button>
+          <button type="button" class="btn btn-reset" id="btn-reset-voice">重置</button>
         </div>
 
-        <div id="voice-generating" class="generating-card" hidden>
+        <div id="voice-generating" class="generating-card" role="status" aria-live="polite" aria-atomic="false" hidden>
           <div class="generating-header">
             <span class="generating-icon">🎤</span>
-            <span class="generating-text">正在处理翻唱...</span>
+            <span class="generating-text" id="voice-generating-text">正在处理翻唱...</span>
           </div>
           <div class="generating-progress">
-            <div class="progress-track">
-              <div class="progress-fill" id="voice-progress-fill" style="width:0%"></div>
+            <div class="progress-track" role="progressbar" aria-labelledby="voice-generating-text" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <div class="progress-fill" id="voice-progress-fill"></div>
             </div>
             <span class="progress-text" id="voice-progress-text">0%</span>
           </div>
@@ -531,7 +545,7 @@
           </div>
           <audio id="voice-audio" controls></audio>
           <div class="result-actions">
-            <button class="btn btn-secondary" id="btn-download-voice">
+            <button type="button" class="btn btn-secondary" id="btn-download-voice">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
               </svg>
@@ -551,14 +565,15 @@
 
       <div class="card">
         <div class="input-group">
-          <label>输入文本 <span class="hint">要转换的文本内容</span></label>
-          <textarea id="speech-text" rows="8" maxlength="2000" placeholder="例如：你好，欢迎使用语音合成功能，我可以帮你把文字转换成自然流畅的语音。" aria-required="true" aria-describedby="speech-hint speech-count"></textarea>
-          <div class="char-count"><span id="speech-char">0</span> / 2000</div>
+          <label>输入文本 <span class="hint" id="speech-hint">要转换的文本内容</span></label>
+          <textarea id="speech-text" rows="8" maxlength="2000" placeholder="例如：你好，欢迎使用语音合成功能，我可以帮你把文字转换成自然流畅的语音。" required aria-required="true" aria-describedby="speech-hint speech-count speech-text-error"></textarea>
+          <div class="char-count" id="speech-count"><span id="speech-char">0</span> / 2000</div>
+          <p class="field-error" id="speech-text-error" role="alert" hidden></p>
           <div class="prompt-examples">
             <span class="examples-label">示例:</span>
-            <button class="example-chip" data-target="speech-text" data-text="你好，欢迎使用语音合成功能，我可以帮你把文字转换成自然流畅的语音。">欢迎语</button>
-            <button class="example-chip" data-target="speech-text" data-text="春眠不觉晓，处处闻啼鸟。夜来风雨声，花落知多少。">唐诗</button>
-            <button class="example-chip" data-target="speech-text" data-text="在这个快节奏的时代，我们常常忘记停下脚步，聆听内心的声音。今天，让我们一起慢下来，感受生活的美好。">治愈文案</button>
+            <button type="button" class="example-chip" data-target="speech-text" data-text="你好，欢迎使用语音合成功能，我可以帮你把文字转换成自然流畅的语音。">欢迎语</button>
+            <button type="button" class="example-chip" data-target="speech-text" data-text="春眠不觉晓，处处闻啼鸟。夜来风雨声，花落知多少。">唐诗</button>
+            <button type="button" class="example-chip" data-target="speech-text" data-text="在这个快节奏的时代，我们常常忘记停下脚步，聆听内心的声音。今天，让我们一起慢下来，感受生活的美好。">治愈文案</button>
           </div>
         </div>
 
@@ -599,7 +614,7 @@
             </div>
             <div class="config-item">
               <label>输出格式</label>
-              <select id="speech-format">
+              <select id="speech-format" aria-label="选择语音输出格式">
                 <option value="mp3">MP3</option>
                 <option value="wav">WAV</option>
                 <option value="pcm">PCM</option>
@@ -609,25 +624,25 @@
           <div class="speech-sliders">
             <div class="config-item">
               <label>语速 <span id="speed-val">1.0x</span></label>
-              <input type="range" id="speech-speed" min="0.5" max="2.0" step="0.1" value="1.0">
+              <input type="range" id="speech-speed" min="0.5" max="2.0" step="0.1" value="1.0" aria-label="调整语速">
             </div>
             <div class="config-item">
               <label>音调 <span id="pitch-val">1.0</span></label>
-              <input type="range" id="speech-pitch" min="0.5" max="2.0" step="0.1" value="1.0">
+              <input type="range" id="speech-pitch" min="0.5" max="2.0" step="0.1" value="1.0" aria-label="调整音调">
             </div>
             <div class="config-item">
               <label>音量 <span id="vol-val">50%</span></label>
-              <input type="range" id="speech-vol" min="0" max="100" step="5" value="50">
+              <input type="range" id="speech-vol" min="0" max="100" step="5" value="50" aria-label="调整音量">
             </div>
           </div>
         </div>
 
         <div class="btn-group">
-          <button class="btn btn-primary" id="btn-speech-generate">
+          <button type="button" class="btn btn-primary" id="btn-speech-generate">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
             生成语音
           </button>
-          <button class="btn btn-secondary" id="btn-speech-stop" hidden>停止</button>
+          <button type="button" class="btn btn-secondary" id="btn-speech-stop" hidden>停止</button>
         </div>
       </div>
 
@@ -684,13 +699,13 @@
         </div>
 
         <div class="action-row">
-          <button class="btn btn-primary" id="btn-start-transcription">
+          <button type="button" class="btn btn-primary" id="btn-start-transcription">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polygon points="5 3 19 12 5 21 5 3"></polygon>
             </svg>
             <span>查看接入计划</span>
           </button>
-          <button class="btn btn-reset" id="btn-reset-transcription">重置</button>
+          <button type="button" class="btn btn-reset" id="btn-reset-transcription">重置</button>
         </div>
 
         <div id="transcription-result" class="result-area" hidden>
@@ -705,7 +720,7 @@
                 <strong id="transcription-result-title">转写服务接入计划</strong>
                 <p id="transcription-result-subtitle">当前不会生成识别文本，正式能力接入后再开放转写操作。</p>
               </div>
-              <button class="btn btn-secondary" id="btn-copy-transcription-placeholder" type="button">复制接入计划</button>
+              <button type="button" class="btn btn-secondary" id="btn-copy-transcription-placeholder">复制接入计划</button>
             </div>
 
             <pre id="transcription-text" class="transcription-text">语音转文字仍处于实验接入阶段。
@@ -808,17 +823,27 @@
 
             <div class="chat-input-area">
             <div id="chat-queue-indicator" hidden></div>
-            <div class="chat-request-status" id="chat-request-status" hidden></div>
+            <div class="chat-request-status" id="chat-request-status" role="status" aria-live="polite" hidden></div>
+            <div class="chat-composer-meta" id="chat-composer-meta">
+              <div class="chat-composer-copy">
+                <strong id="chat-draft-indicator">先写下这轮目标或问题</strong>
+                <span id="chat-shortcut-hint">Enter 发送，Shift + Enter 换行。</span>
+              </div>
+              <div class="chat-composer-count" aria-live="polite">
+                <span id="chat-draft-count">0</span>
+                <span aria-hidden="true"> / 4000</span>
+              </div>
+            </div>
             <div class="chat-input-row">
-              <textarea id="chat-input" rows="1" placeholder="给 AI 发送消息"></textarea>
+              <textarea id="chat-input" rows="1" maxlength="4000" placeholder="给 AI 发送消息，描述目标、限制或想要的输出" aria-describedby="chat-draft-indicator chat-shortcut-hint chat-draft-count"></textarea>
               <button class="btn btn-secondary btn-chat-stop" id="btn-chat-stop" type="button" hidden>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   <rect x="6" y="6" width="12" height="12" rx="2"></rect>
                 </svg>
                 <span>停止</span>
               </button>
-              <button class="btn btn-primary" id="btn-chat-send" type="button" aria-label="发送消息">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <button type="button" class="btn btn-primary" id="btn-chat-send" aria-label="发送消息" aria-disabled="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
                 </svg>
               </button>
@@ -843,13 +868,15 @@
 </div>
 
 <!-- Toast Container -->
-<div id="toast-container" class="toast-container"></div>
+<div id="toast-container" class="toast-container" role="status" aria-live="polite" aria-atomic="true"></div>
 
 <!-- Image Modal -->
-<div id="image-modal" class="image-modal" hidden>
+<div id="image-modal" class="image-modal" role="dialog" aria-modal="true" aria-labelledby="image-modal-title" aria-describedby="image-modal-description" hidden>
   <div class="modal-content">
-    <button class="close" id="modal-close">&times;</button>
-    <img id="modal-image" src="" alt="预览" />
+    <h2 id="image-modal-title" class="sr-only">图片预览</h2>
+    <p id="image-modal-description" class="sr-only">放大查看生成的封面图片，按关闭按钮退出预览。</p>
+    <button type="button" class="close" id="modal-close" aria-label="关闭图片预览">&times;</button>
+    <img id="modal-image" src="" alt="生成图片预览" />
   </div>
 </div>
 
@@ -858,7 +885,6 @@
   <script src="/js/chat-model-utils.js"></script>
   <script src="/js/workspace-chat-model-tools.js"></script>
   <script src="/js/chat-markdown.js"></script>
-  <script src="/js/chat-excerpt-tools.js"></script>
   <script src="/js/chat-message-meta-tools.js"></script>
   <script src="/js/chat-message-node-tools.js"></script>
   <script src="/js/chat-failure-tools.js"></script>
@@ -868,7 +894,6 @@
   <script src="/js/chat-stream-tools.js"></script>
   <script src="/js/chat-send-tools.js"></script>
   <script src="/js/chat-render-runtime-tools.js"></script>
-  <script src="/js/chat-outline-tools.js"></script>
   <script src="/js/template-tools.js"></script>
   <script src="/js/workspace-template-tools.js"></script>
   <script src="/js/workspace-generation-tools.js"></script>

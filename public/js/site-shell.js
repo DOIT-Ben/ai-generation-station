@@ -51,6 +51,8 @@
     if (!container) return;
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
+    toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    toast.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
     toast.textContent = message;
     container.appendChild(toast);
     window.setTimeout(() => {
@@ -349,7 +351,7 @@
     container.innerHTML = `
       <div class="portal-user-nav-main">
         <a class="portal-brand" href="/">
-          <span class="portal-brand-mark">AI</span>
+          <img class="portal-brand-mark" src="/images/AG-logo.png" alt="" aria-hidden="true" />
           <span class="portal-brand-copy">
             <strong>AI</strong>
             <span>Generation</span>

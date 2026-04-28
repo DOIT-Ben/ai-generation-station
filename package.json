@@ -18,6 +18,7 @@
     "test:regression-core": "node test-regression.js --skip-live --skip-browser",
     "test:release-browser": "node test-style-contract.js && node test-page-markup.js && node test-frontend-state.js && node test-auth-history.js && node test-ui-flow-smoke.js --port 18797 --launch-server && node test-ui-visual.js --port 18797 --launch-server && node test-failures.js && node test-security-gateway.js && node test-capacity-baseline.js && node test-regression.js --skip-live --port 18797 && node test-regression.js",
     "test:release-core": "node test-regression.js --skip-live --skip-browser && node test-capacity-baseline.js",
+    "test:security-boundaries": "node test-api-auth-boundary.js && node test-output-access-boundary.js && node test-http-body-limit.js && node test-error-disclosure.js && node test-config-production-safety.js",
     "test:state-maintenance": "node test-state-maintenance.js",
     "test:failures": "node test-failures.js",
     "test:lyrics": "node test-lyrics.js",

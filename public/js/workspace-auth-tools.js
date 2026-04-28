@@ -34,7 +34,6 @@
     const loadConversations = settings.loadConversations || (async function () {});
     const loadAllHistories = settings.loadAllHistories || (async function () {});
     const hydrateChatWorkflowState = settings.hydrateChatWorkflowState || function () {};
-    const hydrateChatExcerptState = settings.hydrateChatExcerptState || function () {};
     const restoreWorkspaceDrafts = settings.restoreWorkspaceDrafts || function () {};
     const setWorkspaceStateReady = settings.setWorkspaceStateReady || function () {};
     const getElement = settings.getElement || function () { return null; };
@@ -104,8 +103,7 @@
       const summaryLabel = currentUserProfile?.mustResetPassword
         ? '已登录 · 需先改密'
         : '已登录 · ' + roleLabel + ' · ' + planLabel;
-      panel.innerHTML = '\n      <div class="topbar-account">\n        <div class="topbar-account-avatar">' + avatarLabel + '</div>\n        <div class="topbar-account-copy">\n          <strong>' + currentUser + '</strong>\n          <span>' + summaryLabel + '</span>\n        </div>\n        <a href="/account/" class="topbar-account-action topbar-account-action--account"><span>个人中心</span></a>\n        ' + (currentUserProfile?.role === 'admin' ? '<a href="/admin/" class="topbar-account-action"><span>后台</span></a>' : '') + '\n        <button id="btn-logout" class="topbar-account-action topbar-account-action--logout" type="button"><span>退出</span></button>\n      </div>\n    ';
-      getElement('btn-logout')?.addEventListener('click', logout);
+      panel.innerHTML = '\n      <div class="topbar-account">\n        <div class="topbar-account-avatar">' + avatarLabel + '</div>\n        <div class="topbar-account-copy">\n          <strong>' + currentUser + '</strong>\n          <span>' + summaryLabel + '</span>\n        </div>\n        ' + (currentUserProfile?.role === 'admin' ? '<a href="/admin/" class="topbar-account-action"><span>后台</span></a>' : '') + '\n      </div>\n    ';
     }
 
     function handleProtectedSessionLoss(message = '登录状态已失效，请重新登录') {
@@ -146,7 +144,6 @@
 
     async function loadAuthenticatedWorkspaceData() {
       hydrateChatWorkflowState();
-      hydrateChatExcerptState();
       await loadUserPreferences();
       await refreshUsageToday();
       await loadTemplateLibraries();

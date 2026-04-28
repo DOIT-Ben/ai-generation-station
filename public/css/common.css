@@ -43,26 +43,27 @@
 .logo-ai-mark {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
+  min-width: 0;
   font-family: var(--font-display);
-  font-size: 2.2rem;
-  font-weight: 520;
+  font-size: 1.4rem;
+  font-weight: 800;
   line-height: 1;
-  letter-spacing: 0;
-  color: #ff4d5f;
-  text-decoration: none;
+  letter-spacing: 0.01em;
+  background: linear-gradient(92deg, var(--accent-cyan) 0%, var(--accent-pink) 92%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .logo-icon {
-  width: 42px;
-  height: 42px;
-  background: rgba(255, 255, 255, 0.06);
-  border-radius: var(--radius-md);
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-subtle);
   box-shadow: 0 0 18px rgba(0, 0, 0, 0.16);
   flex-shrink: 0;
   overflow: hidden;
@@ -80,13 +81,13 @@
   flex-direction: column;
   align-items: flex-start;
   justify-content: center;
-  gap: 4px;
+  gap: 3px;
   font-family: var(--font-display);
   min-width: 0;
   max-width: 160px;
   font-stretch: normal;
   text-rendering: geometricPrecision;
-  filter: drop-shadow(0 8px 18px rgba(255, 77, 95, 0.1));
+  filter: drop-shadow(0 8px 18px var(--glow-cyan));
 }
 
 .logo-text-line {
@@ -96,24 +97,17 @@
   white-space: nowrap;
 }
 
+.logo-text-line--ai,
 .logo-text-line--primary {
   line-height: 1;
 }
 
 .logo-text strong {
-  font-size: 1.52rem;
-  font-weight: 850;
-  line-height: 1;
-  letter-spacing: 0;
-  background: linear-gradient(92deg, var(--accent-cyan) 0%, var(--accent-pink) 92%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
   flex-shrink: 0;
 }
 
 .logo-text span {
-  color: #ff3f4f;
+  color: var(--fg-primary);
   font-size: 1.04rem;
   font-weight: 520;
   line-height: 1;
@@ -122,36 +116,18 @@
 }
 
 .logo-text em {
-  color: #ff3f4f;
-  font-size: 1.02rem;
+  color: var(--fg-secondary);
+  font-size: 0.86rem;
   font-style: normal;
-  font-weight: 520;
-  line-height: 1;
-  letter-spacing: 0.02em;
+  font-weight: 700;
+  line-height: 1.08;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   white-space: nowrap;
 }
 
-[data-theme="paper"] .logo-text strong {
-  background: linear-gradient(92deg, #7b5a1d 0%, #c79947 48%, #8f6a2a 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-}
-
-[data-theme="paper"] .logo-ai-mark {
-  color: #d94a52;
-}
-
 [data-theme="paper"] .logo-text {
   filter: drop-shadow(0 8px 16px rgba(94, 71, 29, 0.1));
-}
-
-[data-theme="paper"] .logo-text span {
-  color: #c9424b;
-}
-
-[data-theme="paper"] .logo-text em {
-  color: #c9424b;
 }
 
 .nav-list {
@@ -182,6 +158,7 @@
   width: 100%;
   position: relative;
   overflow: hidden;
+  text-decoration: none;
 }
 
 .nav-item::before {
@@ -391,6 +368,23 @@
   outline: none;
   border-color: var(--accent-cyan);
   box-shadow: 0 0 0 3px var(--glow-cyan), inset 0 0 20px rgba(0, 212, 255, 0.03);
+}
+
+.input-group textarea[aria-invalid="true"],
+.input-group input[aria-invalid="true"] {
+  border-color: rgba(255, 77, 109, 0.72);
+  box-shadow: 0 0 0 3px rgba(255, 77, 109, 0.14);
+}
+
+.field-error {
+  margin: 8px 0 0;
+  color: #ff8fa3;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.field-error[hidden] {
+  display: none;
 }
 
 .input-group textarea::placeholder,
@@ -758,6 +752,7 @@ input[type="range"]::-webkit-slider-thumb:active {
 }
 
 .progress-fill {
+  width: 0;
   height: 100%;
   background: linear-gradient(90deg, var(--accent-cyan), var(--accent-pink), var(--accent-purple));
   background-size: 200% 100%;
@@ -1395,6 +1390,19 @@ input[type="range"]::-webkit-slider-thumb:active {
 @keyframes welcomeToastOut {
   from { opacity: 1; transform: translateY(0) scale(1); }
   to { opacity: 0; transform: translateY(-8px) scale(0.96); }
+}
+
+/* ---- Screen-reader Utilities ---- */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* ---- Image Modal ---- */

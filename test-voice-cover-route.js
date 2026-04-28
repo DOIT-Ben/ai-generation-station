@@ -79,7 +79,7 @@ async function waitFor(predicate, timeoutMs = 500) {
 }
 
 async function testSyncUrlInAudioField() {
-    const coverUrl = 'https://cdn.example.com/cover-sync.mp3';
+    const coverUrl = 'https://api.minimaxi.com/cover-sync.mp3';
     const harness = createHarness(createFakeHttps({
         requestResponses: [
             {
@@ -126,7 +126,7 @@ async function testAsyncUrlInAudioField() {
     global.setTimeout = (fn) => realSetTimeout(fn, 0);
 
     try {
-        const coverUrl = 'https://cdn.example.com/cover-async.mp3';
+        const coverUrl = 'https://api.minimaxi.com/cover-async.mp3';
         const harness = createHarness(createFakeHttps({
             requestResponses: [
                 {

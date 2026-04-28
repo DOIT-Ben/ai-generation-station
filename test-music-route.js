@@ -79,7 +79,7 @@ async function waitFor(predicate, timeoutMs = 200) {
 }
 
 async function testInitialAudioUrlResponse() {
-    const audioUrl = 'https://cdn.example.com/music.mp3';
+    const audioUrl = 'https://api.minimaxi.com/music.mp3';
     const harness = createHarness(createFakeHttps({
         requestResponses: [
             {

@@ -36,6 +36,9 @@ jobs:
       - name: Security gateway tests
         run: node test-security-gateway.js
 
+      - name: Security boundary tests
+        run: npm run test:security-boundaries
+
       - name: State foreign key tests
         run: node test-state-foreign-keys.js
 

@@ -125,9 +125,7 @@
         buildChatMessageMeta,
         isAssistantMessageCompact,
         buildAssistantMessageCompactSummary,
-        annotateChatMessageHeadings,
         getAssistantMessageStatus,
-        isMessageExcerpted,
         getChatMessageUiState,
         isLongAssistantMessage,
         followChatToBottom
@@ -206,41 +204,6 @@
         getFollowUpPrompts: () => CHAT_FOLLOW_UP_PROMPTS
       })
     : null;
-  const chatExcerptTools = window.AigsChatExcerptTools?.createTools
-    ? window.AigsChatExcerptTools.createTools({
-        getCurrentUser: () => currentUser,
-        getCurrentUserProfile: () => currentUserProfile,
-        getConversationState: () => conversationState,
-        getChatExcerptState: () => chatExcerptState,
-        setChatExcerptState: value => {
-          chatExcerptState = value;
-        },
-        getCurrentTab: () => currentTab,
-        getElement: $,
-        queryAll: selector => document.querySelectorAll(selector),
-        queryOne: selector => document.querySelector(selector),
-        safeParseJson,
-        getLocalStorage: () => window.localStorage,
-        truncateText,
-        getActiveConversation,
-        getConversationTitlePreview,
-        getConversationMessageById,
-        restoreChatMessages,
-        flashButtonFeedback,
-        showToast,
-        writeClipboard: text => navigator.clipboard.writeText(text),
-        updateChatComposerState,
-        scheduleWorkspaceStateSave,
-        selectConversation,
-        switchTab,
-        setChatAutoFollow,
-        formatChatRelativeTime,
-        escapeHtml,
-        excerptStorageKeyPrefix: 'aigs.chat.excerpts',
-        getChatInputBuildText: content => WORKSPACE_ASSET_TARGETS.chat.buildText(content),
-        setTimeoutFn: (callback, delay) => window.setTimeout(callback, delay)
-      })
-    : null;
   const chatStreamTools = window.AigsChatStreamTools?.createTools
     ? window.AigsChatStreamTools.createTools({
         addChatMessage,
@@ -301,21 +264,11 @@
         setChatHistory: value => {
           chatHistory = Array.isArray(value) ? value.slice() : [];
         },
-        renderChatReadingOutline: () => renderChatReadingOutline(),
-        syncChatReadingOutlineActiveTarget: () => syncChatReadingOutlineActiveTarget(),
         addChatMessage,
         createChatStarterPanelMarkup,
         queueChatViewportSync,
         requestAnimationFrameFn: callback => window.requestAnimationFrame(callback),
         setTimeoutFn: (callback, delay) => window.setTimeout(callback, delay)
-      })
-    : null;
-  const chatOutlineTools = window.AigsChatOutlineTools?.createTools
-    ? window.AigsChatOutlineTools.createTools({
-        getElement: $,
-        queryAll: selector => document.querySelectorAll(selector),
-        escapeHtml,
-        buildTransientMessageId
       })
     : null;
   const workspaceConversationTools = window.AigsWorkspaceConversationTools?.createTools
@@ -338,9 +291,6 @@
         upsertConversationSummary,
         renderConversationList,
         renderChatExperienceState,
-        renderChatContextStrip,
-        renderChatExcerptShelf,
-        renderChatSuggestionStrip,
         scheduleWorkspaceStateSave,
         getActiveConversation,
         getConversationTitlePreview,
@@ -481,7 +431,6 @@
         loadConversations,
         loadAllHistories,
         hydrateChatWorkflowState,
-        hydrateChatExcerptState,
         restoreWorkspaceDrafts,
         setWorkspaceStateReady: value => {
           workspaceStateReady = Boolean(value);
@@ -526,6 +475,7 @@
         switchTab,
         showToast,
         closeImageModal,
+        trapImageModalFocus,
         sendChatMessage,
         stopChatGeneration,
         clearFeatureDraft,
@@ -577,10 +527,8 @@
   const fieldInitialValues = {};
   const CHAT_ARCHIVED_COLLAPSED_KEY = 'aigs.chat.archived.collapsed';
   const CHAT_WORKFLOW_STATE_KEY_PREFIX = 'aigs.chat.workflow';
-  const CHAT_EXCERPT_STATE_KEY_PREFIX = 'aigs.chat.excerpts';
   let chatArchivedCollapsed = false;
   let chatWorkflowState = createDefaultChatWorkflowState();
-  let chatExcerptState = createDefaultChatExcerptState();
 
   const FEATURE_FIELDS = {
     lyrics: { prompt: 'lyrics-prompt', style: 'lyrics-style', structure: 'lyrics-structure' },
@@ -604,45 +552,6 @@
     'voice-prompt': 'voice-char',
     'speech-text': 'speech-char'
   };
-  const WORKSPACE_ASSET_TARGETS = {
-    chat: {
-      inputId: 'chat-input',
-      actionLabel: '继续聊',
-      toast: '已插入聊天输入框',
-      buildText: content => `参考这段已摘录内容继续：\n${content}\n\n请基于这段内容继续展开。`
-    },
-    lyrics: {
-      inputId: 'lyrics-prompt',
-      actionLabel: '用于歌词',
-      toast: '已导入到歌词灵感',
-      buildText: content => `参考这段摘录，写成更完整的歌词：\n${content}`
-    },
-    music: {
-      inputId: 'music-prompt',
-      actionLabel: '用于音乐',
-      toast: '已导入到音乐描述',
-      buildText: content => `参考这段摘录，为我生成对应的音乐灵感与编曲描述：\n${content}`
-    },
-    cover: {
-      inputId: 'cover-prompt',
-      actionLabel: '用于封面',
-      toast: '已导入到封面描述',
-      buildText: content => `参考这段摘录，为我设计一张匹配气质的封面：\n${content}`
-    },
-    speech: {
-      inputId: 'speech-text',
-      actionLabel: '用于语音',
-      toast: '已导入到语音文本',
-      buildText: content => content
-    },
-    covervoice: {
-      inputId: 'voice-prompt',
-      actionLabel: '用于配音',
-      toast: '已导入到配音描述',
-      buildText: content => `参考这段摘录，帮我规划适合的翻唱或配音风格：\n${content}`
-    }
-  };
-
   const TRACKED_WORKSPACE_INPUT_IDS = new Set([
     'chat-input',
     'lyrics-prompt', 'lyrics-style', 'lyrics-structure',
@@ -770,13 +679,6 @@
     return chatComposerTools;
   }
 
-  function requireChatExcerptTools() {
-    if (!chatExcerptTools) {
-      throw new Error('AigsChatExcerptTools 未加载');
-    }
-    return chatExcerptTools;
-  }
-
   function requireChatStreamTools() {
     if (!chatStreamTools) {
       throw new Error('AigsChatStreamTools 未加载');
@@ -789,13 +691,6 @@
       throw new Error('AigsChatSendTools 未加载');
     }
     return chatSendTools;
-  }
-
-  function requireChatOutlineTools() {
-    if (!chatOutlineTools) {
-      throw new Error('AigsChatOutlineTools 未加载');
-    }
-    return chatOutlineTools;
   }
 
   function safeParseJson(value, fallback) {
@@ -894,44 +789,16 @@
     return requireConversationWorkflowTools().toggleConversationManageMode();
   }
 
-  function createDefaultChatExcerptState() {
-    return requireChatExcerptTools().createDefaultChatExcerptState();
-  }
-
-  function normalizeChatExcerptState(rawState) {
-    return requireChatExcerptTools().normalizeChatExcerptState(rawState);
-  }
-
-  function getChatExcerptStorageKey() {
-    return requireChatExcerptTools().getChatExcerptStorageKey();
-  }
-
-  function readChatExcerptStatePreference() {
-    return requireChatExcerptTools().readChatExcerptStatePreference();
-  }
-
-  function persistChatExcerptState() {
-    return requireChatExcerptTools().persistChatExcerptState();
-  }
-
-  function hydrateChatExcerptState() {
-    return requireChatExcerptTools().hydrateChatExcerptState();
-  }
-
-  function isMessageExcerpted(messageId) {
-    return requireChatExcerptTools().isMessageExcerpted(messageId);
-  }
-
-  function buildChatExcerptPreview(text) {
-    return requireChatExcerptTools().buildChatExcerptPreview(text);
-  }
-
-  function getRecentChatAssets(limit = 3) {
-    return requireChatExcerptTools().getRecentChatAssets(limit);
-  }
-
   function stripChatMarkupForPreview(text) {
-    return requireChatExcerptTools().stripChatMarkupForPreview(text);
+    return String(text || '')
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/^#{1,3}\s+/gm, '')
+      .replace(/^[-*]\s+/gm, '')
+      .replace(/^\d+\.\s+/gm, '')
+      .replace(/^>\s?/gm, '')
+      .replace(/[*_~`>#-]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   function isLongAssistantMessage(message) {
@@ -961,54 +828,6 @@
     if (!message?.id || !isLongAssistantMessage(message)) return false;
     const uiState = getChatMessageUiState(message.id) || {};
     return uiState.compactExpanded === false;
-  }
-
-  function getChatExcerptByMessageId(messageId) {
-    return requireChatExcerptTools().getChatExcerptByMessageId(messageId);
-  }
-
-  function isChatExcerptArchived(messageId) {
-    return requireChatExcerptTools().isChatExcerptArchived(messageId);
-  }
-
-  function updateChatExcerptState(patch = {}, options = {}) {
-    return requireChatExcerptTools().updateChatExcerptState(patch, options);
-  }
-
-  function setChatExcerptExpanded(nextExpanded) {
-    return requireChatExcerptTools().setChatExcerptExpanded(nextExpanded);
-  }
-
-  function setChatExcerptFilterMode(nextFilter) {
-    return requireChatExcerptTools().setChatExcerptFilterMode(nextFilter);
-  }
-
-  function setChatExcerptQuery(nextQuery, options = {}) {
-    return requireChatExcerptTools().setChatExcerptQuery(nextQuery, options);
-  }
-
-  function removeChatExcerpt(messageId, options = {}) {
-    return requireChatExcerptTools().removeChatExcerpt(messageId, options);
-  }
-
-  function setChatExcerptArchived(messageId, nextArchived = true, options = {}) {
-    return requireChatExcerptTools().setChatExcerptArchived(messageId, nextArchived, options);
-  }
-
-  function archiveVisibleChatExcerpts() {
-    return requireChatExcerptTools().archiveVisibleChatExcerpts();
-  }
-
-  function clearArchivedChatExcerpts() {
-    return requireChatExcerptTools().clearArchivedChatExcerpts();
-  }
-
-  function saveChatExcerpt(message) {
-    return requireChatExcerptTools().saveChatExcerpt(message);
-  }
-
-  async function toggleChatExcerpt(messageId, triggerButton = null) {
-    return requireChatExcerptTools().toggleChatExcerpt(messageId, triggerButton);
   }
 
   function getWorkspaceStateDraft(feature) {
@@ -1395,7 +1214,6 @@
     workspaceStateReady = false;
     workspaceState = createDefaultWorkspaceState();
     chatWorkflowState = createDefaultChatWorkflowState();
-    chatExcerptState = createDefaultChatExcerptState();
     templatePreferenceEnvelope = {};
     conversationState.list = [];
     conversationState.archived = [];
@@ -2400,13 +2218,6 @@
         });
         return;
       }
-      const excerptMessageButton = event.target.closest('[data-chat-excerpt-id]');
-      if (excerptMessageButton) {
-        toggleChatExcerpt(excerptMessageButton.dataset.chatExcerptId, excerptMessageButton).catch(error => {
-          showToast(error.message || '摘录操作失败，请重试。', 'error', 1600);
-        });
-        return;
-      }
       const compactToggleButton = event.target.closest('[data-chat-compact-toggle]');
       if (compactToggleButton) {
         toggleAssistantMessageCompact(compactToggleButton.dataset.chatCompactToggle || '');
@@ -2424,6 +2235,8 @@
       }
       const versionNavButton = event.target.closest('[data-chat-version-nav]');
       if (versionNavButton) {
+        event.preventDefault();
+        event.stopPropagation();
         switchAssistantVersion(versionNavButton.dataset.chatMessageId, versionNavButton.dataset.chatVersionNav, versionNavButton)
           .catch(error => {
             showToast(error.message || '切换版本失败，请重试。', 'error', 1600);
@@ -2451,11 +2264,6 @@
       const chatStarterButton = event.target.closest('[data-chat-starter-prompt]');
       if (chatStarterButton) {
         applyChatStarterPrompt(chatStarterButton.dataset.chatStarterPrompt || '');
-        return;
-      }
-      const chatSuggestionButton = event.target.closest('[data-chat-suggestion-prompt]');
-      if (chatSuggestionButton) {
-        applyChatStarterPrompt(chatSuggestionButton.dataset.chatSuggestionPrompt || '');
         return;
       }
       const searchResetButton = event.target.closest('[data-chat-search-reset]');
@@ -2497,100 +2305,6 @@
         setChatArchivedCollapsed(!chatArchivedCollapsed);
         return;
       }
-      const outlineButton = event.target.closest('[data-chat-outline-target]');
-      if (outlineButton) {
-        const targetId = outlineButton.dataset.chatOutlineTarget || '';
-        const targetHeading = targetId ? document.getElementById(targetId) : null;
-        if (targetHeading) {
-          setChatAutoFollow(false);
-          targetHeading.scrollIntoView({ block: 'center', behavior: 'smooth' });
-        }
-        return;
-      }
-      const excerptJumpButton = event.target.closest('[data-chat-excerpt-jump]');
-      if (excerptJumpButton) {
-        jumpToChatExcerpt(
-          excerptJumpButton.dataset.chatExcerptJump || '',
-          excerptJumpButton.dataset.chatExcerptConversationId || ''
-        ).catch(error => {
-          showToast(error.message || '摘录跳转失败，请重试。', 'error', 1600);
-        });
-        return;
-      }
-      const excerptCopyButton = event.target.closest('[data-chat-excerpt-copy]');
-      if (excerptCopyButton) {
-        copyChatExcerptItem(excerptCopyButton.dataset.chatExcerptCopy || '', excerptCopyButton).catch(error => {
-          showToast(error.message || '摘录复制失败，请重试。', 'error', 1600);
-        });
-        return;
-      }
-      const excerptInsertButton = event.target.closest('[data-chat-excerpt-insert]');
-      if (excerptInsertButton) {
-        insertChatExcerptIntoComposer(excerptInsertButton.dataset.chatExcerptInsert || '', excerptInsertButton);
-        return;
-      }
-      const excerptArchiveButton = event.target.closest('[data-chat-excerpt-archive]');
-      if (excerptArchiveButton) {
-        const targetId = excerptArchiveButton.dataset.chatExcerptArchive || '';
-        const nextArchived = !isChatExcerptArchived(targetId);
-        const updated = setChatExcerptArchived(targetId, nextArchived);
-        if (updated) {
-          showToast(nextArchived ? '已归档到资产库' : '已恢复到活跃资产', 'success', 1400);
-          if (conversationState.activeId) {
-            restoreChatMessages(conversationState.messages, { forceFollow: false });
-          }
-        }
-        return;
-      }
-      const excerptRemoveButton = event.target.closest('[data-chat-excerpt-remove]');
-      if (excerptRemoveButton) {
-        const removed = removeChatExcerpt(excerptRemoveButton.dataset.chatExcerptRemove || '');
-        if (removed) {
-          showToast('已移出消息摘录', 'success', 1200);
-          if (conversationState.activeId) {
-            restoreChatMessages(conversationState.messages, { forceFollow: false });
-          }
-        }
-        return;
-      }
-      const excerptFilterButton = event.target.closest('[data-chat-excerpt-filter]');
-      if (excerptFilterButton) {
-        setChatExcerptFilterMode(excerptFilterButton.dataset.chatExcerptFilter || 'current');
-        return;
-      }
-      const excerptToggleButton = event.target.closest('#btn-chat-excerpt-toggle-panel');
-      if (excerptToggleButton) {
-        setChatExcerptExpanded(!chatExcerptState.expanded);
-        return;
-      }
-      const excerptCopyVisibleButton = event.target.closest('#btn-chat-excerpt-copy-visible');
-      if (excerptCopyVisibleButton) {
-        copyChatExcerptBundle(excerptCopyVisibleButton).catch(error => {
-          showToast(error.message || '摘录列表复制失败，请重试。', 'error', 1600);
-        });
-        return;
-      }
-      const excerptArchiveVisibleButton = event.target.closest('#btn-chat-excerpt-archive-visible');
-      if (excerptArchiveVisibleButton) {
-        const archived = archiveVisibleChatExcerpts();
-        if (archived > 0) {
-          showToast(`已归档 ${archived} 条资产`, 'success', 1400);
-        }
-        return;
-      }
-      const excerptSearchClearButton = event.target.closest('[data-chat-excerpt-search-clear], #btn-chat-excerpt-search-clear');
-      if (excerptSearchClearButton) {
-        setChatExcerptQuery('');
-        return;
-      }
-      const excerptClearArchivedButton = event.target.closest('#btn-chat-excerpt-clear-archived');
-      if (excerptClearArchivedButton) {
-        const cleared = clearArchivedChatExcerpts();
-        if (cleared > 0) {
-          showToast(`已清空 ${cleared} 条归档资产`, 'success', 1400);
-        }
-        return;
-      }
       const clearRecentTemplatesButton = event.target.closest('[data-template-recent-clear]');
       if (clearRecentTemplatesButton) {
         clearRecentTemplates(clearRecentTemplatesButton.dataset.templateRecentClear);
@@ -2629,12 +2343,6 @@
         updateConversationSearch(searchInput.value, { syncInput: false });
         return;
       }
-      const excerptSearchInput = event.target.closest?.('#chat-excerpt-search');
-      if (excerptSearchInput) {
-        setChatExcerptQuery(excerptSearchInput.value);
-        return;
-      }
-
       const inputId = event.target?.id;
       if (!TRACKED_WORKSPACE_INPUT_IDS.has(inputId)) return;
             scheduleWorkspaceStateSave();
@@ -2651,7 +2359,7 @@
   //  Tab Navigation
   // ===========================================
   function initTabs() {
-    $$('.nav-item').forEach(btn => {
+    $$('[data-tab].nav-item').forEach(btn => {
       btn.addEventListener('click', () => switchTab(btn.dataset.tab));
     });
   }
@@ -2674,10 +2382,21 @@
   // ============================================
   //  Inline Progress
   // ============================================
+  function updateInlineProgressValue(tab, fillId, textId, progress) {
+    const normalizedProgress = Math.max(0, Math.min(100, Math.round(progress)));
+    const fill = $(fillId || `${tab}-progress-fill`);
+    const text = $(textId || `${tab}-progress-text`);
+    const progressbar = fill?.closest('[role="progressbar"]');
+    if (fill) fill.style.width = normalizedProgress + '%';
+    if (text) text.textContent = normalizedProgress + '%';
+    if (progressbar) progressbar.setAttribute('aria-valuenow', String(normalizedProgress));
+  }
+
   function startInlineProgress(tab, fillId, textId) {
     const card = $(`${tab}-generating`);
     activeProgressTab = tab;
     card.removeAttribute('hidden');
+    updateInlineProgressValue(tab, fillId, textId, 0);
 
     let progress = 0;
     const speeds = { music: 1.2, lyrics: 2.5, cover: 1.8, covervoice: 1.0 };
@@ -2686,10 +2405,7 @@
     progressInterval = setInterval(() => {
       progress += Math.random() * baseSpeed * 3;
       if (progress > 88) progress = 88;
-      const fill = $(fillId);
-      const text = $(textId);
-      if (fill) fill.style.width = progress + '%';
-      if (text) text.textContent = Math.round(progress) + '%';
+      updateInlineProgressValue(tab, fillId, textId, progress);
     }, 200);
   }
 
@@ -2697,10 +2413,7 @@
     clearInterval(progressInterval);
     progressInterval = null;
     const progressTab = activeProgressTab || currentTab;
-    const fill = $(`${progressTab}-progress-fill`);
-    const text = $(`${progressTab}-progress-text`);
-    if (fill) fill.style.width = '100%';
-    if (text) text.textContent = '100%';
+    updateInlineProgressValue(progressTab, `${progressTab}-progress-fill`, `${progressTab}-progress-text`, 100);
     setTimeout(() => $(`${progressTab}-generating`)?.setAttribute('hidden', ''), 600);
     activeProgressTab = null;
   }
@@ -2710,8 +2423,11 @@
   // ============================================
   function showToast(message, type = 'info', duration = 4000) {
     const container = $('toast-container');
+    if (!container) return;
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
+    toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    toast.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
     toast.textContent = message;
     container.appendChild(toast);
     setTimeout(() => {
@@ -2962,13 +2678,52 @@
   // ============================================
   //  Image Modal
   // ============================================
-  function openImageModal(src) {
-    const modal = $('image-modal');
-    $('modal-image').src = src;
-    modal.removeAttribute('hidden');
+  let imageModalReturnFocusElement = null;
+  const IMAGE_MODAL_FOCUSABLE_SELECTOR = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
+  function getImageModalFocusableElements(modal) {
+    return Array.from(modal?.querySelectorAll(IMAGE_MODAL_FOCUSABLE_SELECTOR) || [])
+      .filter(element => !element.disabled && !element.hasAttribute('hidden'));
   }
 
-  function closeImageModal() { $('image-modal')?.setAttribute('hidden', ''); }
+  function trapImageModalFocus(event) {
+    const modal = $('image-modal');
+    if (!modal || modal.hasAttribute('hidden') || event.key !== 'Tab') return;
+    const focusableElements = getImageModalFocusableElements(modal);
+    if (!focusableElements.length) return;
+    const firstElement = focusableElements[0];
+    const lastElement = focusableElements[focusableElements.length - 1];
+    if (event.shiftKey && document.activeElement === firstElement) {
+      event.preventDefault();
+      lastElement.focus();
+      return;
+    }
+    if (!event.shiftKey && document.activeElement === lastElement) {
+      event.preventDefault();
+      firstElement.focus();
+    }
+  }
+
+  function openImageModal(src) {
+    const modal = $('image-modal');
+    const image = $('modal-image');
+    if (!modal || !image || !src) return;
+    imageModalReturnFocusElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    image.src = src;
+    modal.removeAttribute('hidden');
+    $('modal-close')?.focus();
+  }
+
+  function closeImageModal() {
+    const modal = $('image-modal');
+    const image = $('modal-image');
+    modal?.setAttribute('hidden', '');
+    if (image) image.removeAttribute('src');
+    if (imageModalReturnFocusElement && document.contains(imageModalReturnFocusElement)) {
+      imageModalReturnFocusElement.focus();
+    }
+    imageModalReturnFocusElement = null;
+  }
 
   // ============================================
   //  Chat
@@ -3025,78 +2780,6 @@
 
   function buildChatMessageMeta(message, role, settings = {}) {
     return requireChatMessageMetaTools().buildChatMessageMeta(message, role, settings);
-  }
-
-  function annotateChatMessageHeadings(msgDiv, messageId = '') {
-    return requireChatOutlineTools().annotateChatMessageHeadings(msgDiv, messageId);
-  }
-
-  function renderChatReadingOutline() {
-    return requireChatOutlineTools().renderChatReadingOutline();
-  }
-
-  function getVisibleChatExcerpts() {
-    return requireChatExcerptTools().getVisibleChatExcerpts();
-  }
-
-  function matchesChatExcerptQuery(item, query) {
-    return requireChatExcerptTools().matchesChatExcerptQuery(item, query);
-  }
-
-  function getFilteredChatExcerpts(options = {}) {
-    return requireChatExcerptTools().getFilteredChatExcerpts(options);
-  }
-
-  function buildChatExcerptBundle(items = []) {
-    return requireChatExcerptTools().buildChatExcerptBundle(items);
-  }
-
-  async function copyChatExcerptBundle(triggerButton = null) {
-    return requireChatExcerptTools().copyChatExcerptBundle(triggerButton);
-  }
-
-  async function copyChatExcerptItem(messageId, triggerButton = null) {
-    return requireChatExcerptTools().copyChatExcerptItem(messageId, triggerButton);
-  }
-
-  function insertChatExcerptIntoComposer(messageId, triggerButton = null) {
-    return requireChatExcerptTools().insertChatExcerptIntoComposer(messageId, triggerButton);
-  }
-
-  function getCurrentWorkspaceAssetConfig() {
-    return WORKSPACE_ASSET_TARGETS[currentTab] || WORKSPACE_ASSET_TARGETS.chat;
-  }
-
-  function appendTextToField(inputId, nextText) {
-    const input = $(inputId);
-    if (!input || nextText == null) return false;
-    const prepared = String(nextText || '').trim();
-    if (!prepared) return false;
-    input.value = String(input.value || '').trim()
-      ? `${String(input.value || '').trim()}\n\n${prepared}`
-      : prepared;
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    input.focus();
-    const caretPosition = input.value.length;
-    if (typeof input.setSelectionRange === 'function') {
-      input.setSelectionRange(caretPosition, caretPosition);
-    }
-    if (inputId === 'chat-input') {
-      updateChatComposerState();
-    }
-    return true;
-  }
-
-  function renderChatExcerptShelf() {
-    return requireChatExcerptTools().renderChatExcerptShelf();
-  }
-
-  async function jumpToChatExcerpt(messageId, conversationId = '') {
-    return requireChatExcerptTools().jumpToChatExcerpt(messageId, conversationId);
-  }
-
-  function syncChatReadingOutlineActiveTarget() {
-    return requireChatOutlineTools().syncChatReadingOutlineActiveTarget();
   }
 
   function buildChatAssistantActions(message) {

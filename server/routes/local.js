@@ -181,7 +181,7 @@ function createLocalRoutes({ OUTPUT_DIR, MIME_TYPES, musicTasks, coverTasks, ima
         '/api/files': async () => {
             try {
                 const files = fs.readdirSync(OUTPUT_DIR)
-                    .filter(file => file.endsWith('.mp3') || file.endsWith('.png') || file.endsWith('.jpg'))
+                    .filter(file => allowedUploadExtensions.has(path.extname(file).toLowerCase()))
                     .map(file => ({
                         name: file,
                         url: `/output/${file}`,
@@ -224,7 +224,9 @@ function createLocalRoutes({ OUTPUT_DIR, MIME_TYPES, musicTasks, coverTasks, ima
                 fs.createReadStream(filepath).pipe(res);
                 return null;
             }
-            return { error: 'File not found', status: 404 };
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'File not found', status: 404 }));
+            return null;
         }
     };
 }

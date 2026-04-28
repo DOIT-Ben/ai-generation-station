@@ -26,6 +26,60 @@
     const applyVoiceSourceMode = settings.applyVoiceSourceMode || function () {};
     const fileToBase64 = settings.fileToBase64 || function () { return Promise.reject(new Error('fileToBase64 unavailable')); };
 
+    function setFieldError(inputId, message) {
+      const input = getElement(inputId);
+      const error = getElement(`${inputId}-error`);
+      if (input) {
+        input.setAttribute('aria-invalid', 'true');
+        input.focus?.();
+      }
+      if (error) {
+        error.textContent = message;
+        error.removeAttribute('hidden');
+      }
+      return false;
+    }
+
+    function clearFieldError(inputId) {
+      const input = getElement(inputId);
+      const error = getElement(`${inputId}-error`);
+      input?.removeAttribute('aria-invalid');
+      if (error) {
+        error.textContent = '';
+        error.setAttribute('hidden', '');
+      }
+    }
+
+    function requireField(inputId, message) {
+      const value = getElement(inputId)?.value?.trim() || '';
+      if (!value) return setFieldError(inputId, message);
+      clearFieldError(inputId);
+      return true;
+    }
+
+    function setVoiceSourceError(message, focusTargetId = 'voice-drop-zone') {
+      const target = getElement(focusTargetId);
+      const error = getElement('voice-source-error');
+      target?.setAttribute('aria-invalid', 'true');
+      target?.focus?.();
+      if (error) {
+        error.textContent = message;
+        error.removeAttribute('hidden');
+      }
+      return false;
+    }
+
+    function clearVoiceSourceError() {
+      ['voice-drop-zone', 'voice-audio-url'].forEach(function (id) {
+        getElement(id)?.removeAttribute('aria-invalid');
+      });
+      const error = getElement('voice-source-error');
+      if (error) {
+        error.textContent = '';
+        error.setAttribute('hidden', '');
+      }
+    }
+
     async function generateContent(config) {
       const {
         apiEndpoint,
@@ -35,13 +89,19 @@
         successMessage,
         onSuccess,
         historyFeature,
-        buildHistoryEntry
+        buildHistoryEntry,
+        requiredField
       } = config || {};
       const payload = {};
       Object.entries(domIds || {}).forEach(function ([key, id]) {
         const element = getElement(id);
         payload[key] = element ? (element.value != null ? element.value : element.textContent || '') : '';
       });
+
+      if (requiredField && !requireField(requiredField.id, requiredField.message)) {
+        showToast(requiredField.message, 'error');
+        return;
+      }
 
       if (Object.values(payload).every(function (value) { return !String(value).trim(); })) {
         showToast('请填写必要信息', 'error');
@@ -127,7 +187,7 @@
 
     async function generateMusic() {
       const prompt = getElement('music-prompt')?.value?.trim();
-      if (!prompt) {
+      if (!requireField('music-prompt', '请输入歌词或描述')) {
         showToast('请输入歌词或描述', 'error');
         return;
       }
@@ -197,6 +257,7 @@
         loadingText: '正在创作歌词...',
         successMessage: '歌词创作完成！',
         historyFeature: 'lyrics',
+        requiredField: { id: 'lyrics-prompt', message: '请填写歌词主题或描述' },
         onSuccess: function (data) {
           getElement('lyrics-content').innerHTML = `<pre>${escapeHtml(data.lyrics || data.content || '')}</pre>`;
           getElement('lyrics-meta').textContent = data.title ? `标题: ${data.title}` : '';
@@ -274,7 +335,7 @@
       const prompt = getElement('cover-prompt')?.value?.trim();
       const ratio = getElement('cover-ratio')?.value || '';
       const style = getElement('cover-style')?.value || '';
-      if (!prompt) {
+      if (!requireField('cover-prompt', '请填写封面描述')) {
         showToast('请填写封面描述', 'error');
         return;
       }
@@ -406,7 +467,8 @@
       const activeTab = document.querySelector('.voice-source-tabs .source-tab.active')?.dataset.source;
 
       if (activeTab === 'file' && fileInput?.files?.[0]) {
-        if (!prompt) {
+        clearVoiceSourceError();
+        if (!requireField('voice-prompt', '请填写翻唱描述')) {
           showToast('请填写翻唱描述', 'error');
           return;
         }
@@ -417,10 +479,12 @@
       if (activeTab === 'url') {
         const audioUrl = urlInput?.value?.trim();
         if (!audioUrl) {
+          setVoiceSourceError('请填写歌曲链接', 'voice-audio-url');
           showToast('请填写歌曲链接', 'error');
           return;
         }
-        if (!prompt) {
+        clearVoiceSourceError();
+        if (!requireField('voice-prompt', '请填写翻唱描述')) {
           showToast('请填写翻唱描述', 'error');
           return;
         }
@@ -431,7 +495,8 @@
       const file = fileInput?.files?.[0];
       const audioUrl = urlInput?.value?.trim();
       if (file) {
-        if (!prompt) {
+        clearVoiceSourceError();
+        if (!requireField('voice-prompt', '请填写翻唱描述')) {
           showToast('请填写翻唱描述', 'error');
           return;
         }
@@ -439,13 +504,15 @@
         return;
       }
       if (audioUrl) {
-        if (!prompt) {
+        clearVoiceSourceError();
+        if (!requireField('voice-prompt', '请填写翻唱描述')) {
           showToast('请填写翻唱描述', 'error');
           return;
         }
         await generateVoiceWithUrl(audioUrl, prompt);
         return;
       }
+      setVoiceSourceError('请上传音频文件或填写歌曲链接');
       showToast('请上传音频文件或填写歌曲链接', 'error');
     }
 

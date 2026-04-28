@@ -39,8 +39,12 @@
     <section class="auth-simple-card">
       <div class="auth-simple-head" id="auth-entry-head">
         <a class="auth-simple-brand" href="/" aria-label="返回工作台">
-          <span>AI</span>
-          <strong>Generation Station</strong>
+          <img class="auth-simple-brand-logo" src="/images/AG-logo.png" alt="" aria-hidden="true" />
+          <span class="auth-simple-brand-copy">
+            <strong>AI</strong>
+            <span>Generation</span>
+            <em>Station</em>
+          </span>
         </a>
         <h1 id="register-title">注册账号</h1>
       </div>
@@ -67,7 +71,7 @@
     </section>
   </main>
 
-  <div id="toast-container" class="toast-container"></div>
+  <div id="toast-container" class="toast-container" role="status" aria-live="polite" aria-atomic="true"></div>
 
   <script src="/js/app-shell.js"></script>
   <script src="/js/site-shell.js"></script>

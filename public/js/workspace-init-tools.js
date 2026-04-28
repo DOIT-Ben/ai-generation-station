@@ -41,6 +41,7 @@
     const switchTab = settings.switchTab || function () {};
     const showToast = settings.showToast || function () {};
     const closeImageModal = settings.closeImageModal || function () {};
+    const trapImageModalFocus = settings.trapImageModalFocus || function () {};
     const sendChatMessage = settings.sendChatMessage || function () {};
     const stopChatGeneration = settings.stopChatGeneration || function () {};
     const clearFeatureDraft = settings.clearFeatureDraft || function () {};
@@ -185,6 +186,12 @@
         if (el && counter) {
           el.addEventListener('input', () => {
             counter.textContent = el.value.length;
+            el.removeAttribute('aria-invalid');
+            const error = getElement(`${id}-error`);
+            if (error) {
+              error.textContent = '';
+              error.setAttribute('hidden', '');
+            }
           });
         }
       });
@@ -219,6 +226,13 @@
       getElement('voice-audio-file')?.addEventListener('change', e => {
         const file = e.target.files?.[0];
         const fileName = getElement('voice-file-name');
+        const sourceError = getElement('voice-source-error');
+        getElement('voice-drop-zone')?.removeAttribute('aria-invalid');
+        getElement('voice-audio-url')?.removeAttribute('aria-invalid');
+        if (sourceError) {
+          sourceError.textContent = '';
+          sourceError.setAttribute('hidden', '');
+        }
         if (fileName) fileName.textContent = file ? file.name : '';
       });
 
@@ -231,6 +245,13 @@
       documentRef.querySelectorAll('.voice-source-tabs .source-tab').forEach(tab => {
         tab.addEventListener('click', () => {
           applyVoiceSourceMode(tab.dataset.source);
+          const sourceError = getElement('voice-source-error');
+          getElement('voice-drop-zone')?.removeAttribute('aria-invalid');
+          getElement('voice-audio-url')?.removeAttribute('aria-invalid');
+          if (sourceError) {
+            sourceError.textContent = '';
+            sourceError.setAttribute('hidden', '');
+          }
           scheduleWorkspaceStateSave();
         });
       });
@@ -344,6 +365,7 @@
         if (e.target === getElement('image-modal')) closeImageModal();
       });
       documentRef.addEventListener('keydown', e => {
+        trapImageModalFocus(e);
         if (e.key === 'Escape') closeImageModal();
       });
 

@@ -32,11 +32,36 @@
     const bindWorkspaceInteractions = settings.bindWorkspaceInteractions || function () {};
     const setTimeoutFn = settings.setTimeoutFn || function (callback) { return callback(); };
 
+    function setSpeechFieldError(inputId, message) {
+      const input = getElement(inputId);
+      const error = getElement(`${inputId}-error`);
+      if (input) {
+        input.setAttribute('aria-invalid', 'true');
+        input.focus?.();
+      }
+      if (error) {
+        error.textContent = message;
+        error.removeAttribute('hidden');
+      }
+      return false;
+    }
+
+    function clearSpeechFieldError(inputId) {
+      const input = getElement(inputId);
+      const error = getElement(`${inputId}-error`);
+      input?.removeAttribute('aria-invalid');
+      if (error) {
+        error.textContent = '';
+        error.setAttribute('hidden', '');
+      }
+    }
+
     function initSpeechTab() {
       const textArea = getElement('speech-text');
       const charCount = getElement('speech-char');
       textArea?.addEventListener('input', function () {
         if (charCount) charCount.textContent = textArea.value.length;
+        clearSpeechFieldError('speech-text');
       });
 
       ['speech-speed', 'speech-pitch', 'speech-vol'].forEach(function (id) {
@@ -53,9 +78,11 @@
       getElement('btn-speech-generate')?.addEventListener('click', async function () {
         const text = getElement('speech-text')?.value?.trim();
         if (!text) {
+          setSpeechFieldError('speech-text', '请输入要转换的文本');
           showToast('请输入要转换的文本', 'error');
           return;
         }
+        clearSpeechFieldError('speech-text');
 
         showLoading('正在生成语音...', 0);
         const btn = getElement('btn-speech-generate');

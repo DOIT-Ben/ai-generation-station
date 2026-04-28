@@ -18,8 +18,6 @@
     const setChatScrollAutoFollow = settings.setChatScrollAutoFollow || function () {};
     const getChatMessageUiStateStore = settings.getChatMessageUiStateStore || function () { return new Map(); };
     const setChatHistory = settings.setChatHistory || function () {};
-    const renderChatReadingOutline = settings.renderChatReadingOutline || function () {};
-    const syncChatReadingOutlineActiveTarget = settings.syncChatReadingOutlineActiveTarget || function () {};
     const addChatMessage = settings.addChatMessage || function () {};
     const createChatStarterPanelMarkup = settings.createChatStarterPanelMarkup || function () { return ''; };
     const requestAnimationFrameFn = settings.requestAnimationFrameFn || function (callback) { return callback(); };
@@ -65,7 +63,6 @@
       const container = getElement('chat-messages');
       if (!container) return;
       setChatScrollAutoFollow(isChatNearBottom(container));
-      syncChatReadingOutlineActiveTarget();
       updateChatScrollButton();
     }
 
@@ -113,7 +110,6 @@
       if (!Array.isArray(messages) || messages.length === 0) {
         addChatMessage('chatbot', '', { rawHtml: createChatStarterPanelMarkup() });
         setChatHistory([]);
-        renderChatReadingOutline();
         container.scrollTop = 0;
         if (nextOptions.forceFollow === false) {
           setChatAutoFollow(false);
@@ -143,15 +139,13 @@
         if (anchorMessageId && typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
           const anchor = container.querySelector('.chat-message[data-chat-message-id="' + CSS.escape(anchorMessageId) + '"]');
           if (anchor && typeof anchor.scrollIntoView === 'function') {
-            anchor.scrollIntoView({ block: 'nearest' });
+            anchor.scrollIntoView({ block: 'nearest', behavior: 'instant' });
           }
         }
         setChatAutoFollow(false);
         updateChatScrollButton();
-        renderChatReadingOutline();
         return;
       }
-      renderChatReadingOutline();
       followChatToBottom(true);
     }
 

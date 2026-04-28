@@ -155,6 +155,7 @@
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(13, 13, 26, 0.78);
+  -webkit-backdrop-filter: blur(18px);
   backdrop-filter: blur(18px);
   box-shadow: var(--shadow-md);
 }
@@ -180,44 +181,45 @@
   width: 36px;
   height: 36px;
   border-radius: 14px;
-  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-pink));
-  color: white;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 800;
-  letter-spacing: 0.06em;
+  object-fit: cover;
+  flex-shrink: 0;
   box-shadow: 0 12px 24px var(--glow-cyan);
 }
 
 .portal-brand-copy {
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 3px;
   font-family: var(--font-display);
+  font-stretch: normal;
+  text-rendering: geometricPrecision;
 }
 
 .portal-brand-copy strong {
-  color: var(--fg-primary);
   font-size: 1.18rem;
-  line-height: 1;
-  letter-spacing: 0.02em;
+  font-weight: 850;
+  line-height: 1.02;
+  letter-spacing: 0.025em;
+  background: linear-gradient(92deg, var(--accent-cyan) 0%, var(--accent-pink) 92%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .portal-brand-copy span {
-  color: var(--fg-secondary);
-  font-size: 0.78rem;
-  font-weight: 760;
-  line-height: 1.04;
-  letter-spacing: 0.09em;
+  color: var(--fg-primary);
+  font-size: 0.94rem;
+  font-weight: 780;
+  line-height: 1.12;
+  letter-spacing: 0.055em;
 }
 
 .portal-brand-copy em {
-  color: var(--accent-cyan);
-  font-size: 0.64rem;
+  color: var(--fg-secondary);
+  font-size: 0.72rem;
   font-style: normal;
-  font-weight: 780;
-  line-height: 1.04;
+  font-weight: 820;
+  line-height: 1.12;
   letter-spacing: 0.24em;
   text-transform: uppercase;
 }

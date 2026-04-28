@@ -70,9 +70,27 @@ function main() {
   assert.strictEqual(developmentConfig.APP_PASSWORD, 'AIGS2026!');
   assert.strictEqual(developmentConfig.BIND_HOST, '127.0.0.1');
 
+  assertConfigThrows({
+    NODE_ENV: 'development',
+    BIND_HOST: '0.0.0.0',
+    APP_USERNAME: 'studio',
+    APP_PASSWORD: 'AIGS2026!',
+    CSRF_SECRET: 'development-csrf-secret'
+  }, /APP_PASSWORD/);
+
+  assertConfigThrows({
+    NODE_ENV: 'development',
+    BIND_HOST: '0.0.0.0',
+    APP_USERNAME: 'studio',
+    APP_PASSWORD: 'DevSafePassword2026!'
+  }, /CSRF_SECRET/);
+
   const explicitBindHostConfig = assertConfigPasses({
     NODE_ENV: 'development',
-    BIND_HOST: '0.0.0.0'
+    BIND_HOST: '0.0.0.0',
+    APP_USERNAME: 'studio',
+    APP_PASSWORD: 'DevSafePassword2026!',
+    CSRF_SECRET: 'development-csrf-secret'
   });
   assert.strictEqual(explicitBindHostConfig.BIND_HOST, '0.0.0.0');
 
